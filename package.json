@@ -1,0 +1,39 @@
+{
+  "name": "fedihome",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "next dev --port 3001",
+    "build": "next build",
+    "start": "next start --port 3001",
+    "lint": "next lint"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@atproto/api": "^0.19.4",
+    "@fedify/fedify": "^2.0.6",
+    "@fedify/next": "^2.0.6",
+    "@prisma/client": "^6.19.2",
+    "@tailwindcss/postcss": "^4.2.2",
+    "@types/node": "^25.5.0",
+    "@types/nodemailer": "^7.0.11",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "fast-xml-parser": "^5.5.6",
+    "gray-matter": "^4.0.3",
+    "marked": "^17.0.4",
+    "next": "^16.2.0",
+    "next-mdx-remote": "^6.0.0",
+    "nodemailer": "^8.0.3",
+    "postcss": "^8.5.8",
+    "prisma": "^6.19.2",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "remark-gfm": "^4.0.1",
+    "tailwindcss": "^4.2.2",
+    "typescript": "^5.9.3"
+  }
+}

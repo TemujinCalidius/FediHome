@@ -1,0 +1,1417 @@
+"use client";
+
+import { useState, useEffect } from "react";
+
+interface FediPostItem {
+  id: string;
+  apId: string;
+  content: string;
+  contentHtml: string | null;
+  mediaUrls: string[];
+  mediaTypes: string[];
+  username: string;
+  domain: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  publishedAt: string;
+  inReplyTo: string | null;
+  conversationId: string | null;
+  embedUrl: string | null;
+  embedTitle: string | null;
+  embedDescription: string | null;
+  embedImage: string | null;
+  embedSiteName: string | null;
+  boostedBy: string | null;
+  boostedByName: string | null;
+}
+
+interface FollowingItem {
+  id: string;
+  actorUri: string;
+  username: string;
+  domain: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+}
+
+interface PendingComment {
+  id: string;
+  guestName: string;
+  content: string;
+  createdAt: string;
+  post: { slug: string; title: string | null } | null;
+  photo: { slug: string; title: string | null } | null;
+}
+
+interface FollowerItem {
+  id: string;
+  actorUri: string;
+  username: string;
+  domain: string;
+  displayName: string | null;
+  avatarUrl: string | null;
+  createdAt: string;
+}
+
+interface DirectMessageItem {
+  id: string;
+  source: string;
+  senderUri: string;
+  senderHandle: string;
+  senderName: string | null;
+  senderAvatar: string | null;
+  content: string;
+  contentHtml: string | null;
+  conversationKey: string;
+  bskyConvoId: string | null;
+  isOutgoing: boolean;
+  createdAt: string;
+}
+
+interface Conversation {
+  key: string;
+  source: string;
+  handle: string;
+  name: string | null;
+  avatar: string | null;
+  senderUri: string;
+  bskyConvoId: string | null;
+  messages: DirectMessageItem[];
+  lastMessage: DirectMessageItem;
+  hasUnread: boolean;
+}
+
+function UserProfilePopup({
+  name,
+  handle,
+  avatar,
+  actorUri,
+  source,
+  onClose,
+}: {
+  name: string | null;
+  handle: string;
+  avatar: string | null;
+  actorUri: string;
+  source: "fedi" | "bluesky";
+  onClose: () => void;
+}) {
+  const profileUrl =
+    source === "bluesky"
+      ? `https://bsky.app/profile/${handle.replace(/^@/, "")}`
+      : actorUri;
+  const profileDomain =
+    source === "bluesky" ? "Bluesky" : new URL(actorUri).hostname;
+
+  const handleBlock = async () => {
+    if (!confirm(`Block ${handle}? This will unfollow them and remove all their posts from your feed.`)) return;
+    await fetch("/api/admin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "block", actorUri }),
+    });
+    window.location.reload();
+  };
+
+  const handleUnfollow = async () => {
+    await fetch("/api/admin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "unfollow_by_uri", actorUri }),
+    });
+    window.location.reload();
+  };
+
+  return (
+    <div className="absolute top-12 left-0 z-40 bg-surface-900 border border-surface-600/30 rounded-xl shadow-2xl shadow-black/50 p-4 w-64">
+      <div className="flex items-center gap-3 mb-3">
+        {avatar ? (
+          <img src={avatar} alt="" className="w-12 h-12 rounded-full" />
+        ) : (
+          <div className="w-12 h-12 rounded-full bg-surface-700" />
+        )}
+        <div>
+          <p className="text-sm font-semibold text-white">{name || handle}</p>
+          <p className="text-xs text-gray-500">{handle}</p>
+        </div>
+      </div>
+      <div className="flex flex-col gap-2">
+        <a
+          href={profileUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs text-accent-400 hover:text-accent-300 transition-colors"
+        >
+          View profile on {profileDomain}
+        </a>
+        {source === "fedi" && (
+          <>
+            <button
+              onClick={handleUnfollow}
+              className="text-xs text-gray-400 hover:text-yellow-400 transition-colors text-left"
+            >
+              Unfollow
+            </button>
+            <button
+              onClick={handleBlock}
+              className="text-xs text-gray-400 hover:text-red-400 transition-colors text-left"
+            >
+              Block
+            </button>
+          </>
+        )}
+      </div>
+      <button
+        onClick={onClose}
+        className="absolute top-2 right-2 text-gray-600 hover:text-white transition-colors"
+      >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
+function PostCard({
+  post,
+  replyTo,
+  setReplyTo,
+  replyContent,
+  setReplyContent,
+  allPosts,
+  onViewThread,
+}: {
+  post: FediPostItem;
+  replyTo: { apId: string; inbox: string } | null;
+  setReplyTo: (v: { apId: string; inbox: string } | null) => void;
+  replyContent: string;
+  setReplyContent: (v: string) => void;
+  allPosts: FediPostItem[];
+  onViewThread: (postId: string) => void;
+}) {
+  const [showUserPopup, setShowUserPopup] = useState(false);
+  const [liked, setLiked] = useState(false);
+  const [boosted, setBoosted] = useState(false);
+
+  // Find parent post info for reply context
+  const parentPost = post.inReplyTo
+    ? allPosts.find((p) => p.apId === post.inReplyTo)
+    : null;
+
+  const actorUri = `https://${post.domain}/users/${post.username}`;
+  const inbox = `https://${post.domain}/users/${post.username}/inbox`;
+
+  const handleLike = async () => {
+    if (liked) return;
+    setLiked(true);
+    await fetch("/api/admin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "like", postApId: post.apId, targetInbox: inbox }),
+    });
+  };
+
+  const handleBoost = async () => {
+    if (boosted) return;
+    setBoosted(true);
+    await fetch("/api/admin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "boost", postApId: post.apId, targetInbox: inbox }),
+    });
+  };
+
+  return (
+    <div className="glass-card p-5">
+      {/* Reply context indicator */}
+      {post.inReplyTo && (
+        <div className="flex items-center gap-1.5 mb-2 text-xs text-gray-600">
+          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+          </svg>
+          Replying to{" "}
+          {parentPost ? (
+            <span className="text-accent-400">
+              @{parentPost.username}@{parentPost.domain}
+            </span>
+          ) : (
+            <span className="text-gray-500">another post</span>
+          )}
+        </div>
+      )}
+
+      {/* Boost banner */}
+      {post.boostedByName && (
+        <div className="flex items-center gap-1.5 mb-2 text-xs text-gray-500">
+          <span>🔁</span>
+          <span>{post.boostedByName} boosted</span>
+        </div>
+      )}
+
+      {/* Author header */}
+      <div className="flex items-center gap-3 mb-3 relative">
+        {post.avatarUrl ? (
+          <img src={post.avatarUrl} alt="" className="w-10 h-10 rounded-full" />
+        ) : (
+          <div className="w-10 h-10 rounded-full bg-surface-700" />
+        )}
+        <div>
+          <button
+            onClick={() => setShowUserPopup(!showUserPopup)}
+            className="text-sm font-semibold text-white hover:text-accent-400 transition-colors text-left"
+          >
+            {post.displayName || post.username}
+          </button>
+          <p className="text-xs text-gray-600">
+            <button
+              onClick={() => setShowUserPopup(!showUserPopup)}
+              className="hover:text-accent-400 transition-colors"
+            >
+              @{post.username}@{post.domain}
+            </button>
+            {" "}&middot; {new Date(post.publishedAt).toLocaleDateString()}
+          </p>
+        </div>
+
+        {/* User popup */}
+        {showUserPopup && (
+          <UserProfilePopup
+            name={post.displayName || post.username}
+            handle={`@${post.username}@${post.domain}`}
+            avatar={post.avatarUrl}
+            actorUri={actorUri}
+            source="fedi"
+            onClose={() => setShowUserPopup(false)}
+          />
+        )}
+      </div>
+
+      {/* Content */}
+      <div
+        className="text-gray-400 text-sm leading-relaxed [&_a]:text-accent-400 [&_a]:hover:underline"
+        dangerouslySetInnerHTML={{
+          __html: post.contentHtml || post.content,
+        }}
+      />
+
+      {/* Media (images + videos) */}
+      {post.mediaUrls.length > 0 && (
+        <div className={`mt-3 grid gap-2 ${post.mediaUrls.length > 1 ? "grid-cols-2" : ""}`}>
+          {post.mediaUrls.map((url, i) => {
+            const type = post.mediaTypes?.[i];
+            if (type === "video") {
+              return (
+                <video
+                  key={i}
+                  src={url}
+                  controls
+                  playsInline
+                  preload="auto"
+                  className="rounded-lg max-h-80 w-full bg-black"
+                />
+              );
+            }
+            return (
+              <img
+                key={i}
+                src={url}
+                alt=""
+                className="rounded-lg max-h-80 object-cover w-full"
+              />
+            );
+          })}
+        </div>
+      )}
+
+      {/* Link preview embed */}
+      {post.embedUrl && (post.embedTitle || post.embedDescription) && (
+        <a
+          href={post.embedUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-3 block border border-surface-600/50 rounded-lg overflow-hidden hover:border-surface-600 transition-colors bg-surface-800/50"
+        >
+          {post.embedImage && (
+            <img
+              src={post.embedImage}
+              alt=""
+              className="w-full h-40 object-cover"
+            />
+          )}
+          <div className="p-3">
+            {post.embedTitle && (
+              <p className="text-sm font-semibold text-white line-clamp-2">
+                {post.embedTitle}
+              </p>
+            )}
+            {post.embedDescription && (
+              <p className="text-xs text-gray-500 mt-1 line-clamp-2">
+                {post.embedDescription}
+              </p>
+            )}
+            <p className="text-xs text-gray-600 mt-1">
+              {post.embedSiteName || (() => { try { return new URL(post.embedUrl!).hostname; } catch { return ""; } })()}
+            </p>
+          </div>
+        </a>
+      )}
+
+      {/* Actions bar */}
+      <div className="mt-3 pt-2 border-t border-surface-700 flex items-center gap-4">
+        {/* Like */}
+        <button
+          onClick={handleLike}
+          className={`flex items-center gap-1 text-xs transition-colors ${
+            liked ? "text-red-400" : "text-gray-500 hover:text-red-400"
+          }`}
+          title="Like"
+        >
+          <svg className="w-4 h-4" fill={liked ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" />
+          </svg>
+        </button>
+
+        {/* Boost */}
+        <button
+          onClick={handleBoost}
+          className={`flex items-center gap-1 text-xs transition-colors ${
+            boosted ? "text-green-400" : "text-gray-500 hover:text-green-400"
+          }`}
+          title="Boost"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 12c0-1.232-.046-2.453-.138-3.662a4.006 4.006 0 00-3.7-3.7 48.678 48.678 0 00-7.324 0 4.006 4.006 0 00-3.7 3.7c-.017.22-.032.441-.046.662M19.5 12l3-3m-3 3l-3-3m-12 3c0 1.232.046 2.453.138 3.662a4.006 4.006 0 003.7 3.7 48.656 48.656 0 007.324 0 4.006 4.006 0 003.7-3.7c.017-.22.032-.441.046-.662M4.5 12l3 3m-3-3l-3 3" />
+          </svg>
+        </button>
+
+        {/* Reply */}
+        {replyTo?.apId === post.apId ? (
+          <div className="flex gap-2 flex-1">
+            <input
+              type="text"
+              value={replyContent}
+              onChange={(e) => setReplyContent(e.target.value)}
+              placeholder="Write a reply..."
+              className="flex-1 bg-surface-800 border border-surface-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-gray-600 focus:border-accent-400/30 focus:outline-none"
+            />
+            <button
+              onClick={async () => {
+                if (!replyContent.trim()) return;
+                await fetch("/api/admin", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    action: "reply",
+                    content: replyContent.trim(),
+                    inReplyTo: post.apId,
+                    targetInbox: `https://${post.domain}/users/${post.username}/inbox`,
+                    actorUri: `https://${post.domain}/users/${post.username}`,
+                    mentionHandle: `@${post.username}@${post.domain}`,
+                  }),
+                });
+                setReplyContent("");
+                setReplyTo(null);
+              }}
+              className="btn-primary text-xs !py-1.5"
+            >
+              Send
+            </button>
+            <button
+              onClick={() => { setReplyTo(null); setReplyContent(""); }}
+              className="text-xs text-gray-500 hover:text-gray-300"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() =>
+              setReplyTo({
+                apId: post.apId,
+                inbox: `https://${post.domain}/users/${post.username}/inbox`,
+              })
+            }
+            className="text-xs text-gray-500 hover:text-accent-400 transition-colors"
+          >
+            Reply
+          </button>
+        )}
+
+        {/* View thread */}
+        {post.inReplyTo && (
+          <button
+            onClick={() => onViewThread(post.id)}
+            className="text-xs text-gray-500 hover:text-accent-400 transition-colors"
+          >
+            View thread
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ThreadView({
+  thread,
+  onClose,
+}: {
+  thread: FediPostItem[];
+  onClose: () => void;
+}) {
+  const [replyTo, setReplyTo] = useState<string | null>(null);
+  const [replyContent, setReplyContent] = useState("");
+  const [sending, setSending] = useState(false);
+
+  const handleReply = async (post: FediPostItem) => {
+    if (!replyContent.trim() || sending) return;
+    setSending(true);
+    try {
+      await fetch("/api/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "reply",
+          content: replyContent.trim(),
+          inReplyTo: post.apId,
+          targetInbox: `https://${post.domain}/users/${post.username}/inbox`,
+          actorUri: `https://${post.domain}/users/${post.username}`,
+          mentionHandle: `@${post.username}@${post.domain}`,
+        }),
+      });
+      setReplyContent("");
+      setReplyTo(null);
+    } catch {
+      // silently fail
+    }
+    setSending(false);
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <div className="bg-surface-900 border border-surface-600/30 rounded-xl max-w-2xl w-full max-h-[85vh] flex flex-col">
+        {/* Fixed header */}
+        <div className="flex-shrink-0 border-b border-surface-700 p-4 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-white">Conversation</h3>
+          <button
+            onClick={onClose}
+            className="text-gray-500 hover:text-white transition-colors"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Scrollable thread content */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-1">
+          {thread.map((post, i) => (
+            <div key={post.id || i} className="relative">
+              {/* Thread connector line */}
+              {i < thread.length - 1 && (
+                <div className="absolute left-5 top-12 bottom-0 w-px bg-surface-600/50" />
+              )}
+              <div className="flex gap-3 pb-3">
+                {post.avatarUrl ? (
+                  <img src={post.avatarUrl} alt="" className="w-10 h-10 rounded-full flex-shrink-0" />
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-surface-700 flex-shrink-0" />
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-semibold text-white truncate">
+                      {post.displayName || post.username}
+                    </p>
+                    <p className="text-xs text-gray-600 truncate">
+                      @{post.username}@{post.domain}
+                    </p>
+                    <p className="text-xs text-gray-700">
+                      {new Date(post.publishedAt).toLocaleDateString()}
+                    </p>
+                  </div>
+                  <div
+                    className="text-gray-400 text-sm leading-relaxed mt-1 [&_a]:text-accent-400 [&_a]:hover:underline"
+                    dangerouslySetInnerHTML={{
+                      __html: post.contentHtml || post.content,
+                    }}
+                  />
+
+                  {/* Media */}
+                  {post.mediaUrls.length > 0 && (
+                    <div className={`mt-2 grid gap-2 ${post.mediaUrls.length > 1 ? "grid-cols-2" : ""}`}>
+                      {post.mediaUrls.map((url, j) => {
+                        const type = post.mediaTypes?.[j];
+                        if (type === "video") {
+                          return <video key={j} src={url} controls playsInline preload="auto" className="rounded-lg max-h-60 w-full bg-black" />;
+                        }
+                        return <img key={j} src={url} alt="" className="rounded-lg max-h-60 object-cover w-full" />;
+                      })}
+                    </div>
+                  )}
+
+                  {/* Embed card */}
+                  {post.embedUrl && (post.embedTitle || post.embedDescription) && (
+                    <a
+                      href={post.embedUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-2 block border border-surface-600/50 rounded-lg overflow-hidden hover:border-surface-600 transition-colors bg-surface-800/50"
+                    >
+                      {post.embedImage && (
+                        <img src={post.embedImage} alt="" className="w-full h-32 object-cover" />
+                      )}
+                      <div className="p-2">
+                        {post.embedTitle && (
+                          <p className="text-xs font-semibold text-white line-clamp-1">{post.embedTitle}</p>
+                        )}
+                        {post.embedDescription && (
+                          <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{post.embedDescription}</p>
+                        )}
+                        <p className="text-xs text-gray-600 mt-0.5">
+                          {post.embedSiteName || (() => { try { return new URL(post.embedUrl!).hostname; } catch { return ""; } })()}
+                        </p>
+                      </div>
+                    </a>
+                  )}
+
+                  {/* Reply action */}
+                  <div className="mt-2">
+                    {replyTo === post.apId ? (
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={replyContent}
+                          onChange={(e) => setReplyContent(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === "Enter") handleReply(post); }}
+                          placeholder="Write a reply..."
+                          autoFocus
+                          className="flex-1 bg-surface-800 border border-surface-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-gray-600 focus:border-accent-400/30 focus:outline-none"
+                        />
+                        <button
+                          onClick={() => handleReply(post)}
+                          disabled={sending}
+                          className="btn-primary text-xs !py-1.5"
+                        >
+                          {sending ? "..." : "Send"}
+                        </button>
+                        <button
+                          onClick={() => { setReplyTo(null); setReplyContent(""); }}
+                          className="text-xs text-gray-500 hover:text-gray-300"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => { setReplyTo(post.apId); setReplyContent(""); }}
+                        className="text-xs text-gray-500 hover:text-accent-400 transition-colors"
+                      >
+                        Reply
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const READ_TIMESTAMPS_KEY = "dm-read-timestamps";
+
+function getReadTimestamps(): Record<string, string> {
+  try {
+    return JSON.parse(localStorage.getItem(READ_TIMESTAMPS_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function markConversationRead(conversationKey: string) {
+  const timestamps = getReadTimestamps();
+  timestamps[conversationKey] = new Date().toISOString();
+  localStorage.setItem(READ_TIMESTAMPS_KEY, JSON.stringify(timestamps));
+}
+
+function MessagesTab({ directMessages }: { directMessages: DirectMessageItem[] }) {
+  const [activeConvo, setActiveConvo] = useState<string | null>(null);
+  const [replyContent, setReplyContent] = useState("");
+  const [sending, setSending] = useState(false);
+  const [pollingBsky, setPollingBsky] = useState(false);
+  const [readVersion, setReadVersion] = useState(0);
+  const [popupConvoKey, setPopupConvoKey] = useState<string | null>(null);
+  const [showThreadUserPopup, setShowThreadUserPopup] = useState(false);
+
+  // Auto-mark conversation as read when opened
+  useEffect(() => {
+    if (activeConvo) {
+      markConversationRead(activeConvo);
+      setReadVersion((v) => v + 1);
+    }
+  }, [activeConvo]);
+
+  // Group messages into conversations
+  const conversations: Conversation[] = (() => {
+    const groups = new Map<string, DirectMessageItem[]>();
+    for (const msg of directMessages) {
+      const existing = groups.get(msg.conversationKey) || [];
+      existing.push(msg);
+      groups.set(msg.conversationKey, existing);
+    }
+
+    return Array.from(groups.entries())
+      .map(([key, messages]) => {
+        const sorted = messages.sort(
+          (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+        );
+        const lastMessage = sorted[sorted.length - 1];
+        // Find the other person's info (most recent non-outgoing message)
+        const lastIncoming = [...sorted].reverse().find((m) => !m.isOutgoing);
+        const lastOutgoing = [...sorted].reverse().find((m) => m.isOutgoing);
+        const readTimestamps = getReadTimestamps();
+        const lastReadAt = readTimestamps[key];
+        const hasUnread = lastIncoming
+          ? (() => {
+              const incomingDate = new Date(lastIncoming.createdAt);
+              const lastOutgoingDate = lastOutgoing ? new Date(lastOutgoing.createdAt) : null;
+              const lastReadDate = lastReadAt ? new Date(lastReadAt) : null;
+              const latestAck = [lastOutgoingDate, lastReadDate]
+                .filter((d): d is Date => d !== null)
+                .reduce<Date | null>((a, b) => (a && a > b ? a : b), null);
+              return !latestAck || incomingDate > latestAck;
+            })()
+          : false;
+
+        return {
+          key,
+          source: lastMessage.source,
+          handle: lastIncoming?.senderHandle || lastMessage.senderHandle,
+          name: lastIncoming?.senderName || lastMessage.senderName,
+          avatar: lastIncoming?.senderAvatar || lastMessage.senderAvatar,
+          senderUri: lastIncoming?.senderUri || lastMessage.senderUri,
+          bskyConvoId: lastMessage.bskyConvoId,
+          messages: sorted,
+          lastMessage,
+          hasUnread,
+        };
+      })
+      .sort(
+        (a, b) =>
+          new Date(b.lastMessage.createdAt).getTime() -
+          new Date(a.lastMessage.createdAt).getTime()
+      );
+  })();
+
+  const activeConversation = conversations.find((c) => c.key === activeConvo);
+
+  const handleReply = async () => {
+    if (!replyContent.trim() || !activeConversation || sending) return;
+    setSending(true);
+
+    const action =
+      activeConversation.source === "bluesky" ? "bsky_dm_reply" : "dm_reply";
+
+    const body: Record<string, string> =
+      activeConversation.source === "bluesky"
+        ? { action, content: replyContent.trim(), convoId: activeConversation.bskyConvoId || "" }
+        : { action, content: replyContent.trim(), recipientUri: activeConversation.senderUri };
+
+    try {
+      await fetch("/api/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      setReplyContent("");
+      // Reload to see sent message
+      window.location.reload();
+    } catch {
+      // silently fail
+    }
+    setSending(false);
+  };
+
+  const handlePollBluesky = async () => {
+    setPollingBsky(true);
+    try {
+      await fetch("/api/bluesky-dms");
+      window.location.reload();
+    } catch {
+      // silently fail
+    }
+    setPollingBsky(false);
+  };
+
+  if (activeConversation) {
+    // Thread view
+    return (
+      <div>
+        <button
+          onClick={() => { setActiveConvo(null); setShowThreadUserPopup(false); }}
+          className="text-xs text-gray-500 hover:text-accent-400 mb-4 flex items-center gap-1"
+        >
+          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+          Back to conversations
+        </button>
+
+        <div className="glass-card p-4 mb-4">
+          <div className="flex items-center gap-3 relative">
+            {activeConversation.avatar ? (
+              <img src={activeConversation.avatar} alt="" className="w-10 h-10 rounded-full" />
+            ) : (
+              <div className="w-10 h-10 rounded-full bg-surface-700" />
+            )}
+            <div>
+              <button
+                onClick={() => setShowThreadUserPopup(!showThreadUserPopup)}
+                className="text-sm font-semibold text-white hover:text-accent-400 transition-colors text-left"
+              >
+                {activeConversation.name || activeConversation.handle}
+              </button>
+              <p className="text-xs text-gray-600">
+                <button
+                  onClick={() => setShowThreadUserPopup(!showThreadUserPopup)}
+                  className="hover:text-accent-400 transition-colors"
+                >
+                  {activeConversation.handle}
+                </button>
+                <span className={`ml-2 ${activeConversation.source === "bluesky" ? "text-blue-400" : "text-accent-400"}`}>
+                  via {activeConversation.source === "bluesky" ? "Bluesky" : "Fediverse"}
+                </span>
+              </p>
+            </div>
+            {showThreadUserPopup && (
+              <UserProfilePopup
+                name={activeConversation.name}
+                handle={activeConversation.handle}
+                avatar={activeConversation.avatar}
+                actorUri={activeConversation.senderUri}
+                source={activeConversation.source as "fedi" | "bluesky"}
+                onClose={() => setShowThreadUserPopup(false)}
+              />
+            )}
+          </div>
+        </div>
+
+        <div className="space-y-3 mb-4 max-h-[60vh] overflow-y-auto">
+          {activeConversation.messages.map((msg) => (
+            <div
+              key={msg.id}
+              className={`flex ${msg.isOutgoing ? "justify-end" : "justify-start"}`}
+            >
+              <div
+                className={`max-w-[75%] rounded-lg p-3 ${
+                  msg.isOutgoing
+                    ? "bg-accent-400/10 border border-accent-400/20"
+                    : "bg-surface-800 border border-surface-700"
+                }`}
+              >
+                {msg.contentHtml && !msg.isOutgoing ? (
+                  <div
+                    className="text-sm text-gray-300 [&_a]:text-accent-400 [&_a]:hover:underline"
+                    dangerouslySetInnerHTML={{ __html: msg.contentHtml }}
+                  />
+                ) : (
+                  <p className="text-sm text-gray-300">{msg.content}</p>
+                )}
+                <p className="text-[10px] text-gray-600 mt-1">
+                  {new Date(msg.createdAt).toLocaleString()}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Reply input */}
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={replyContent}
+            onChange={(e) => setReplyContent(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") handleReply(); }}
+            placeholder="Write a reply..."
+            className="flex-1 bg-surface-800 border border-surface-700 rounded-lg px-4 py-2.5 text-sm text-white placeholder-gray-600 focus:border-accent-400/30 focus:outline-none"
+          />
+          <button
+            onClick={handleReply}
+            disabled={sending || !replyContent.trim()}
+            className="btn-primary text-xs disabled:opacity-50"
+          >
+            {sending ? "..." : "Send"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Conversation list view
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-xs text-gray-500">{conversations.length} conversations</p>
+        <button
+          onClick={handlePollBluesky}
+          disabled={pollingBsky}
+          className="text-xs text-blue-400 hover:text-blue-300 transition-colors disabled:opacity-50"
+        >
+          {pollingBsky ? "Checking..." : "Check Bluesky DMs"}
+        </button>
+      </div>
+
+      {conversations.length === 0 ? (
+        <div className="glass-card p-8 text-center">
+          <p className="text-gray-500">No messages yet.</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {conversations.map((convo) => (
+            <div
+              key={convo.key}
+              onClick={() => setActiveConvo(convo.key)}
+              className="glass-card p-4 w-full text-left flex items-center gap-3 hover:border-accent-400/20 transition-colors cursor-pointer"
+            >
+              {convo.avatar ? (
+                <img src={convo.avatar} alt="" className="w-10 h-10 rounded-full flex-shrink-0" />
+              ) : (
+                <div className="w-10 h-10 rounded-full bg-surface-700 flex-shrink-0" />
+              )}
+              <div className="flex-1 min-w-0 relative">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPopupConvoKey(popupConvoKey === convo.key ? null : convo.key);
+                    }}
+                    className="text-sm font-semibold text-white truncate hover:text-accent-400 transition-colors"
+                  >
+                    {convo.name || convo.handle}
+                  </button>
+                  <span className={`text-[10px] ${convo.source === "bluesky" ? "text-blue-400" : "text-accent-400"}`}>
+                    {convo.source === "bluesky" ? "bsky" : "fedi"}
+                  </span>
+                  {convo.hasUnread && (
+                    <>
+                      <span className="w-2 h-2 rounded-full bg-blue-400 flex-shrink-0" />
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          markConversationRead(convo.key);
+                          setReadVersion((v) => v + 1);
+                        }}
+                        className="text-[10px] text-gray-500 hover:text-accent-400 transition-colors"
+                      >
+                        Mark read
+                      </button>
+                    </>
+                  )}
+                </div>
+                <p className="text-xs text-gray-500 truncate">
+                  {convo.lastMessage.isOutgoing ? "You: " : ""}
+                  {convo.lastMessage.content.slice(0, 80)}
+                </p>
+                {popupConvoKey === convo.key && (
+                  <UserProfilePopup
+                    name={convo.name}
+                    handle={convo.handle}
+                    avatar={convo.avatar}
+                    actorUri={convo.senderUri}
+                    source={convo.source as "fedi" | "bluesky"}
+                    onClose={() => setPopupConvoKey(null)}
+                  />
+                )}
+              </div>
+              <p className="text-[10px] text-gray-600 flex-shrink-0">
+                {new Date(convo.lastMessage.createdAt).toLocaleDateString()}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function TimelineClient({
+  initialPosts,
+  initialCursor,
+  following,
+  followers,
+  pendingComments,
+  directMessages = [],
+}: {
+  initialPosts: FediPostItem[];
+  initialCursor: string | null;
+  followers: FollowerItem[];
+  following: FollowingItem[];
+  pendingComments: PendingComment[];
+  directMessages?: DirectMessageItem[];
+}) {
+  const [tab, setTab] = useState<"feed" | "moderation" | "followers" | "following" | "messages">("feed");
+  const [showReplies, setShowReplies] = useState(false);
+  const [showBoosts, setShowBoosts] = useState(false);
+  const [posts, setPosts] = useState<FediPostItem[]>(initialPosts);
+  const [cursor, setCursor] = useState<string | null>(initialCursor);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [replyTo, setReplyTo] = useState<{ apId: string; inbox: string } | null>(null);
+  const [replyContent, setReplyContent] = useState("");
+  const [followHandle, setFollowHandle] = useState("");
+  const [threadPosts, setThreadPosts] = useState<FediPostItem[] | null>(null);
+  const [threadLoading, setThreadLoading] = useState(false);
+
+  // Filter feed based on toggles
+  const feedPosts = posts.filter((p) => {
+    if (!showReplies && p.inReplyTo) return false;
+    if (!showBoosts && p.boostedBy) return false;
+    return true;
+  });
+
+  const buildFeedParams = (extra?: Record<string, string>) => {
+    const params = new URLSearchParams(extra);
+    if (showReplies) params.set("replies", "1");
+    if (showBoosts) params.set("boosts", "1");
+    return params;
+  };
+
+  const handleLoadMore = async () => {
+    if (!cursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const params = buildFeedParams({ cursor });
+      const res = await fetch(`/api/feed?${params}`);
+      if (res.ok) {
+        const data = await res.json();
+        setPosts((prev) => [...prev, ...data.posts]);
+        setCursor(data.nextCursor);
+      }
+    } catch {
+      // silently fail
+    }
+    setLoadingMore(false);
+  };
+
+  // Reset pagination when toggling filters
+  const refetchFeed = async (replies: boolean, boosts: boolean) => {
+    setLoadingMore(true);
+    try {
+      const params = new URLSearchParams();
+      if (replies) params.set("replies", "1");
+      if (boosts) params.set("boosts", "1");
+      const res = await fetch(`/api/feed?${params}`);
+      if (res.ok) {
+        const data = await res.json();
+        setPosts(data.posts);
+        setCursor(data.nextCursor);
+      }
+    } catch {
+      // silently fail
+    }
+    setLoadingMore(false);
+  };
+
+  const handleToggleReplies = () => {
+    const next = !showReplies;
+    setShowReplies(next);
+    refetchFeed(next, showBoosts);
+  };
+
+  const handleToggleBoosts = () => {
+    const next = !showBoosts;
+    setShowBoosts(next);
+    refetchFeed(showReplies, next);
+  };
+
+  const handleViewThread = async (postId: string) => {
+    setThreadLoading(true);
+    try {
+      const res = await fetch(`/api/conversation?postId=${postId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setThreadPosts(data.thread);
+      }
+    } catch {
+      // silently fail
+    }
+    setThreadLoading(false);
+  };
+
+  return (
+    <div>
+      {/* Thread overlay */}
+      {threadPosts && (
+        <ThreadView thread={threadPosts} onClose={() => setThreadPosts(null)} />
+      )}
+      {threadLoading && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center">
+          <div className="text-accent-400 text-sm">Loading thread...</div>
+        </div>
+      )}
+
+      {/* Tabs */}
+      <div className="flex gap-2 mb-6">
+        {(["feed", "messages", "moderation", "followers", "following"] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`px-3 py-1.5 text-xs font-semibold uppercase tracking-wider rounded-lg border transition-colors ${
+              tab === t
+                ? "border-accent-400/30 bg-accent-400/10 text-accent-400"
+                : "border-surface-700 text-gray-500 hover:text-gray-300"
+            }`}
+          >
+            {t}
+            {t === "moderation" && pendingComments.length > 0 && (
+              <span className="ml-1.5 bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">
+                {pendingComments.length}
+              </span>
+            )}
+            {t === "messages" && (() => {
+              // Count conversations with unread messages
+              const groups = new Map<string, typeof directMessages>();
+              for (const msg of directMessages) {
+                const existing = groups.get(msg.conversationKey) || [];
+                existing.push(msg);
+                groups.set(msg.conversationKey, existing);
+              }
+              const readTs = getReadTimestamps();
+              let unreadCount = 0;
+              for (const [key, msgs] of groups) {
+                const sorted = msgs.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+                const lastIn = [...sorted].reverse().find((m) => !m.isOutgoing);
+                const lastOut = [...sorted].reverse().find((m) => m.isOutgoing);
+                if (lastIn) {
+                  const inDate = new Date(lastIn.createdAt);
+                  const outDate = lastOut ? new Date(lastOut.createdAt) : null;
+                  const readDate = readTs[key] ? new Date(readTs[key]) : null;
+                  const latestAck = [outDate, readDate].filter((d): d is Date => d !== null)
+                    .reduce<Date | null>((a, b) => (a && a > b ? a : b), null);
+                  if (!latestAck || inDate > latestAck) unreadCount++;
+                }
+              }
+              return unreadCount > 0 ? (
+                <span className="ml-1.5 bg-blue-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">
+                  {unreadCount}
+                </span>
+              ) : null;
+            })()}
+          </button>
+        ))}
+      </div>
+
+      {/* Feed */}
+      {tab === "feed" && (
+        <div>
+          {/* Feed toggles */}
+          <div className="flex items-center gap-4 mb-4">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <button
+                onClick={handleToggleReplies}
+                className={`relative w-9 h-5 rounded-full transition-colors ${
+                  showReplies ? "bg-accent-400" : "bg-surface-600"
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
+                    showReplies ? "translate-x-4" : ""
+                  }`}
+                />
+              </button>
+              <span className="text-xs text-gray-500">Show replies</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <button
+                onClick={handleToggleBoosts}
+                className={`relative w-9 h-5 rounded-full transition-colors ${
+                  showBoosts ? "bg-accent-400" : "bg-surface-600"
+                }`}
+              >
+                <span
+                  className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${
+                    showBoosts ? "translate-x-4" : ""
+                  }`}
+                />
+              </button>
+              <span className="text-xs text-gray-500">Show boosts</span>
+            </label>
+          </div>
+
+          <div className="space-y-4">
+            {feedPosts.length === 0 ? (
+              <div className="glass-card p-8 text-center">
+                <p className="text-gray-500">
+                  {showReplies
+                    ? "Your feed is empty. Follow some accounts to see their posts here."
+                    : "No top-level posts. Try toggling replies on, or follow more accounts."}
+                </p>
+              </div>
+            ) : (
+              feedPosts.map((post) => (
+                <PostCard
+                  key={post.id}
+                  post={post}
+                  replyTo={replyTo}
+                  setReplyTo={setReplyTo}
+                  replyContent={replyContent}
+                  setReplyContent={setReplyContent}
+                  allPosts={posts}
+                  onViewThread={handleViewThread}
+                />
+              ))
+            )}
+
+            {/* Load more */}
+            {cursor && (
+              <div className="text-center pt-2">
+                <button
+                  onClick={handleLoadMore}
+                  disabled={loadingMore}
+                  className="px-6 py-2 text-sm text-accent-400 border border-accent-400/30 rounded-lg hover:bg-accent-400/10 transition-colors disabled:opacity-50"
+                >
+                  {loadingMore ? "Loading..." : "Load more"}
+                </button>
+              </div>
+            )}
+
+            {!cursor && feedPosts.length > 0 && (
+              <p className="text-center text-xs text-gray-600 pt-2">
+                You've reached the end
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Messages */}
+      {tab === "messages" && (
+        <MessagesTab directMessages={directMessages} />
+      )}
+
+      {/* Moderation */}
+      {tab === "moderation" && (
+        <div className="space-y-4">
+          {pendingComments.length === 0 ? (
+            <div className="glass-card p-8 text-center">
+              <p className="text-gray-500">No pending comments to moderate.</p>
+            </div>
+          ) : (
+            pendingComments.map((comment) => (
+              <div key={comment.id} className="glass-card p-5">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-6 h-6 rounded-full bg-surface-700 flex items-center justify-center text-xs text-gray-400">
+                    {comment.guestName[0]?.toUpperCase()}
+                  </div>
+                  <span className="text-sm font-semibold text-white">
+                    {comment.guestName}
+                  </span>
+                  <span className="text-xs text-gray-600">
+                    on{" "}
+                    {comment.post
+                      ? comment.post.title || comment.post.slug
+                      : comment.photo
+                        ? comment.photo.title || comment.photo.slug
+                        : "unknown"}
+                  </span>
+                </div>
+                <p className="text-gray-400 text-sm mb-3">{comment.content}</p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={async () => {
+                      await fetch("/api/admin", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          action: "approve_comment",
+                          commentId: comment.id,
+                        }),
+                      });
+                      window.location.reload();
+                    }}
+                    className="btn-primary text-xs !py-1.5"
+                  >
+                    Approve
+                  </button>
+                  <button
+                    onClick={async () => {
+                      await fetch("/api/admin", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          action: "reject_comment",
+                          commentId: comment.id,
+                        }),
+                      });
+                      window.location.reload();
+                    }}
+                    className="text-red-400 hover:text-red-300 text-xs border border-red-800 px-3 py-1.5 rounded-lg"
+                  >
+                    Reject
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {/* Followers */}
+      {tab === "followers" && (
+        <div className="space-y-2">
+          {followers.length === 0 ? (
+            <div className="glass-card p-8 text-center">
+              <p className="text-gray-500">No followers yet. Share your Fedi handle to get discovered.</p>
+            </div>
+          ) : (
+            followers.map((f) => (
+              <div key={f.id} className="glass-card p-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  {f.avatarUrl ? (
+                    <img src={f.avatarUrl} alt="" className="w-10 h-10 rounded-full" />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-surface-700" />
+                  )}
+                  <div>
+                    <p className="text-sm font-semibold text-white">{f.displayName || f.username}</p>
+                    <a
+                      href={f.actorUri}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-gray-500 hover:text-accent-400 transition-colors"
+                    >
+                      @{f.username}@{f.domain}
+                    </a>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <a
+                    href={f.actorUri}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-gray-500 hover:text-accent-400 transition-colors"
+                  >
+                    View Profile
+                  </a>
+                  {!following.some((fw) => fw.actorUri === f.actorUri) && (
+                    <button
+                      onClick={async () => {
+                        await fetch("/api/admin", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            action: "follow",
+                            handle: `@${f.username}@${f.domain}`,
+                          }),
+                        });
+                        window.location.reload();
+                      }}
+                      className="btn-primary text-xs !py-1 !px-3"
+                    >
+                      Follow Back
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {/* Following */}
+      {tab === "following" && (
+        <div>
+          {/* Follow form */}
+          <div className="glass-card p-5 mb-6">
+            <h3 className="text-sm font-semibold text-white mb-3">
+              Follow an Account
+            </h3>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="@user@mastodon.social"
+                value={followHandle}
+                onChange={(e) => setFollowHandle(e.target.value)}
+                className="flex-1 bg-surface-800 border border-surface-700 rounded-lg px-4 py-2 text-sm text-white placeholder-gray-600 focus:border-accent-400/30 focus:outline-none"
+              />
+              <button
+                onClick={async () => {
+                  if (!followHandle.trim()) return;
+                  await fetch("/api/admin", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      action: "follow",
+                      handle: followHandle.trim(),
+                    }),
+                  });
+                  setFollowHandle("");
+                  window.location.reload();
+                }}
+                className="btn-primary text-xs"
+              >
+                Follow
+              </button>
+            </div>
+          </div>
+
+          {/* Following list */}
+          <div className="space-y-2">
+            {following.length === 0 ? (
+              <p className="text-gray-500 text-sm">
+                Not following anyone yet.
+              </p>
+            ) : (
+              following.map((f) => (
+                <div
+                  key={f.id}
+                  className="glass-card p-4 flex items-center justify-between"
+                >
+                  <div className="flex items-center gap-3">
+                    {f.avatarUrl ? (
+                      <img
+                        src={f.avatarUrl}
+                        alt=""
+                        className="w-8 h-8 rounded-full"
+                      />
+                    ) : (
+                      <div className="w-8 h-8 rounded-full bg-surface-700" />
+                    )}
+                    <div>
+                      <p className="text-sm font-semibold text-white">
+                        {f.displayName || f.username}
+                      </p>
+                      <p className="text-xs text-gray-600">
+                        @{f.username}@{f.domain}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      await fetch("/api/admin", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          action: "unfollow",
+                          followingId: f.id,
+                        }),
+                      });
+                      window.location.reload();
+                    }}
+                    className="text-xs text-gray-500 hover:text-red-400 transition-colors"
+                  >
+                    Unfollow
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

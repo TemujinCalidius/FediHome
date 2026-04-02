@@ -1,0 +1,262 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// === Blog Content ===
+
+model Post {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  title       String?
+  content     String   // markdown
+  contentHtml String?  // rendered HTML cache
+  excerpt     String?
+  category    String   @default("note") // note, article, journal
+  tags        String[]
+  coverImage  String?
+  photos         String[] // array of image paths for photo posts
+  photoCaptions  String[] // parallel array of captions/alt text
+  published   Boolean  @default(true)
+  publishedAt DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // ActivityPub
+  apId        String?  @unique // e.g. https://example.com/post/my-post
+
+  // Bluesky crosspost
+  blueskyUri  String?  // at:// URI returned from crosspost
+
+  // Fedi interaction counts (cached)
+  likeCount   Int      @default(0)
+  boostCount  Int      @default(0)
+
+  // Bluesky interaction counts (cached, updated on poll)
+  bskyLikeCount   Int  @default(0)
+  bskyRepostCount Int  @default(0)
+
+  // Guest comments
+  guestComments GuestComment[]
+
+  // Bluesky replies
+  blueskyReplies BlueskyReply[]
+
+  @@index([publishedAt])
+  @@index([category])
+}
+
+// === Bluesky Replies ===
+
+model BlueskyReply {
+  id           String   @id @default(cuid())
+  postId       String
+  post         Post     @relation(fields: [postId], references: [id])
+  blueskyUri   String   @unique // the reply's AT URI
+  authorDid    String
+  authorHandle String
+  displayName  String?
+  avatarUrl    String?
+  content      String
+  createdAt    DateTime
+  fetchedAt    DateTime @default(now())
+
+  @@index([postId])
+}
+
+// === Photography ===
+
+model Photo {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  title       String?
+  caption     String?
+  imagePath   String   // /uploads/2026/03/photo.jpg
+  thumbPath   String?  // smaller version for grid
+  category    String   @default("general") // wildlife, macro, landscape, street, general
+  exifData    Json?    // { camera, lens, aperture, shutter, iso, focalLength }
+  tags        String[]
+  published   Boolean  @default(true)
+  publishedAt DateTime @default(now())
+
+  // ActivityPub
+  apId        String?  @unique
+
+  // Fedi interaction counts
+  likeCount   Int      @default(0)
+  boostCount  Int      @default(0)
+
+  // Guest comments
+  guestComments GuestComment[]
+
+  @@index([publishedAt])
+  @@index([category])
+}
+
+// === Guest Comments ===
+
+model GuestComment {
+  id          String   @id @default(cuid())
+  guestName   String
+  content     String
+  ipHash      String   // hashed IP for rate limiting
+  status      String   @default("pending") // pending, approved, rejected
+  federated   Boolean  @default(false) // has been published to Fediverse
+
+  // Can be on a Post or Photo
+  postId      String?
+  post        Post?    @relation(fields: [postId], references: [id])
+  photoId     String?
+  photo       Photo?   @relation(fields: [photoId], references: [id])
+
+  createdAt   DateTime @default(now())
+
+  @@index([status])
+  @@index([postId])
+  @@index([photoId])
+}
+
+// === Fediverse ===
+
+model FediFollower {
+  id        String   @id @default(cuid())
+  actorUri  String   @unique // e.g. https://mastodon.social/users/someone
+  inbox     String
+  sharedInbox String?
+  username  String
+  domain    String
+  displayName String?
+  avatarUrl String?
+  accepted  Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+model FediFollowing {
+  id        String   @id @default(cuid())
+  actorUri  String   @unique
+  inbox     String
+  username  String
+  domain    String
+  displayName String?
+  avatarUrl String?
+  createdAt DateTime @default(now())
+}
+
+model FediPost {
+  id          String   @id @default(cuid())
+  actorUri    String
+  apId        String   @unique
+  content     String
+  contentHtml String?
+  mediaUrls   String[]
+  mediaTypes  String[] // parallel to mediaUrls: "image" or "video"
+  username    String
+  domain      String
+  displayName String?
+  avatarUrl   String?
+  publishedAt DateTime
+  createdAt   DateTime @default(now())
+
+  isOutgoing  Boolean  @default(false) // true for posts/replies WE sent
+
+  // Boost/repost tracking
+  boostedBy     String?  // actorUri of the person who boosted this into our feed
+  boostedByName String?  // display name of the booster
+
+  // Conversation threading
+  inReplyTo      String?  // AP ID of parent post
+  conversationId String?  // groups posts into threads
+
+  // Link preview embed
+  embedUrl         String?
+  embedTitle       String?
+  embedDescription String?
+  embedImage       String?  // local proxied path to og:image
+  embedSiteName    String?
+
+  @@index([publishedAt])
+  @@index([conversationId])
+  @@index([inReplyTo])
+}
+
+model FediInteraction {
+  id        String   @id @default(cuid())
+  type      String   // like, boost, reply
+  actorUri  String
+  targetApId String  // the AP ID of the post/photo being interacted with
+  content   String?  // for replies
+  username  String
+  domain    String
+  displayName String?
+  avatarUrl String?
+  createdAt DateTime @default(now())
+
+  @@index([targetApId])
+  @@index([type])
+}
+
+// === Auth (for Micropub) ===
+
+model AuthToken {
+  id         String   @id @default(cuid())
+  tokenHash  String   @unique
+  label      String   // e.g. "iA Writer", "Quill"
+  scope      String   @default("create update delete media")
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime?
+}
+
+// === Direct Messages ===
+
+model DirectMessage {
+  id              String   @id @default(cuid())
+  source          String   // "fedi" or "bluesky"
+
+  senderUri       String   // actorUri (fedi) or DID (bluesky)
+  senderHandle    String   // @user@domain (fedi) or handle.bsky.social
+  senderName      String?
+  senderAvatar    String?
+
+  content         String
+  contentHtml     String?
+  apId            String?  @unique
+  bskyConvoId     String?
+  bskyMessageId   String?  @unique
+
+  conversationKey String   // "fedi:{actorUri}" or "bsky:{did}"
+  isOutgoing      Boolean  @default(false)
+
+  createdAt       DateTime
+  fetchedAt       DateTime @default(now())
+
+  @@index([conversationKey])
+  @@index([source])
+  @@index([createdAt])
+}
+
+// === ActivityPub Keys ===
+
+model ActorKeys {
+  id         String @id @default("main")
+  publicKey  String
+  privateKey String
+}
+
+// === Site Settings (created by setup wizard) ===
+
+model SiteSettings {
+  id            String   @id @default("main")
+  setupDone     Boolean  @default(false)
+  siteName      String?
+  authorName    String?
+  authorBio     String?
+  authorTagline String?
+  contactEmail  String?
+  verifiedEmail String?
+  accentColor   String?  @default("#3b82f6")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}

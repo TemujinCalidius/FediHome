@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# Next.js build
+.next/
+out/
+
+# Environment (contains secrets)
+.env
+.env.local
+.env.production
+.env.*.local
+
+# User uploads
+public/uploads/
+
+# Keys
+*.pem
+*.key
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Prisma
+prisma/migrations/*/migration_lock.toml

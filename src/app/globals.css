@@ -1,0 +1,185 @@
+@import "tailwindcss";
+
+/* === FediHome — Default Theme === */
+
+@theme {
+  /* Neutral slate dark palette */
+  --color-surface-950: #0a0a0f;
+  --color-surface-900: #111118;
+  --color-surface-800: #1a1a24;
+  --color-surface-700: #252530;
+  --color-surface-600: #3a3a4a;
+
+  /* Blue accent */
+  --color-accent-50: #eff6ff;
+  --color-accent-100: #dbeafe;
+  --color-accent-200: #bfdbfe;
+  --color-accent-300: #93c5fd;
+  --color-accent-400: #60a5fa;
+  --color-accent-500: #3b82f6;
+  --color-accent-600: #2563eb;
+  --color-accent-700: #1d4ed8;
+  --color-accent-800: #1e40af;
+  --color-accent-900: #1e3a8a;
+
+  /* Emerald green for success states */
+  --color-moss-400: #34d399;
+  --color-moss-500: #10b981;
+  --color-moss-600: #059669;
+
+  /* Typography */
+  --font-display: "Source Serif 4", "Georgia", serif;
+  --font-body: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", monospace;
+}
+
+/* Load fonts */
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/Inter-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Source Serif 4";
+  src: url("/fonts/SourceSerif4-Variable.woff2") format("woff2");
+  font-weight: 200 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* === Base Styles === */
+body {
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* === Component Utilities === */
+
+.glass-card {
+  background: rgba(17, 17, 24, 0.85);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(59, 130, 246, 0.1);
+  border-radius: 12px;
+  transition: border-color 0.2s ease;
+}
+
+.glass-card:hover {
+  border-color: rgba(59, 130, 246, 0.2);
+}
+
+/* Subtle divider */
+.divider {
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    transparent 0%,
+    rgba(59, 130, 246, 0.15) 50%,
+    transparent 100%
+  );
+}
+
+/* Buttons */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1.5rem;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.875rem;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: #ffffff;
+  transition: all 0.2s ease;
+}
+
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.25);
+}
+
+.btn-outlined {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1.5rem;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.875rem;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  color: #3b82f6;
+  transition: all 0.2s ease;
+}
+
+.btn-outlined:hover {
+  background: rgba(59, 130, 246, 0.08);
+  border-color: rgba(59, 130, 246, 0.5);
+}
+
+/* Photo grid lightbox overlay */
+.lightbox-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.95);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Lightbox slide animations — full scroll effect */
+@keyframes lb-slide-out-left {
+  from { transform: translateX(0); }
+  to { transform: translateX(-100vw); }
+}
+@keyframes lb-slide-out-right {
+  from { transform: translateX(0); }
+  to { transform: translateX(100vw); }
+}
+@keyframes lb-slide-in-right {
+  from { transform: translateX(100vw); }
+  to { transform: translateX(0); }
+}
+@keyframes lb-slide-in-left {
+  from { transform: translateX(-100vw); }
+  to { transform: translateX(0); }
+}
+.lightbox-slide-out-left { animation: lb-slide-out-left 0.3s ease-in forwards; }
+.lightbox-slide-out-right { animation: lb-slide-out-right 0.3s ease-in forwards; }
+.lightbox-slide-in-right { animation: lb-slide-in-right 0.3s ease-out forwards; }
+.lightbox-slide-in-left { animation: lb-slide-in-left 0.3s ease-out forwards; }
+
+/* ALT popup fade */
+@keyframes alt-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes alt-fade-out {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(4px); }
+}
+.alt-popup-enter { animation: alt-fade-in 0.2s ease-out forwards; }
+.alt-popup-exit { animation: alt-fade-out 0.15s ease-in forwards; }
+
+/* Fedi interaction badges */
+.fedi-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  background: rgba(59, 130, 246, 0.06);
+  border: 1px solid rgba(59, 130, 246, 0.1);
+  color: #60a5fa;
+}
