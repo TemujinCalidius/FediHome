@@ -1,6 +1,15 @@
 import crypto from "crypto";
 import { prisma } from "./db";
 
+export function safeCompare(a: string, b: string): boolean {
+  if (!a || !b) return false;
+  try {
+    return crypto.timingSafeEqual(Buffer.from(a, "utf-8"), Buffer.from(b, "utf-8"));
+  } catch {
+    return false; // different lengths
+  }
+}
+
 export function hashToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
@@ -47,13 +56,15 @@ export async function generateToken(label: string): Promise<string> {
 export function isAdminRequest(authHeader: string | null): boolean {
   if (!authHeader?.startsWith("Bearer ")) return false;
   const token = authHeader.slice(7);
-  return token === process.env.ADMIN_SECRET;
+  return safeCompare(token, process.env.ADMIN_SECRET || "");
 }
 
 /** Verify admin via cookie. Use in API route handlers. */
 export function verifyAdmin(req: { cookies: { get(name: string): { value: string } | undefined } }): boolean {
   const cookie = req.cookies.get("sl_admin")?.value;
-  return !!cookie && cookie === process.env.ADMIN_SECRET;
+  if (!cookie) return false;
+  const expectedHash = crypto.createHash("sha256").update(process.env.ADMIN_SECRET || "").digest("hex");
+  return safeCompare(cookie, expectedHash);
 }
 
 /** CSRF origin check. Returns true if origin is allowed. */

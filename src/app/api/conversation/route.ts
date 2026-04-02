@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { processAttachments, fetchLinkEmbed } from "@/lib/fedi-media";
+import { verifyAdmin } from "@/lib/auth";
 
 const MAX_DEPTH = 20;
 
 export async function GET(req: NextRequest) {
   // Admin-only
-  const cookie = req.cookies.get("sl_admin")?.value;
-  if (cookie !== process.env.ADMIN_SECRET) {
+  if (!verifyAdmin(req)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 

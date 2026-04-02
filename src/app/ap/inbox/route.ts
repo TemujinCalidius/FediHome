@@ -9,12 +9,13 @@ const siteUrl = process.env.SITE_URL || "http://localhost:3000";
 export async function POST(req: NextRequest) {
   // Verify HTTP signature — reject unsigned/invalid requests
   const sigHeader = req.headers.get("signature");
-  if (sigHeader) {
-    const valid = await verifyIncomingSignature(req);
-    if (!valid) {
-      console.warn("AP inbox: rejected invalid HTTP signature");
-      return NextResponse.json({ error: "invalid signature" }, { status: 401 });
-    }
+  if (!sigHeader) {
+    return NextResponse.json({ error: "signature required" }, { status: 401 });
+  }
+  const valid = await verifyIncomingSignature(req);
+  if (!valid) {
+    console.warn("AP inbox: rejected invalid HTTP signature");
+    return NextResponse.json({ error: "invalid signature" }, { status: 401 });
   }
 
   let activity;

@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
-import { hashToken } from "@/lib/auth";
+import { hashToken, safeCompare } from "@/lib/auth";
 
 /**
  * XML-RPC endpoint (MetaWeblog API) for compatibility with micro.blog app
@@ -52,7 +52,7 @@ function extractStruct(xml: string): Record<string, string> {
 
 async function verifyAuth(username: string, password: string): Promise<boolean> {
   // Accept admin secret OR any valid Micropub token as password
-  if (password === process.env.ADMIN_SECRET) return true;
+  if (safeCompare(password, process.env.ADMIN_SECRET || "")) return true;
   const hash = hashToken(password);
   const token = await prisma.authToken.findUnique({ where: { tokenHash: hash } });
   return !!token;

@@ -102,7 +102,6 @@ export async function POST(request: Request) {
     // Set cookie to indicate setup is done
     const response = NextResponse.json({
       success: true,
-      adminSecret: serverSecret,
     });
 
     response.cookies.set("fedihome_setup", "done", {

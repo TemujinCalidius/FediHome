@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { BskyAgent } from "@atproto/api";
+import { verifyAdmin } from "@/lib/auth";
 
 /**
  * Poll Bluesky for replies to crossposted posts.
@@ -10,8 +11,7 @@ import { BskyAgent } from "@atproto/api";
  * Protected by admin cookie or a simple API secret for cron use.
  */
 export async function GET(req: NextRequest) {
-  const cookie = req.cookies.get("sl_admin")?.value;
-  if (cookie !== process.env.ADMIN_SECRET) {
+  if (!verifyAdmin(req)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 

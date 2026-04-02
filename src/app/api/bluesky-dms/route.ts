@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pollBlueskyDMs } from "@/lib/bluesky-dm-poll";
+import { verifyAdmin } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
-  const cookie = req.cookies.get("sl_admin")?.value;
-  if (cookie !== process.env.ADMIN_SECRET) {
+  if (!verifyAdmin(req)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 

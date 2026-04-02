@@ -1,6 +1,33 @@
 import { writeFile, mkdir, readdir, stat, unlink } from "fs/promises";
 import path from "path";
 
+function isPrivateUrl(urlString: string): boolean {
+  try {
+    const parsed = new URL(urlString);
+    const host = parsed.hostname.toLowerCase();
+    if (
+      host === "localhost" ||
+      host === "127.0.0.1" ||
+      host === "[::1]" ||
+      host === "0.0.0.0" ||
+      host.endsWith(".local") ||
+      host.startsWith("10.") ||
+      host.startsWith("192.168.") ||
+      host.startsWith("172.16.") || host.startsWith("172.17.") ||
+      host.startsWith("172.18.") || host.startsWith("172.19.") ||
+      host.startsWith("172.20.") || host.startsWith("172.21.") ||
+      host.startsWith("172.22.") || host.startsWith("172.23.") ||
+      host.startsWith("172.24.") || host.startsWith("172.25.") ||
+      host.startsWith("172.26.") || host.startsWith("172.27.") ||
+      host.startsWith("172.28.") || host.startsWith("172.29.") ||
+      host.startsWith("172.30.") || host.startsWith("172.31.") ||
+      host.startsWith("169.254.") ||
+      host.startsWith("100.64.")
+    ) return true;
+    return false;
+  } catch { return true; }
+}
+
 export interface EmbedData {
   url: string;
   title: string | null;
@@ -14,6 +41,7 @@ export interface EmbedData {
  * Returns the local URL path (e.g., /uploads/fedi/2026/03/abc123.jpg)
  */
 export async function proxyImage(remoteUrl: string): Promise<string | null> {
+  if (isPrivateUrl(remoteUrl)) return null;
   try {
     const res = await fetch(remoteUrl, {
       signal: AbortSignal.timeout(10000),
@@ -22,7 +50,7 @@ export async function proxyImage(remoteUrl: string): Promise<string | null> {
     if (!res.ok) return null;
 
     const contentType = res.headers.get("content-type") || "";
-    if (!contentType.startsWith("image/")) return null;
+    if (!contentType.startsWith("image/") || contentType.includes("svg")) return null;
 
     const buffer = Buffer.from(await res.arrayBuffer());
     if (buffer.length === 0) return null;
@@ -33,7 +61,6 @@ export async function proxyImage(remoteUrl: string): Promise<string | null> {
       "image/png": "png",
       "image/webp": "webp",
       "image/gif": "gif",
-      "image/svg+xml": "svg",
     };
     let ext = extMap[contentType] || "jpg";
     // Fallback: try from URL
@@ -66,6 +93,7 @@ export async function proxyImage(remoteUrl: string): Promise<string | null> {
  * Max 50MB per video to avoid filling disk.
  */
 export async function proxyVideo(remoteUrl: string): Promise<string | null> {
+  if (isPrivateUrl(remoteUrl)) return null;
   try {
     const res = await fetch(remoteUrl, {
       signal: AbortSignal.timeout(30000),
@@ -243,31 +271,7 @@ export async function fetchLinkEmbed(htmlContent: string): Promise<EmbedData | n
     if (!url) return null;
 
     // Block SSRF — reject private/internal IPs
-    try {
-      const parsed = new URL(url);
-      const host = parsed.hostname;
-      if (
-        host === "localhost" ||
-        host.startsWith("127.") ||
-        host.startsWith("10.") ||
-        host.startsWith("192.168.") ||
-        host.startsWith("172.16.") ||
-        host.startsWith("172.17.") ||
-        host.startsWith("172.18.") ||
-        host.startsWith("172.19.") ||
-        host.startsWith("172.2") ||
-        host.startsWith("172.30.") ||
-        host.startsWith("172.31.") ||
-        host === "169.254.169.254" ||
-        host.endsWith(".local") ||
-        host === "[::1]" ||
-        host === "0.0.0.0"
-      ) {
-        return null;
-      }
-    } catch {
-      return null;
-    }
+    if (isPrivateUrl(url)) return null;
 
     const res = await fetch(url, {
       signal: AbortSignal.timeout(5000),
