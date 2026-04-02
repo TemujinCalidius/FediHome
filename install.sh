@@ -1,6 +1,6 @@
 #!/bin/bash
 # FediHome — One-command install
-# Usage: curl -sSL https://raw.githubusercontent.com/FediHome/fedihome/main/install.sh | bash
+# Usage: curl -sSL https://raw.githubusercontent.com/TemujinCalidius/fedihome/main/install.sh | bash
 
 set -e
 
@@ -57,7 +57,7 @@ echo -e "${GREEN}✓${NC} PostgreSQL found"
 
 echo ""
 echo -e "${BLUE}Cloning FediHome...${NC}"
-git clone https://github.com/FediHome/fedihome.git
+git clone https://github.com/TemujinCalidius/fedihome.git
 cd fedihome
 
 echo -e "${BLUE}Installing dependencies...${NC}"

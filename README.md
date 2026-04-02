@@ -2,6 +2,8 @@
 
 > Your home on the Fediverse. Blog, share photos, and connect — all from your own domain.
 
+![FediHome Homepage](docs/screenshots/homepage.png)
+
 ## What is FediHome?
 
 FediHome is a self-hosted, single-user publishing platform that connects to the Fediverse via ActivityPub. Your domain becomes your identity — `@you@yourdomain.com`. No Mastodon instance, no WordPress, no Pixelfed — just one app that does it all.
@@ -30,16 +32,22 @@ FediHome is a self-hosted, single-user publishing platform that connects to the 
 - Setup wizard configures everything
 - Docker support (optional)
 
+## Screenshots
+
+| Setup Wizard | Article Post | About Page |
+|:---:|:---:|:---:|
+| ![Setup](docs/screenshots/setup-wizard.png) | ![Article](docs/screenshots/article.png) | ![About](docs/screenshots/about.png) |
+
 ## Quick Start
 
 ### Option 1: Script install
 ```bash
-curl -sSL https://raw.githubusercontent.com/FediHome/fedihome/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/TemujinCalidius/fedihome/main/install.sh | bash
 ```
 
 ### Option 2: Manual install
 ```bash
-git clone https://github.com/FediHome/fedihome.git
+git clone https://github.com/TemujinCalidius/fedihome.git
 cd fedihome
 npm install
 cp .env.example .env.local
@@ -53,7 +61,7 @@ Then visit `http://localhost:3000/setup` to configure your instance.
 
 ### Option 3: Docker
 ```bash
-git clone https://github.com/FediHome/fedihome.git
+git clone https://github.com/TemujinCalidius/fedihome.git
 cd fedihome
 cp .env.example .env.local
 docker compose up -d

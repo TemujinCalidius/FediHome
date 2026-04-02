@@ -63,7 +63,7 @@ sudo apt install -y certbot python3-certbot-nginx
 
 ```bash
 cd /opt
-sudo git clone https://github.com/FediHome/fedihome.git
+sudo git clone https://github.com/TemujinCalidius/fedihome.git
 sudo chown -R $USER:$USER /opt/fedihome
 cd /opt/fedihome
 npm install
@@ -156,7 +156,7 @@ pm2 logs fedihome
 ### Standalone Docker
 
 ```bash
-git clone https://github.com/FediHome/fedihome.git
+git clone https://github.com/TemujinCalidius/fedihome.git
 cd fedihome
 cp .env.example .env.local
 # Edit .env.local with your settings

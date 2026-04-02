@@ -12,7 +12,7 @@ Thanks for your interest in contributing to FediHome! This guide will help you g
 
 1. **Clone the repo:**
    ```bash
-   git clone https://github.com/FediHome/fedihome.git
+   git clone https://github.com/TemujinCalidius/fedihome.git
    cd fedihome
    ```
 

@@ -11,7 +11,7 @@ Choose one of three installation methods.
 The install script checks prerequisites, clones the repo, installs dependencies, and walks you through database configuration.
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/FediHome/fedihome/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/TemujinCalidius/fedihome/main/install.sh | bash
 ```
 
 The script will:
@@ -34,7 +34,7 @@ npm start
 ### Option B: Manual Install
 
 ```bash
-git clone https://github.com/FediHome/fedihome.git
+git clone https://github.com/TemujinCalidius/fedihome.git
 cd fedihome
 npm install
 cp .env.example .env.local
@@ -57,7 +57,7 @@ npm start
 ### Option C: Docker
 
 ```bash
-git clone https://github.com/FediHome/fedihome.git
+git clone https://github.com/TemujinCalidius/fedihome.git
 cd fedihome
 cp .env.example .env.local
 ```
