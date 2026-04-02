@@ -128,6 +128,8 @@ export async function POST(req: NextRequest) {
     crosspostBluesky,
     crosspostThreads,
     crosspostDayOne,
+    addToPhotography,
+    photoCategory,
   } = body as {
     title?: string;
     content: string;
@@ -136,6 +138,8 @@ export async function POST(req: NextRequest) {
     crosspostBluesky?: boolean;
     crosspostThreads?: boolean;
     crosspostDayOne?: boolean;
+    addToPhotography?: boolean;
+    photoCategory?: string;
   };
 
   if (!content?.trim()) {
@@ -187,6 +191,28 @@ export async function POST(req: NextRequest) {
       apId: `${siteUrl}/post/${slug}`,
     },
   });
+
+  // Create Photo records if "Add to Photography" is toggled
+  if (addToPhotography && photos && photos.length > 0) {
+    for (let i = 0; i < photos.length; i++) {
+      const photoSlug = `${slug}-photo-${i + 1}`;
+      await prisma.photo.create({
+        data: {
+          slug: photoSlug,
+          title: photos[i].alt || null,
+          caption: photos[i].alt || null,
+          imagePath: photos[i].url,
+          category: photoCategory || "general",
+          tags,
+          published: true,
+          publishedAt: post.publishedAt,
+          apId: `${siteUrl}/photography/${photoSlug}`,
+        },
+      }).catch(() => {
+        // Ignore duplicate slug errors
+      });
+    }
+  }
 
   // Build AP content for federation
   let apContent: string;

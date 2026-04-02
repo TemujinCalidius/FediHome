@@ -17,6 +17,8 @@ export default function ComposeClient() {
   const [crosspostBluesky, setCrosspostBluesky] = useState(true);
   const [crosspostThreads, setCrosspostThreads] = useState(true);
   const [crosspostDayOne, setCrosspostDayOne] = useState(true);
+  const [addToPhotography, setAddToPhotography] = useState(false);
+  const [photoCategory, setPhotoCategory] = useState("general");
   const [uploading, setUploading] = useState(false);
   const [posting, setPosting] = useState(false);
   const [result, setResult] = useState<{ success: boolean; url?: string; error?: string } | null>(null);
@@ -108,6 +110,8 @@ export default function ComposeClient() {
           crosspostBluesky,
           crosspostThreads,
           crosspostDayOne,
+          addToPhotography: photos.length > 0 && addToPhotography,
+          photoCategory: addToPhotography ? photoCategory : undefined,
         }),
       });
 
@@ -337,6 +341,34 @@ export default function ComposeClient() {
           <span className="text-xs text-gray-500">DayOne</span>
         </label>
       </div>
+
+      {/* Photography toggle — only show when photos are attached */}
+      {photos.length > 0 && (
+        <div className="flex items-center gap-4 pt-2 border-t border-surface-700">
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={addToPhotography}
+              onChange={(e) => setAddToPhotography(e.target.checked)}
+              className="rounded border-surface-600 bg-surface-800 text-accent-400 focus:ring-accent-400/30"
+            />
+            <span className="text-xs text-gray-500">Add to Photography</span>
+          </label>
+          {addToPhotography && (
+            <select
+              value={photoCategory}
+              onChange={(e) => setPhotoCategory(e.target.value)}
+              className="text-xs bg-surface-800 border border-surface-600 rounded px-2 py-1 text-gray-400"
+            >
+              <option value="general">General</option>
+              <option value="wildlife">Wildlife</option>
+              <option value="macro">Macro</option>
+              <option value="landscape">Landscape</option>
+              <option value="street">Street</option>
+            </select>
+          )}
+        </div>
+      )}
 
       {/* Post button */}
       <div className="flex items-center justify-between">
