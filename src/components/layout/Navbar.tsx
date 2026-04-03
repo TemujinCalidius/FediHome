@@ -14,7 +14,9 @@ const navLinks = [
 
 export default async function Navbar() {
   const cookieStore = await cookies();
-  const isAdmin = cookieStore.get("sl_admin")?.value === process.env.ADMIN_SECRET;
+  const adminCookie = cookieStore.get("sl_admin")?.value;
+  const { hashToken, safeCompare } = await import("@/lib/auth");
+  const isAdmin = !!adminCookie && safeCompare(adminCookie, hashToken(process.env.ADMIN_SECRET || ""));
 
   return (
     <nav className="border-b border-surface-800 bg-surface-950/90 backdrop-blur-md sticky top-0 z-50">

@@ -15,7 +15,8 @@ export default async function TimelinePage() {
   // Simple cookie-based admin auth
   const cookieStore = await cookies();
   const adminToken = cookieStore.get("sl_admin")?.value;
-  const isAdmin = adminToken === process.env.ADMIN_SECRET;
+  const { hashToken, safeCompare } = await import("@/lib/auth");
+  const isAdmin = !!adminToken && safeCompare(adminToken, hashToken(process.env.ADMIN_SECRET || ""));
 
   if (!isAdmin) {
     return <TimelineLogin />;

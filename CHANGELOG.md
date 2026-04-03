@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.2 (2026-04-03)
+
+### Added
+- "Add to Photography" toggle in compose UI — attach photos to your portfolio with category selection
+- Logout endpoint (`/api/admin/logout`) — visit in browser or POST to clear session
+- Dynamic compose status text — updates based on which crosspost toggles are enabled
+
+### Fixed
+- Timeline, compose, and navbar pages now correctly verify hashed admin cookie (was comparing raw secret)
+- Photo upload in compose no longer sends broken Bearer token (uses cookie auth)
+
+### Planned (v0.2)
+- Customizable photography categories via admin panel (currently: General, Wildlife, Macro, Landscape, Street)
+
 ## 0.1.1 (2026-04-03)
 
 ### Security

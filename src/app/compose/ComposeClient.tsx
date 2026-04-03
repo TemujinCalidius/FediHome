@@ -47,9 +47,6 @@ export default function ComposeClient() {
     try {
       const res = await fetch("/api/media", {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${document.cookie.match(/sl_admin=([^;]+)/)?.[1] || ""}`,
-        },
         body: form,
       });
 
@@ -374,8 +371,8 @@ export default function ComposeClient() {
       <div className="flex items-center justify-between">
         <p className="text-xs text-gray-600">
           {isArticle
-            ? "Article will be published on your site. Fedi + crossposts get the description."
-            : "Note will be sent to Fediverse, Bluesky, and Threads."}
+            ? `Article will be published on your site.${crosspostBluesky || crosspostThreads || crosspostDayOne ? " Crossposts get the description." : ""}`
+            : `Note will be sent to ${["Fediverse", crosspostBluesky && "Bluesky", crosspostThreads && "Threads", crosspostDayOne && "DayOne"].filter(Boolean).join(", ")}.`}
         </p>
         <button
           onClick={handleSubmit}
