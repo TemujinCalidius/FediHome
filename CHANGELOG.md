@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.3 (2026-04-07)
+
+### Added
+- Reply to fedi comments directly from post pages (admin only) — inline reply form with @mention
+- Author replies now visible in post comment threads with "Author" badge
+- Lightbox gallery on fedi feed images — click to expand, swipe to navigate
+- Combined Fedi + Bluesky like/boost counts on homepage feed cards
+
+### Fixed
+- Lightbox now renders via React portal for proper fullscreen overlay in all contexts
+
 ## 0.1.2 (2026-04-03)
 
 ### Added
