@@ -1,7 +1,8 @@
 import Image from "next/image";
-import { siteConfig } from "@/../site.config";
+import { getSiteStats } from "@/lib/tinylytics";
 
-export default function Footer() {
+export default async function Footer() {
+  const stats = await getSiteStats();
   return (
     <footer className="mt-auto">
       <div className="divider" />
@@ -9,17 +10,40 @@ export default function Footer() {
         <div className="flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="text-center md:text-left">
             <p className="text-sm text-gray-500">
-              &copy; {new Date().getFullYear()} {siteConfig.authorName}
+              &copy; {new Date().getFullYear()} Samuel Lison
             </p>
             <p className="text-xs text-gray-600 mt-1">
               Self-owned. Self-hosted. Fediverse-native.
             </p>
+            {stats && (
+              <p className="text-xs text-gray-700 mt-1 font-mono">
+                {stats.totalHits.toLocaleString()} visits
+                {stats.totalKudos > 0 && ` · ${stats.totalKudos} kudos`}
+              </p>
+            )}
+          </div>
+
+          {/* Center: Small Web badge + Webring */}
+          <div className="flex items-center gap-4">
+            <img
+              src="https://camo.githubusercontent.com/05046a28621d58344a06ba01b0c99bd44538f39c5a01e4e3b769f57de2f3f61c/68747470733a2f2f6b616769666565646261636b2e6f72672f6173736574732f66696c65732f323032352d31312d32372f313736343235303937332d3730383336392d38387833312d322e676966"
+              alt="Small Web"
+              width={100}
+              height={32}
+              className="opacity-70 hover:opacity-100 transition-opacity"
+            />
+            <a
+              href="https://links.babylondreams.de"
+              className="text-sm text-gray-400 hover:text-accent-400 transition-colors"
+            >
+              Webring: &#128760;&#128141;
+            </a>
           </div>
 
           {/* Right: Links */}
           <div className="flex items-center gap-5 text-gray-500">
             <span className="text-xs text-gray-600 font-mono">
-              {siteConfig.fediAddress}
+              @samuel@samuellison.com
             </span>
 
             <a
@@ -33,7 +57,7 @@ export default function Footer() {
             </a>
 
             <a
-              href={`mailto:${siteConfig.contactEmail}`}
+              href="mailto:samuel@samuellison.com"
               className="hover:text-accent-400 transition-colors"
               title="Email"
             >

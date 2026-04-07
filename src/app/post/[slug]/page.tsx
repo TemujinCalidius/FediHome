@@ -5,9 +5,11 @@ import { marked } from "marked";
 import { cookies } from "next/headers";
 import { hashToken, safeCompare } from "@/lib/auth";
 import { LightboxGallery } from "@/components/ui/Lightbox";
+import { getPathHits, getKudosForPath } from "@/lib/tinylytics";
 import GuestCommentForm from "@/components/fedi/GuestCommentForm";
 import FediInteractions from "@/components/fedi/FediInteractions";
 import ReplyToComment from "@/components/fedi/ReplyToComment";
+import KudosButton from "@/components/ui/KudosButton";
 import type { Metadata } from "next";
 
 function linkHashtags(html: string): string {
@@ -62,6 +64,13 @@ export default async function PostPage({
   });
 
   if (!post || !post.published) notFound();
+
+  // Fetch analytics
+  const postPath = `/post/${slug}`;
+  const [viewCount, kudosCount] = await Promise.all([
+    getPathHits(postPath),
+    getKudosForPath(postPath),
+  ]);
 
   // Fetch Fedi interactions for this post
   const fediInteractions = post.apId
@@ -200,6 +209,16 @@ export default async function PostPage({
         className="prose-sl text-gray-300 leading-relaxed [&_a]:text-accent-400 [&_a:hover]:text-accent-300 [&_a]:underline [&_p]:mb-4 [&_h2]:font-display [&_h2]:text-white [&_h2]:text-xl [&_h2]:mt-8 [&_h2]:mb-3 [&_h3]:font-display [&_h3]:text-white [&_h3]:text-lg [&_h3]:mt-6 [&_h3]:mb-2 [&_ul]:list-disc [&_ul]:ml-5 [&_ul]:mb-4 [&_ol]:list-decimal [&_ol]:ml-5 [&_ol]:mb-4 [&_li]:mb-1 [&_blockquote]:border-l-4 [&_blockquote]:border-accent-400/30 [&_blockquote]:pl-4 [&_blockquote]:italic [&_blockquote]:text-gray-400 [&_code]:bg-surface-800 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-accent-300 [&_code]:text-sm [&_strong]:text-white"
         dangerouslySetInnerHTML={{ __html: linkHashtags(post.contentHtml || (marked.parse(post.content) as string)) }}
       />
+
+      {/* Analytics + Kudos */}
+      <div className="flex items-center gap-4 mt-8 mb-4">
+        <KudosButton path={postPath} initialCount={kudosCount} />
+        {viewCount > 0 && (
+          <span className="text-xs text-gray-600 font-mono">
+            {viewCount.toLocaleString()} views
+          </span>
+        )}
+      </div>
 
       {/* Fedi interactions */}
       <FediInteractions
