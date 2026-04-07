@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.4 (2026-04-07)
+
+### Security
+- Strip EXIF metadata (GPS coordinates, camera serial numbers, timestamps) from all uploaded images
+- Strip EXIF from fedi-proxied images before saving to disk
+- Small images (<2MB) now also processed through Sharp for metadata removal
+- GIFs preserved as-is (no EXIF concern, animation preserved)
+
 ## 0.1.3 (2026-04-07)
 
 ### Added

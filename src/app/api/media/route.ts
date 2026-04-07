@@ -67,17 +67,24 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    buffer = await pipeline.webp({ quality: WEBP_QUALITY }).toBuffer();
+    buffer = await pipeline.rotate().webp({ quality: WEBP_QUALITY }).toBuffer();
     ext = "webp";
+  } else if (file.type !== "image/gif") {
+    // Strip EXIF from small images (GPS, camera serial, etc.)
+    buffer = await sharp(buffer).rotate().toBuffer();
+    const extFromMime: Record<string, string> = {
+      "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp",
+    };
+    ext = extFromMime[file.type] || "jpg";
   } else {
-    ext = file.name.split(".").pop() || "jpg";
+    ext = "gif";
   }
 
   const filename = `${timestamp}.${ext}`;
   const filePath = path.join(uploadDir, filename);
   await writeFile(filePath, buffer);
 
-  const siteUrl = process.env.SITE_URL || "http://localhost:3000";
+  const siteUrl = process.env.SITE_URL || "https://samuellison.com";
   const url = `${siteUrl}/uploads/${year}/${month}/${filename}`;
 
   return NextResponse.json({ url }, {

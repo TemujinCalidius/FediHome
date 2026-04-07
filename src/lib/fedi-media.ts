@@ -1,31 +1,48 @@
 import { writeFile, mkdir, readdir, stat, unlink } from "fs/promises";
 import path from "path";
+import sharp from "sharp";
 
-function isPrivateUrl(urlString: string): boolean {
+/**
+ * SSRF protection: reject URLs pointing to private/internal IP ranges.
+ */
+function isPrivateUrl(urlStr: string): boolean {
   try {
-    const parsed = new URL(urlString);
-    const host = parsed.hostname.toLowerCase();
+    const parsed = new URL(urlStr);
+    const host = parsed.hostname;
+
+    // Reject common private/reserved hostnames
     if (
       host === "localhost" ||
-      host === "127.0.0.1" ||
       host === "[::1]" ||
       host === "0.0.0.0" ||
       host.endsWith(".local") ||
-      host.startsWith("10.") ||
-      host.startsWith("192.168.") ||
-      host.startsWith("172.16.") || host.startsWith("172.17.") ||
-      host.startsWith("172.18.") || host.startsWith("172.19.") ||
-      host.startsWith("172.20.") || host.startsWith("172.21.") ||
-      host.startsWith("172.22.") || host.startsWith("172.23.") ||
-      host.startsWith("172.24.") || host.startsWith("172.25.") ||
-      host.startsWith("172.26.") || host.startsWith("172.27.") ||
-      host.startsWith("172.28.") || host.startsWith("172.29.") ||
-      host.startsWith("172.30.") || host.startsWith("172.31.") ||
-      host.startsWith("169.254.") ||
-      host.startsWith("100.64.")
-    ) return true;
+      host.endsWith(".internal")
+    ) {
+      return true;
+    }
+
+    // Reject private IPv4 ranges
+    if (
+      host.startsWith("127.") ||       // 127.0.0.0/8 loopback
+      host.startsWith("10.") ||        // 10.0.0.0/8
+      host.startsWith("192.168.") ||   // 192.168.0.0/16
+      host.startsWith("169.254.") ||   // 169.254.0.0/16 link-local
+      host.startsWith("100.64.")       // 100.64.0.0/10 CGNAT
+    ) {
+      return true;
+    }
+
+    // 172.16.0.0 - 172.31.255.255
+    const match172 = host.match(/^172\.(\d+)\./);
+    if (match172) {
+      const second = parseInt(match172[1], 10);
+      if (second >= 16 && second <= 31) return true;
+    }
+
     return false;
-  } catch { return true; }
+  } catch {
+    return true; // reject unparseable URLs
+  }
 }
 
 export interface EmbedData {
@@ -50,10 +67,18 @@ export async function proxyImage(remoteUrl: string): Promise<string | null> {
     if (!res.ok) return null;
 
     const contentType = res.headers.get("content-type") || "";
-    if (!contentType.startsWith("image/") || contentType.includes("svg")) return null;
+    if (!contentType.startsWith("image/")) return null;
+    // Reject SVG to prevent XSS via stored SVG files
+    if (contentType.includes("svg")) return null;
 
-    const buffer = Buffer.from(await res.arrayBuffer());
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let buffer: Buffer = Buffer.from(await res.arrayBuffer()) as any;
     if (buffer.length === 0) return null;
+
+    // Strip EXIF metadata (GPS, camera serial, etc.) — skip GIFs to preserve animation
+    if (!contentType.includes("gif")) {
+      try { buffer = await sharp(buffer).rotate().toBuffer() as any; } catch { /* keep original if sharp fails */ }
+    }
 
     // Determine extension from content-type
     const extMap: Record<string, string> = {
@@ -271,13 +296,37 @@ export async function fetchLinkEmbed(htmlContent: string): Promise<EmbedData | n
     if (!url) return null;
 
     // Block SSRF — reject private/internal IPs
-    if (isPrivateUrl(url)) return null;
+    try {
+      const parsed = new URL(url);
+      const host = parsed.hostname;
+      if (
+        host === "localhost" ||
+        host.startsWith("127.") ||
+        host.startsWith("10.") ||
+        host.startsWith("192.168.") ||
+        host.startsWith("172.16.") ||
+        host.startsWith("172.17.") ||
+        host.startsWith("172.18.") ||
+        host.startsWith("172.19.") ||
+        host.startsWith("172.2") ||
+        host.startsWith("172.30.") ||
+        host.startsWith("172.31.") ||
+        host === "169.254.169.254" ||
+        host.endsWith(".local") ||
+        host === "[::1]" ||
+        host === "0.0.0.0"
+      ) {
+        return null;
+      }
+    } catch {
+      return null;
+    }
 
     const res = await fetch(url, {
       signal: AbortSignal.timeout(5000),
       headers: {
         Accept: "text/html",
-        "User-Agent": "FediHome embed fetcher",
+        "User-Agent": "samuellison.com embed fetcher",
       },
       redirect: "follow",
     });
