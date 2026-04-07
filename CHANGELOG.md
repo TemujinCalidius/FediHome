@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.5 (2026-04-07)
+
+### Added
+- Analytics dashboard tab in admin panel (powered by Tinylytics)
+  - Overview cards: total visits, kudos, recent hits, unique pages
+  - Top pages leaderboard with percentage bars
+  - Referrer sources breakdown
+  - Country breakdown
+  - Visitor journey visualization
+- Setup prompt for unconfigured Tinylytics (instructions to add API key)
+- View count always displayed on posts (even when 0)
+
 ## 0.1.4 (2026-04-07)
 
 ### Security

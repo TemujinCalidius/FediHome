@@ -75,6 +75,13 @@ interface FollowerItem {
   createdAt: string;
 }
 
+interface AnalyticsData {
+  stats: { totalHits: number; totalKudos: number } | null;
+  leaderboard: { path: string; hits: number; percentage: number }[];
+  recentHits: { id: number; path: string; referrer: string; country: string; browser_name: string; platform_name: string; created_at: string }[];
+  journeys: { visitor_hash: string; page_count: number; pages: { path: string }[]; entry_page: string; exit_page: string; session_duration: string; referrer: string; country: string; browser: string; first_hit: string }[];
+}
+
 interface DirectMessageItem {
   id: string;
   source: string;
@@ -937,6 +944,7 @@ export default function TimelineClient({
   followers,
   pendingComments,
   directMessages = [],
+  analyticsData,
 }: {
   initialPosts: FediPostItem[];
   initialCursor: string | null;
@@ -944,8 +952,9 @@ export default function TimelineClient({
   following: FollowingItem[];
   pendingComments: PendingComment[];
   directMessages?: DirectMessageItem[];
+  analyticsData?: AnalyticsData | null;
 }) {
-  const [tab, setTab] = useState<"feed" | "moderation" | "followers" | "following" | "messages">("feed");
+  const [tab, setTab] = useState<"feed" | "moderation" | "followers" | "following" | "messages" | "analytics">("feed");
   const [showReplies, setShowReplies] = useState(false);
   const [showBoosts, setShowBoosts] = useState(false);
   const [posts, setPosts] = useState<FediPostItem[]>(initialPosts);
@@ -1047,7 +1056,7 @@ export default function TimelineClient({
 
       {/* Tabs */}
       <div className="flex gap-2 mb-6">
-        {(["feed", "messages", "moderation", "followers", "following"] as const).map((t) => (
+        {(["feed", "messages", "moderation", "followers", "following", "analytics"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -1401,6 +1410,160 @@ export default function TimelineClient({
               ))
             )}
           </div>
+        </div>
+      )}
+
+      {tab === "analytics" && (
+        <div className="space-y-6">
+          {analyticsData ? (
+            <>
+              {/* Overview cards */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="glass-card p-4 text-center">
+                  <p className="text-2xl font-bold text-white">{analyticsData.stats?.totalHits?.toLocaleString() || 0}</p>
+                  <p className="text-xs text-gray-500 mt-1">Total Visits</p>
+                </div>
+                <div className="glass-card p-4 text-center">
+                  <p className="text-2xl font-bold text-white">{analyticsData.stats?.totalKudos || 0}</p>
+                  <p className="text-xs text-gray-500 mt-1">Total Kudos</p>
+                </div>
+                <div className="glass-card p-4 text-center">
+                  <p className="text-2xl font-bold text-white">{analyticsData.recentHits.length}</p>
+                  <p className="text-xs text-gray-500 mt-1">Recent Hits</p>
+                </div>
+                <div className="glass-card p-4 text-center">
+                  <p className="text-2xl font-bold text-white">{new Set(analyticsData.recentHits.map(h => h.path)).size}</p>
+                  <p className="text-xs text-gray-500 mt-1">Unique Pages</p>
+                </div>
+              </div>
+
+              {/* Top Pages */}
+              <div className="glass-card p-5">
+                <h3 className="text-sm font-semibold text-white uppercase tracking-wider mb-4">Top Pages</h3>
+                <div className="space-y-2">
+                  {analyticsData.leaderboard.map((page, i) => (
+                    <div key={i} className="flex items-center gap-3">
+                      <span className="text-xs text-gray-600 w-6 text-right font-mono">{i + 1}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-sm text-gray-300 truncate">{page.path}</span>
+                          <span className="text-xs text-gray-500 ml-2 flex-shrink-0">{page.hits.toLocaleString()}</span>
+                        </div>
+                        <div className="w-full bg-surface-800 rounded-full h-1.5">
+                          <div className="bg-accent-400/60 h-1.5 rounded-full" style={{ width: `${Math.min(page.percentage, 100)}%` }} />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Referrers + Countries row */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Referrers */}
+                <div className="glass-card p-5">
+                  <h3 className="text-sm font-semibold text-white uppercase tracking-wider mb-4">Referrers</h3>
+                  <div className="space-y-2">
+                    {(() => {
+                      const refs: Record<string, number> = {};
+                      analyticsData.recentHits.forEach(h => {
+                        const r = h.referrer ? (() => { try { return new URL(h.referrer).hostname.replace(/^www\./, ''); } catch { return h.referrer || 'Direct'; } })() : 'Direct';
+                        refs[r] = (refs[r] || 0) + 1;
+                      });
+                      return Object.entries(refs)
+                        .sort((a, b) => b[1] - a[1])
+                        .slice(0, 10)
+                        .map(([domain, count]) => (
+                          <div key={domain} className="flex items-center justify-between text-sm">
+                            <span className="text-gray-400 truncate">{domain}</span>
+                            <span className="text-gray-500 text-xs font-mono ml-2">{count}</span>
+                          </div>
+                        ));
+                    })()}
+                  </div>
+                </div>
+
+                {/* Countries */}
+                <div className="glass-card p-5">
+                  <h3 className="text-sm font-semibold text-white uppercase tracking-wider mb-4">Countries</h3>
+                  <div className="space-y-2">
+                    {(() => {
+                      const countries: Record<string, number> = {};
+                      analyticsData.recentHits.forEach(h => {
+                        countries[h.country || 'Unknown'] = (countries[h.country || 'Unknown'] || 0) + 1;
+                      });
+                      return Object.entries(countries)
+                        .sort((a, b) => b[1] - a[1])
+                        .slice(0, 10)
+                        .map(([code, count]) => (
+                          <div key={code} className="flex items-center justify-between text-sm">
+                            <span className="text-gray-400">{code}</span>
+                            <span className="text-gray-500 text-xs font-mono">{count}</span>
+                          </div>
+                        ));
+                    })()}
+                  </div>
+                </div>
+              </div>
+
+              {/* Recent Visitor Journeys */}
+              <div className="glass-card p-5">
+                <h3 className="text-sm font-semibold text-white uppercase tracking-wider mb-4">Recent Visitor Journeys</h3>
+                <div className="space-y-3">
+                  {analyticsData.journeys.map((j, i) => (
+                    <div key={i} className="p-3 bg-surface-800/50 rounded-lg">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2 text-xs text-gray-500">
+                          <span>{j.country}</span>
+                          <span>·</span>
+                          <span>{j.browser}</span>
+                          <span>·</span>
+                          <span>{j.session_duration}</span>
+                        </div>
+                        <span className="text-xs text-gray-600">{j.page_count} pages</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 text-xs text-gray-400 overflow-x-auto">
+                        {j.pages.map((p, pi) => (
+                          <span key={pi} className="flex items-center gap-1.5 flex-shrink-0">
+                            {pi > 0 && <span className="text-gray-600">→</span>}
+                            <span className="bg-surface-700 px-1.5 py-0.5 rounded">{p.path}</span>
+                          </span>
+                        ))}
+                      </div>
+                      {j.referrer && (
+                        <p className="text-xs text-gray-600 mt-1">via {j.referrer}</p>
+                      )}
+                    </div>
+                  ))}
+                  {analyticsData.journeys.length === 0 && (
+                    <p className="text-sm text-gray-500 text-center py-4">No visitor journeys recorded yet.</p>
+                  )}
+                </div>
+              </div>
+            </>
+          ) : (
+            /* Setup prompt for unconfigured Tinylytics */
+            <div className="glass-card p-8 text-center">
+              <p className="text-3xl mb-4">📊</p>
+              <h3 className="text-lg font-semibold text-white mb-2">Connect Tinylytics</h3>
+              <p className="text-sm text-gray-400 mb-4 max-w-md mx-auto">
+                Privacy-focused analytics for your site. No cookies, GDPR-compliant. See who visits your site, which pages are popular, and where your visitors come from.
+              </p>
+              <div className="text-left max-w-md mx-auto bg-surface-800 rounded-lg p-4 text-xs text-gray-400 font-mono mb-4">
+                <p className="text-gray-500 mb-2"># Add to your .env.local:</p>
+                <p>TINYLYTICS_API_KEY=tly-fa-your-key</p>
+                <p>TINYLYTICS_SITE_ID=your-site-id</p>
+              </div>
+              <a
+                href="https://tinylytics.app"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-outlined text-xs"
+              >
+                Get started at tinylytics.app →
+              </a>
+            </div>
+          )}
         </div>
       )}
     </div>

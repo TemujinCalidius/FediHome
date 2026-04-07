@@ -3,6 +3,8 @@ export const dynamic = "force-dynamic";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
+import { hashToken, safeCompare } from "@/lib/auth";
+import { isTinylyticsConfigured, getSiteStats, getLeaderboard, getRecentHits, getUserJourneys } from "@/lib/tinylytics";
 import TimelineClient from "./TimelineClient";
 import TimelineLogin from "./TimelineLogin";
 
@@ -12,11 +14,11 @@ export const metadata = {
 };
 
 export default async function TimelinePage() {
-  // Simple cookie-based admin auth
+  // Cookie stores SHA-256 hash of ADMIN_SECRET
   const cookieStore = await cookies();
   const adminToken = cookieStore.get("sl_admin")?.value;
-  const { hashToken, safeCompare } = await import("@/lib/auth");
-  const isAdmin = !!adminToken && safeCompare(adminToken, hashToken(process.env.ADMIN_SECRET || ""));
+  const expectedHash = hashToken(process.env.ADMIN_SECRET || "");
+  const isAdmin = !!adminToken && safeCompare(adminToken, expectedHash);
 
   if (!isAdmin) {
     return <TimelineLogin />;
@@ -60,6 +62,16 @@ export default async function TimelinePage() {
     take: 200,
   });
 
+  // Fetch analytics data (if Tinylytics is configured)
+  const analyticsData = isTinylyticsConfigured()
+    ? {
+        stats: await getSiteStats(),
+        leaderboard: await getLeaderboard(15),
+        recentHits: await getRecentHits(),
+        journeys: await getUserJourneys(15),
+      }
+    : null;
+
   return (
     <div className="max-w-4xl mx-auto px-6 py-16">
       <div className="flex items-center justify-between mb-8">
@@ -85,6 +97,7 @@ export default async function TimelinePage() {
         followers={JSON.parse(JSON.stringify(followers))}
         pendingComments={JSON.parse(JSON.stringify(pendingComments))}
         directMessages={JSON.parse(JSON.stringify(directMessages))}
+        analyticsData={analyticsData ? JSON.parse(JSON.stringify(analyticsData)) : null}
       />
     </div>
   );

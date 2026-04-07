@@ -68,3 +68,45 @@ export async function getKudosForPath(path: string): Promise<number> {
   if (!data) return 0;
   return data.pagination.total_count;
 }
+
+/** Check if Tinylytics is configured */
+export function isTinylyticsConfigured(): boolean {
+  return !!(process.env.TINYLYTICS_API_KEY && process.env.TINYLYTICS_SITE_ID);
+}
+
+/** Raw hit from the API */
+export interface RawHit {
+  id: number;
+  path: string;
+  referrer: string;
+  country: string;
+  browser_name: string;
+  platform_name: string;
+  created_at: string;
+}
+
+/** User journey from the API */
+export interface UserJourney {
+  visitor_hash: string;
+  page_count: number;
+  pages: { path: string }[];
+  entry_page: string;
+  exit_page: string;
+  session_duration: string;
+  referrer: string;
+  country: string;
+  browser: string;
+  first_hit: string;
+}
+
+/** Get recent raw hits for aggregation */
+export async function getRecentHits(perPage = 100): Promise<RawHit[]> {
+  const data = (await tlFetch(`/hits?per_page=${perPage}`)) as { hits: RawHit[] } | null;
+  return data?.hits || [];
+}
+
+/** Get user journeys */
+export async function getUserJourneys(limit = 15): Promise<UserJourney[]> {
+  const data = (await tlFetch(`/user_journeys?per_page=${limit}`)) as { user_journeys: UserJourney[] } | null;
+  return data?.user_journeys || [];
+}

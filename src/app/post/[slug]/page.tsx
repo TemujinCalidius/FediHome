@@ -213,11 +213,9 @@ export default async function PostPage({
       {/* Analytics + Kudos */}
       <div className="flex items-center gap-4 mt-8 mb-4">
         <KudosButton path={postPath} initialCount={kudosCount} />
-        {viewCount > 0 && (
-          <span className="text-xs text-gray-600 font-mono">
-            {viewCount.toLocaleString()} views
-          </span>
-        )}
+        <span className="text-xs text-gray-600 font-mono">
+          {viewCount.toLocaleString()} views
+        </span>
       </div>
 
       {/* Fedi interactions */}
