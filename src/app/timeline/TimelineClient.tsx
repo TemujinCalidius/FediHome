@@ -1,6 +1,28 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { LightboxGallery } from "@/components/ui/Lightbox";
+
+function PostMedia({ urls, types, maxH }: { urls: string[]; types: string[]; maxH: string }) {
+  const images = urls.map((url, i) => ({ url, type: types[i], i })).filter((m) => m.type !== "video");
+  const videos = urls.map((url, i) => ({ url, type: types[i], i })).filter((m) => m.type === "video");
+  return (
+    <div className="mt-3 space-y-2">
+      {images.length > 0 && (
+        <LightboxGallery>
+          <div className={`grid gap-2 ${images.length > 1 ? "grid-cols-2" : ""}`}>
+            {images.map((m) => (
+              <img key={m.i} src={m.url} alt="" className={`rounded-lg ${maxH} object-cover w-full`} />
+            ))}
+          </div>
+        </LightboxGallery>
+      )}
+      {videos.map((m) => (
+        <video key={m.i} src={m.url} controls playsInline preload="auto" className={`rounded-lg ${maxH} w-full bg-black`} />
+      ))}
+    </div>
+  );
+}
 
 interface FediPostItem {
   id: string;
@@ -297,31 +319,8 @@ function PostCard({
 
       {/* Media (images + videos) */}
       {post.mediaUrls.length > 0 && (
-        <div className={`mt-3 grid gap-2 ${post.mediaUrls.length > 1 ? "grid-cols-2" : ""}`}>
-          {post.mediaUrls.map((url, i) => {
-            const type = post.mediaTypes?.[i];
-            if (type === "video") {
-              return (
-                <video
-                  key={i}
-                  src={url}
-                  controls
-                  playsInline
-                  preload="auto"
-                  className="rounded-lg max-h-80 w-full bg-black"
-                />
-              );
-            }
-            return (
-              <img
-                key={i}
-                src={url}
-                alt=""
-                className="rounded-lg max-h-80 object-cover w-full"
-              />
-            );
-          })}
-        </div>
+        <PostMedia urls={post.mediaUrls} types={post.mediaTypes || []} maxH="max-h-80" />
+
       )}
 
       {/* Link preview embed */}
@@ -541,15 +540,7 @@ function ThreadView({
 
                   {/* Media */}
                   {post.mediaUrls.length > 0 && (
-                    <div className={`mt-2 grid gap-2 ${post.mediaUrls.length > 1 ? "grid-cols-2" : ""}`}>
-                      {post.mediaUrls.map((url, j) => {
-                        const type = post.mediaTypes?.[j];
-                        if (type === "video") {
-                          return <video key={j} src={url} controls playsInline preload="auto" className="rounded-lg max-h-60 w-full bg-black" />;
-                        }
-                        return <img key={j} src={url} alt="" className="rounded-lg max-h-60 object-cover w-full" />;
-                      })}
-                    </div>
+                    <PostMedia urls={post.mediaUrls} types={post.mediaTypes || []} maxH="max-h-60" />
                   )}
 
                   {/* Embed card */}
@@ -1265,7 +1256,7 @@ export default function TimelineClient({
         <div className="space-y-2">
           {followers.length === 0 ? (
             <div className="glass-card p-8 text-center">
-              <p className="text-gray-500">No followers yet. Share your Fedi handle to get discovered.</p>
+              <p className="text-gray-500">No followers yet. Share your Fedi handle <span className="text-accent-400 font-mono">@samuel@samuellison.com</span> to get discovered.</p>
             </div>
           ) : (
             followers.map((f) => (

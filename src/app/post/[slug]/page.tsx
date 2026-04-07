@@ -2,9 +2,12 @@ import { notFound } from "next/navigation";
 import Image from "next/image";
 import { prisma } from "@/lib/db";
 import { marked } from "marked";
+import { cookies } from "next/headers";
+import { hashToken, safeCompare } from "@/lib/auth";
 import { LightboxGallery } from "@/components/ui/Lightbox";
 import GuestCommentForm from "@/components/fedi/GuestCommentForm";
 import FediInteractions from "@/components/fedi/FediInteractions";
+import ReplyToComment from "@/components/fedi/ReplyToComment";
 import type { Metadata } from "next";
 
 function linkHashtags(html: string): string {
@@ -43,6 +46,11 @@ export default async function PostPage({
 }) {
   const { slug } = await params;
 
+  // Check admin status for reply buttons
+  const cookieStore = await cookies();
+  const adminCookie = cookieStore.get("sl_admin")?.value;
+  const isAdmin = !!adminCookie && safeCompare(adminCookie, hashToken(process.env.ADMIN_SECRET || ""));
+
   const post = await prisma.post.findUnique({
     where: { slug },
     include: {
@@ -65,7 +73,41 @@ export default async function PostPage({
 
   const likes = fediInteractions.filter((i) => i.type === "like");
   const boosts = fediInteractions.filter((i) => i.type === "boost");
-  const replies = fediInteractions.filter((i) => i.type === "reply");
+  const incomingReplies = fediInteractions.filter((i) => i.type === "reply");
+
+  // Fetch our own outgoing replies to this post
+  const outgoingReplies = post.apId
+    ? await prisma.fediPost.findMany({
+        where: { inReplyTo: post.apId, isOutgoing: true },
+        orderBy: { publishedAt: "asc" },
+      })
+    : [];
+
+  // Merge into a single sorted thread
+  const replies = [
+    ...incomingReplies.map((r) => ({
+      id: r.id,
+      isOwn: false,
+      avatarUrl: r.avatarUrl,
+      displayName: r.displayName,
+      username: r.username,
+      domain: r.domain,
+      content: r.content || "",
+      actorUri: r.actorUri,
+      createdAt: r.createdAt,
+    })),
+    ...outgoingReplies.map((r) => ({
+      id: r.id,
+      isOwn: true,
+      avatarUrl: r.avatarUrl,
+      displayName: r.displayName,
+      username: r.username,
+      domain: r.domain,
+      content: r.contentHtml || r.content,
+      actorUri: r.actorUri,
+      createdAt: r.publishedAt,
+    })),
+  ].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
   // Fetch fresh Bluesky replies (poll on every page load if post has a blueskyUri)
   if (post.blueskyUri) {
@@ -181,16 +223,14 @@ export default async function PostPage({
         {/* Approved guest comments + fedi replies + bluesky replies */}
         {(post.guestComments.length > 0 || replies.length > 0 || blueskyReplies.length > 0) ? (
           <div className="space-y-4 mb-8">
-            {/* Fedi replies */}
+            {/* Fedi replies (incoming + own) */}
             {replies.map((reply) => (
-              <div key={reply.id} className="glass-card p-4">
+              <div key={reply.id} className={`glass-card p-4 ${reply.isOwn ? "border-l-2 border-accent-400/40" : ""}`}>
                 <div className="flex items-center gap-2 mb-2">
-                  {reply.avatarUrl && (
-                    <img
-                      src={reply.avatarUrl}
-                      alt=""
-                      className="w-6 h-6 rounded-full"
-                    />
+                  {reply.avatarUrl ? (
+                    <img src={reply.avatarUrl} alt="" className="w-6 h-6 rounded-full" />
+                  ) : (
+                    <div className="w-6 h-6 rounded-full bg-surface-700" />
                   )}
                   <span className="text-sm font-semibold text-white">
                     {reply.displayName || reply.username}
@@ -198,9 +238,23 @@ export default async function PostPage({
                   <span className="text-xs text-gray-600">
                     @{reply.username}@{reply.domain}
                   </span>
-                  <span className="text-xs text-gray-700">via Fediverse</span>
+                  {reply.isOwn ? (
+                    <span className="text-xs text-accent-400">Author</span>
+                  ) : (
+                    <span className="text-xs text-gray-700">via Fediverse</span>
+                  )}
                 </div>
                 <div className="text-gray-400 text-sm [&_a]:text-accent-400 [&_a]:hover:underline" dangerouslySetInnerHTML={{ __html: reply.content || "" }} />
+                {isAdmin && !reply.isOwn && post.apId && (
+                  <div className="mt-2">
+                    <ReplyToComment
+                      postApId={post.apId}
+                      actorUri={reply.actorUri}
+                      username={reply.username}
+                      domain={reply.domain}
+                    />
+                  </div>
+                )}
               </div>
             ))}
 

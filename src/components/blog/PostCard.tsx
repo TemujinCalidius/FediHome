@@ -28,6 +28,8 @@ interface PostCardProps {
   photos?: string[];
   likeCount: number;
   boostCount: number;
+  bskyLikeCount?: number;
+  bskyRepostCount?: number;
 }
 
 export default function PostCard({
@@ -41,7 +43,11 @@ export default function PostCard({
   photos,
   likeCount,
   boostCount,
+  bskyLikeCount = 0,
+  bskyRepostCount = 0,
 }: PostCardProps) {
+  const totalLikes = likeCount + bskyLikeCount;
+  const totalBoosts = boostCount + bskyRepostCount;
   // Strip markdown syntax for preview but keep hashtags
   const plainText = content
     .replace(/!\[[^\]]*\]\([^)]+\)/g, "") // remove images
@@ -94,22 +100,22 @@ export default function PostCard({
         />
 
         {/* Fedi interactions */}
-        {(likeCount > 0 || boostCount > 0) && (
+        {(totalLikes > 0 || totalBoosts > 0) && (
           <div className="flex gap-3 mt-3">
-            {likeCount > 0 && (
+            {totalLikes > 0 && (
               <span className="fedi-badge">
                 <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                   <path d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" />
                 </svg>
-                {likeCount}
+                {totalLikes}
               </span>
             )}
-            {boostCount > 0 && (
+            {totalBoosts > 0 && (
               <span className="fedi-badge">
                 <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
                 </svg>
-                {boostCount}
+                {totalBoosts}
               </span>
             )}
           </div>

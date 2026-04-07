@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 
 interface LightboxProps {
   images: { src: string; alt?: string }[];
@@ -229,12 +230,13 @@ export function LightboxGallery({ children }: { children: React.ReactNode }) {
       {imgAlts.map((item, i) => (
         <AltBadgePortal key={i} imgEl={item.el} alt={item.alt} />
       ))}
-      {lightbox && (
+      {lightbox && createPortal(
         <Lightbox
           images={lightbox.images}
           startIndex={lightbox.index}
           onClose={() => setLightbox(null)}
-        />
+        />,
+        document.body
       )}
     </>
   );
