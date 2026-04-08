@@ -3,6 +3,29 @@
 import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import BuyBadge from "@/components/store/BuyBadge";
+
+function AltBadgeInline({ alt }: { alt: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="absolute bottom-2 right-2 z-10">
+      <button
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); setOpen(!open); }}
+        className="bg-black/70 text-white text-[10px] font-bold px-1.5 py-0.5 rounded backdrop-blur-sm"
+      >
+        ALT
+      </button>
+      {open && (
+        <div
+          className="absolute bottom-7 right-0 bg-black/85 backdrop-blur-md text-white/90 text-sm p-3 rounded-xl shadow-2xl z-20 leading-relaxed w-64"
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+        >
+          {alt}
+        </div>
+      )}
+    </span>
+  );
+}
 
 interface PhotoItem {
   id: string;
@@ -24,9 +47,13 @@ interface Category {
 export default function PhotoGrid({
   photos,
   categories,
+  storeItemMap,
+  postSlugMap,
 }: {
   photos: PhotoItem[];
   categories: Category[];
+  storeItemMap?: Record<string, string>;
+  postSlugMap?: Record<string, string>;
 }) {
   const [activeCategory, setActiveCategory] = useState("all");
 
@@ -64,16 +91,25 @@ export default function PhotoGrid({
           {filtered.map((photo) => (
             <Link
               key={photo.id}
-              href={`/photography/${photo.slug}`}
+              href={postSlugMap?.[photo.slug] ? `/post/${postSlugMap[photo.slug]}` : `/photography/${photo.slug}`}
               className="group relative aspect-square rounded-xl overflow-hidden bg-surface-800 block"
             >
               <Image
-                src={photo.thumbPath || photo.imagePath}
+                src={(photo.thumbPath || photo.imagePath).split("?")[0]}
                 alt={photo.title || photo.caption || ""}
                 fill
                 className="object-cover group-hover:scale-[1.03] transition-transform duration-300"
                 sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
               />
+              {(() => {
+                const raw = (photo.thumbPath || photo.imagePath).split("?")[0];
+                const rel = raw.replace(/^https?:\/\/[^/]+/, "");
+                const storeId = storeItemMap?.[raw] || storeItemMap?.[rel];
+                return storeId ? <BuyBadge storeItemId={storeId} /> : null;
+              })()}
+              {(photo.title || photo.caption) && (
+                <AltBadgeInline alt={photo.title || photo.caption || ""} />
+              )}
 
               {/* Hover overlay */}
               <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors duration-300 flex items-end">
