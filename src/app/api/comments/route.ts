@@ -4,7 +4,7 @@ import crypto from "crypto";
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { guestName, content, postId, photoId, website } = body;
+  const { guestName, guestEmail, content, postId, photoId, website } = body;
 
   // Honeypot check — bots fill this hidden field
   if (website) {
@@ -56,6 +56,7 @@ export async function POST(req: NextRequest) {
   await prisma.guestComment.create({
     data: {
       guestName: guestName.trim(),
+      guestEmail: guestEmail?.trim() || null,
       content: content.trim(),
       ipHash,
       postId: postId || null,

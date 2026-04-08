@@ -10,6 +10,7 @@ export default function GuestCommentForm({
   photoId?: string;
 }) {
   const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
   const [content, setContent] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -28,6 +29,7 @@ export default function GuestCommentForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           guestName: name.trim(),
+          guestEmail: email.trim() || undefined,
           content: content.trim(),
           postId,
           photoId,
@@ -78,6 +80,19 @@ export default function GuestCommentForm({
           maxLength={100}
           className="w-full bg-surface-800 border border-surface-700 rounded-lg px-4 py-2.5 text-sm text-white placeholder-gray-600 focus:border-accent-400/30 focus:outline-none"
         />
+
+        <div>
+          <label className="text-xs text-gray-500 mb-1 block">Your email (optional)</label>
+          <input
+            type="email"
+            placeholder="you@example.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            maxLength={200}
+            className="w-full bg-surface-800 border border-surface-700 rounded-lg px-4 py-2.5 text-sm text-white placeholder-gray-600 focus:border-accent-400/30 focus:outline-none"
+          />
+          <p className="text-xs text-gray-600 mt-1">We&apos;ll notify you if the author replies.</p>
+        </div>
 
         {/* Honeypot — hidden from real users, bots fill it */}
         <input

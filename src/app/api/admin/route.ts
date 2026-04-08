@@ -242,6 +242,40 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    case "bsky_reply": {
+      const { content: bskyReplyContent, blueskyUri: parentUri } = body;
+      if (!bskyReplyContent || !parentUri) {
+        return NextResponse.json({ error: "content and blueskyUri required" }, { status: 400 });
+      }
+      const bskyHandle = process.env.BLUESKY_HANDLE;
+      const bskyPassword = process.env.BLUESKY_APP_PASSWORD;
+      if (!bskyHandle || !bskyPassword) {
+        return NextResponse.json({ error: "Bluesky not configured" }, { status: 500 });
+      }
+      try {
+        const { BskyAgent } = await import("@atproto/api");
+        const agent = new BskyAgent({ service: "https://bsky.social" });
+        await agent.login({ identifier: bskyHandle, password: bskyPassword });
+        const uriParts = parentUri.replace("at://", "").split("/");
+        const repo = uriParts[0];
+        const rkey = uriParts[uriParts.length - 1];
+        const parentPost = await agent.getPost({ repo, rkey }) as { uri: string; cid: string; value: Record<string, unknown> };
+        const parentCid = parentPost.cid;
+        const parentReplyRef = parentPost.value.reply as { root: { uri: string; cid: string } } | undefined;
+        const rootRef = parentReplyRef
+          ? { uri: parentReplyRef.root.uri, cid: parentReplyRef.root.cid }
+          : { uri: parentUri, cid: parentCid };
+        await agent.post({
+          text: bskyReplyContent,
+          reply: { root: rootRef, parent: { uri: parentUri, cid: parentCid } },
+        });
+        return NextResponse.json({ success: true });
+      } catch (err) {
+        console.error("Bluesky reply failed:", err);
+        return NextResponse.json({ error: "Bluesky reply failed" }, { status: 500 });
+      }
+    }
+
     case "reject_comment": {
       const { commentId } = body;
       await prisma.guestComment.update({

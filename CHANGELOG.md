@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.6 (2026-04-08)
+
+### Added
+- Hamburger mobile menu for all navigation links (solid dark overlay)
+- Reply to Bluesky comments from post pages (admin only)
+- Optional email field on guest comment form (for reply notifications)
+- ReplyToBlueskyComment component with inline reply form
+
+### Fixed
+- Mobile menu background now solid (was transparent)
+
 ## 0.1.5 (2026-04-07)
 
 ### Added

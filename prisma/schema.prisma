@@ -101,6 +101,7 @@ model Photo {
 model GuestComment {
   id          String   @id @default(cuid())
   guestName   String
+  guestEmail  String?
   content     String
   ipHash      String   // hashed IP for rate limiting
   status      String   @default("pending") // pending, approved, rejected

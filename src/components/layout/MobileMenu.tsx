@@ -49,7 +49,7 @@ export default function MobileMenu({ isAdmin }: { isAdmin: boolean }) {
 
       {/* Mobile menu overlay */}
       {open && (
-        <div className="fixed inset-0 top-14 z-40 bg-surface-950/98 backdrop-blur-md md:hidden">
+        <div className="fixed inset-0 top-14 z-40 md:hidden" style={{ backgroundColor: "#0a0a0f" }}>
           <nav className="flex flex-col px-6 py-6 space-y-1">
             {navLinks.map((link) => (
               <Link
