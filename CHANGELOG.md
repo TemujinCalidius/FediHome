@@ -9,7 +9,8 @@
 - ReplyToBlueskyComment component with inline reply form
 
 ### Fixed
-- Mobile menu background now solid (was transparent)
+- Mobile menu rewritten as absolute dropdown (fixed overlay had stacking context issues)
+- ALT badge now shows on photography grid page (was only on post pages)
 
 ## 0.1.5 (2026-04-07)
 

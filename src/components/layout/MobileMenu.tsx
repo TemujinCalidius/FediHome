@@ -17,23 +17,16 @@ export default function MobileMenu({ isAdmin }: { isAdmin: boolean }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
 
-  // Close menu on navigation
   useEffect(() => {
     setOpen(false);
   }, [pathname]);
 
-  // Prevent scroll when open
-  useEffect(() => {
-    document.body.style.overflow = open ? "hidden" : "";
-    return () => { document.body.style.overflow = ""; };
-  }, [open]);
-
   return (
-    <>
-      {/* Hamburger button — visible only on mobile */}
+    <div className="md:hidden">
+      {/* Hamburger button */}
       <button
         onClick={() => setOpen(!open)}
-        className="md:hidden p-1.5 text-gray-400 hover:text-accent-400 transition-colors"
+        className="p-1.5 text-gray-400 hover:text-accent-400 transition-colors"
         aria-label="Menu"
       >
         {open ? (
@@ -47,15 +40,18 @@ export default function MobileMenu({ isAdmin }: { isAdmin: boolean }) {
         )}
       </button>
 
-      {/* Mobile menu overlay */}
+      {/* Dropdown menu */}
       {open && (
-        <div className="fixed inset-0 top-14 z-40 md:hidden" style={{ backgroundColor: "#0a0a0f" }}>
-          <nav className="flex flex-col px-6 py-6 space-y-1">
+        <div
+          className="absolute left-0 right-0 top-14 z-50 border-b border-surface-800 shadow-2xl"
+          style={{ backgroundColor: "#0a0a0f" }}
+        >
+          <nav className="flex flex-col px-6 py-4 space-y-1">
             {navLinks.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
-                className={`text-lg py-3 border-b border-surface-800 transition-colors ${
+                className={`text-base py-2.5 border-b border-surface-800/50 transition-colors ${
                   pathname === link.href
                     ? "text-accent-400"
                     : "text-gray-300 hover:text-accent-400"
@@ -67,20 +63,20 @@ export default function MobileMenu({ isAdmin }: { isAdmin: boolean }) {
             {isAdmin && (
               <Link
                 href="/timeline"
-                className="text-lg py-3 border-b border-surface-800 text-gray-500 hover:text-accent-400 transition-colors"
+                className="text-base py-2.5 border-b border-surface-800/50 text-gray-500 hover:text-accent-400 transition-colors"
               >
                 Fedi Feed
               </Link>
             )}
             <Link
               href="/feed.xml"
-              className="text-lg py-3 text-gray-500 hover:text-accent-400 transition-colors"
+              className="text-base py-2.5 text-gray-500 hover:text-accent-400 transition-colors"
             >
               RSS Feed
             </Link>
           </nav>
         </div>
       )}
-    </>
+    </div>
   );
 }
