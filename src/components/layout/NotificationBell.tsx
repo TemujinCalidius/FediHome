@@ -14,7 +14,7 @@ interface NotificationItem {
   createdAt: string;
 }
 
-const typeIcons: Record<string, string> = {
+const typeEmojis: Record<string, string> = {
   like: "\u2764\uFE0F",
   boost: "\uD83D\uDD01",
   reply: "\uD83D\uDCAC",
@@ -29,9 +29,71 @@ const sourceColors: Record<string, string> = {
   guest: "text-gray-400",
 };
 
+type Category = "all" | "like" | "boost" | "reply" | "follow" | "comment" | "dm";
+
+const categories: { key: Category; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "like", label: "Likes" },
+  { key: "boost", label: "Boosts" },
+  { key: "reply", label: "Replies" },
+  { key: "follow", label: "Follows" },
+  { key: "comment", label: "Comments" },
+  { key: "dm", label: "Messages" },
+];
+
+function CategoryIcon({ type, className }: { type: Category; className?: string }) {
+  const cls = className || "w-4 h-4";
+  switch (type) {
+    case "all":
+      return (
+        <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
+        </svg>
+      );
+    case "like":
+      return (
+        <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" />
+        </svg>
+      );
+    case "boost":
+      return (
+        <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 12c0-1.232-.046-2.453-.138-3.662a4.006 4.006 0 00-3.7-3.7 48.678 48.678 0 00-7.324 0 4.006 4.006 0 00-3.7 3.7c-.017.22-.032.441-.046.662M19.5 12l3-3m-3 3l-3-3m-12 3c0 1.232.046 2.453.138 3.662a4.006 4.006 0 003.7 3.7 48.656 48.656 0 007.324 0 4.006 4.006 0 003.7-3.7c.017-.22.032-.441.046-.662M4.5 12l3 3m-3-3l-3 3" />
+        </svg>
+      );
+    case "reply":
+      return (
+        <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z" />
+        </svg>
+      );
+    case "follow":
+      return (
+        <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 7.5v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zM4 19.235v-.11a6.375 6.375 0 0112.75 0v.109A12.318 12.318 0 0110.374 21c-2.331 0-4.512-.645-6.374-1.766z" />
+        </svg>
+      );
+    case "comment":
+      return (
+        <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+        </svg>
+      );
+    case "dm":
+      return (
+        <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+        </svg>
+      );
+  }
+}
+
 export default function NotificationBell() {
   const [count, setCount] = useState(0);
   const [items, setItems] = useState<NotificationItem[]>([]);
+  const [categoryCounts, setCategoryCounts] = useState<Record<string, number>>({});
+  const [activeCategory, setActiveCategory] = useState<Category>("all");
   const [open, setOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -43,6 +105,7 @@ export default function NotificationBell() {
         const data = await res.json();
         setCount(data.count || 0);
         if (data.items) setItems(data.items);
+        if (data.categoryCounts) setCategoryCounts(data.categoryCounts);
         setLoaded(true);
       }
     } catch {
@@ -56,7 +119,6 @@ export default function NotificationBell() {
     return () => clearInterval(interval);
   }, []);
 
-  // Close dropdown on click outside
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
@@ -84,6 +146,7 @@ export default function NotificationBell() {
     try {
       await fetch("/api/notifications", { method: "POST" });
       setCount(0);
+      setCategoryCounts({});
     } catch {
       // silently fail
     }
@@ -91,15 +154,22 @@ export default function NotificationBell() {
 
   const handleItemClick = (item: NotificationItem) => {
     setOpen(false);
-    // For follows, go to their profile
     if (item.type === "follow" && item.actorUrl) {
       window.open(item.actorUrl, "_blank");
       return;
     }
-    // For everything else, go to target
     if (item.targetUrl) {
       window.location.href = item.targetUrl;
     }
+  };
+
+  const displayItems = activeCategory === "all"
+    ? items
+    : items.filter((i) => i.type === activeCategory);
+
+  const totalUnreadForCategory = (key: Category) => {
+    if (key === "all") return count;
+    return categoryCounts[key] || 0;
   };
 
   return (
@@ -124,7 +194,8 @@ export default function NotificationBell() {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-8 w-80 bg-surface-900 border border-surface-600/30 rounded-xl shadow-2xl shadow-black/50 z-50 overflow-hidden">
+        <div className="absolute right-0 top-8 w-[460px] bg-surface-900 border border-surface-600/30 rounded-xl shadow-2xl shadow-black/50 z-50 overflow-hidden flex flex-col">
+          {/* Header */}
           <div className="px-4 py-3 border-b border-surface-700 flex items-center justify-between">
             <h3 className="text-sm font-semibold text-white">Notifications</h3>
             <div className="flex items-center gap-3">
@@ -139,50 +210,84 @@ export default function NotificationBell() {
             </div>
           </div>
 
-          <div className="max-h-96 overflow-y-auto">
-            {items.length === 0 ? (
-              <div className="p-6 text-center">
-                <p className="text-xs text-gray-600">No notifications</p>
-              </div>
-            ) : (
-              items.map((item) => (
-                <button
-                  key={item.id}
-                  onClick={() => handleItemClick(item)}
-                  className="w-full flex items-start gap-3 px-4 py-3 hover:bg-surface-800/50 transition-colors border-b border-surface-800/50 last:border-0 text-left"
-                >
-                  <div className="flex-shrink-0 mt-0.5">
-                    {item.avatarUrl ? (
-                      <img src={item.avatarUrl} alt="" className="w-8 h-8 rounded-full" />
-                    ) : (
-                      <div className="w-8 h-8 rounded-full bg-surface-700 flex items-center justify-center text-sm">
-                        {typeIcons[item.type] || ""}
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs text-gray-300">
-                      <span className="font-semibold text-white">{item.actor}</span>{" "}
-                      {item.summary}
-                    </p>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <span className="text-[10px] text-gray-600">{timeAgo(item.createdAt)}</span>
-                      <span className={`text-[10px] ${sourceColors[item.source] || "text-gray-500"}`}>
-                        {item.source}
-                      </span>
-                      <span className="text-[10px]">{typeIcons[item.type]}</span>
+          {/* Body: list + sidebar */}
+          <div className="flex min-h-0" style={{ maxHeight: "28rem" }}>
+            {/* Notification list */}
+            <div className="flex-1 overflow-y-auto">
+              {displayItems.length === 0 ? (
+                <div className="p-6 text-center">
+                  <p className="text-xs text-gray-600">
+                    {activeCategory === "all" ? "No notifications" : `No ${categories.find((c) => c.key === activeCategory)?.label?.toLowerCase() || ""}`}
+                  </p>
+                </div>
+              ) : (
+                displayItems.map((item) => (
+                  <button
+                    key={item.id}
+                    onClick={() => handleItemClick(item)}
+                    className="w-full flex items-start gap-3 px-4 py-3 hover:bg-surface-800/50 transition-colors border-b border-surface-800/50 last:border-0 text-left"
+                  >
+                    <div className="flex-shrink-0 mt-0.5">
+                      {item.avatarUrl ? (
+                        <img src={item.avatarUrl} alt="" className="w-8 h-8 rounded-full" />
+                      ) : (
+                        <div className="w-8 h-8 rounded-full bg-surface-700 flex items-center justify-center text-sm">
+                          {typeEmojis[item.type] || ""}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                  {item.type === "follow" && (
-                    <span className="text-[10px] text-gray-600 flex-shrink-0 mt-1">
-                      view profile
-                    </span>
-                  )}
-                </button>
-              ))
-            )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-gray-300">
+                        <span className="font-semibold text-white">{item.actor}</span>{" "}
+                        {item.summary}
+                      </p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-[10px] text-gray-600">{timeAgo(item.createdAt)}</span>
+                        <span className={`text-[10px] ${sourceColors[item.source] || "text-gray-500"}`}>
+                          {item.source}
+                        </span>
+                        <span className="text-[10px]">{typeEmojis[item.type]}</span>
+                      </div>
+                    </div>
+                    {item.type === "follow" && (
+                      <span className="text-[10px] text-gray-600 flex-shrink-0 mt-1">
+                        view profile
+                      </span>
+                    )}
+                  </button>
+                ))
+              )}
+            </div>
+
+            {/* Category sidebar */}
+            <div className="w-11 flex-shrink-0 border-l border-surface-700 flex flex-col items-center py-2 gap-1 overflow-y-auto">
+              {categories.map((cat) => {
+                const isActive = activeCategory === cat.key;
+                const unread = totalUnreadForCategory(cat.key);
+                return (
+                  <button
+                    key={cat.key}
+                    onClick={() => setActiveCategory(cat.key)}
+                    className={`relative w-9 h-9 flex items-center justify-center rounded-lg transition-colors ${
+                      isActive
+                        ? "bg-accent-500/20 text-accent-400"
+                        : "text-gray-500 hover:text-gray-300 hover:bg-surface-800/50"
+                    }`}
+                    title={cat.label}
+                  >
+                    <CategoryIcon type={cat.key} className="w-4 h-4" />
+                    {unread > 0 && (
+                      <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-3.5 flex items-center justify-center bg-red-500 text-white text-[8px] font-bold rounded-full px-0.5">
+                        {unread > 99 ? "99" : unread}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
+          {/* Footer */}
           {items.length > 0 && (
             <a
               href="/timeline"

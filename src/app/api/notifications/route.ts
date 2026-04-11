@@ -5,12 +5,12 @@ import { verifyAdmin } from "@/lib/auth";
 interface NotificationItem {
   id: string;
   type: "like" | "boost" | "reply" | "follow" | "comment" | "dm";
-  source: string; // "fedi", "bluesky", "guest"
-  actor: string; // display name or handle
-  actorUrl: string | null; // link to their fedi profile
+  source: string;
+  actor: string;
+  actorUrl: string | null;
   avatarUrl: string | null;
-  summary: string; // e.g. "liked your post"
-  targetUrl: string | null; // link to the post/photo on your site
+  summary: string;
+  targetUrl: string | null;
   createdAt: string;
 }
 
@@ -19,33 +19,33 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  // Mark all as read — set cookie with current timestamp
-  const res = NextResponse.json({ success: true });
-  res.cookies.set("sl_notif_read", new Date().toISOString(), {
-    httpOnly: true,
-    secure: true,
-    sameSite: "lax",
-    maxAge: 60 * 60 * 24 * 365, // 1 year
-    path: "/",
+  // Mark all as read — store timestamp in DB so it syncs across devices
+  await prisma.siteSetting.upsert({
+    where: { key: "notif_read_at" },
+    update: { value: new Date().toISOString() },
+    create: { key: "notif_read_at", value: new Date().toISOString() },
   });
-  return res;
+
+  return NextResponse.json({ success: true });
 }
 
 export async function GET(req: NextRequest) {
   if (!verifyAdmin(req)) {
-    return NextResponse.json({ count: 0, items: [] });
+    return NextResponse.json({ count: 0, items: [], categoryCounts: {} });
   }
 
   const items: NotificationItem[] = [];
-  const readAtStr = req.cookies.get("sl_notif_read")?.value;
-  const readAt = readAtStr ? new Date(readAtStr) : null;
-  const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-  // 1. Pending guest comments
+  // Get read-at timestamp from DB (syncs across devices)
+  const readAtSetting = await prisma.siteSetting.findUnique({
+    where: { key: "notif_read_at" },
+  });
+  const readAt = readAtSetting ? new Date(readAtSetting.value) : null;
+
+  // 1. Pending guest comments (no limit)
   const pendingComments = await prisma.guestComment.findMany({
     where: { status: "pending" },
     orderBy: { createdAt: "desc" },
-    take: 10,
     include: {
       post: { select: { slug: true, title: true } },
       photo: { select: { slug: true, title: true } },
@@ -72,8 +72,7 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  // 2. Recent fedi interactions on OUR content (last 24h)
-  // First get all our post/photo AP IDs
+  // 2. Fedi interactions on OUR content (no limit)
   const ourPosts = await prisma.post.findMany({
     where: { apId: { not: null } },
     select: { apId: true, slug: true, title: true },
@@ -82,8 +81,14 @@ export async function GET(req: NextRequest) {
     where: { apId: { not: null } },
     select: { apId: true, slug: true, title: true },
   });
+  const ourReplies = await prisma.fediPost.findMany({
+    where: { isOutgoing: true },
+    select: { apId: true, content: true },
+  });
+
   const apIdToUrl = new Map<string, { url: string; name: string }>();
   const ourApIds: string[] = [];
+
   for (const p of ourPosts) {
     if (p.apId) {
       apIdToUrl.set(p.apId, { url: `/post/${p.slug}`, name: p.title || p.slug });
@@ -96,15 +101,15 @@ export async function GET(req: NextRequest) {
       ourApIds.push(p.apId);
     }
   }
+  for (const r of ourReplies) {
+    const snippet = r.content.replace(/<[^>]*>/g, "").slice(0, 50) + (r.content.length > 50 ? "..." : "");
+    apIdToUrl.set(r.apId, { url: "/timeline", name: snippet });
+    ourApIds.push(r.apId);
+  }
 
-  // Only get interactions targeting OUR content
   const interactions = await prisma.fediInteraction.findMany({
-    where: {
-      createdAt: { gte: oneDayAgo },
-      targetApId: { in: ourApIds },
-    },
+    where: { targetApId: { in: ourApIds } },
     orderBy: { createdAt: "desc" },
-    take: 30,
   });
 
   for (const i of interactions) {
@@ -124,14 +129,12 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  // 3. Recent new followers (last 24h)
-  const newFollowers = await prisma.fediFollower.findMany({
-    where: { createdAt: { gte: oneDayAgo } },
+  // 3. Followers (no limit)
+  const allFollowers = await prisma.fediFollower.findMany({
     orderBy: { createdAt: "desc" },
-    take: 10,
   });
 
-  for (const f of newFollowers) {
+  for (const f of allFollowers) {
     items.push({
       id: `follow-${f.id}`,
       type: "follow",
@@ -145,10 +148,9 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  // 4. Unread DMs
+  // 4. Unread DMs (no limit)
   const allDMs = await prisma.directMessage.findMany({
     orderBy: { createdAt: "desc" },
-    take: 200,
   });
 
   const convos = new Map<string, typeof allDMs>();
@@ -180,10 +182,16 @@ export async function GET(req: NextRequest) {
   // Sort all items by date
   items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-  // Count only unread (newer than readAt)
-  const unreadCount = readAt
-    ? items.filter((i) => new Date(i.createdAt) > readAt).length
-    : items.length;
+  // Count unread per category
+  const categoryCounts: Record<string, number> = {};
+  let totalUnread = 0;
+  for (const item of items) {
+    const isUnread = !readAt || new Date(item.createdAt) > readAt;
+    if (isUnread) {
+      categoryCounts[item.type] = (categoryCounts[item.type] || 0) + 1;
+      totalUnread++;
+    }
+  }
 
-  return NextResponse.json({ count: unreadCount, items: items.slice(0, 20) });
+  return NextResponse.json({ count: totalUnread, items, categoryCounts });
 }

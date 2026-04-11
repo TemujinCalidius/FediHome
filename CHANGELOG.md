@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.1.7 (2026-04-11)
+
+### Added
+- Notification category sidebar — filter by Likes, Boosts, Replies, Follows, Comments, Messages
+- Per-category unread count badges on sidebar icons
+- Outgoing reply tracking — replies to your replies now generate notifications
+
+### Changed
+- Removed all notification query limits — all interactions, followers, and comments shown
+- Removed 24-hour window restriction on notifications
+- Notification read state moved from cookie to database (syncs across devices)
+- Notification dropdown widened to fit category sidebar
+
+### Added (schema)
+- `SiteSetting` key-value model for persistent settings
+
 ## 0.1.6 (2026-04-08)
 
 ### Added

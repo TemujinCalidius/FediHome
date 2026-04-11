@@ -261,3 +261,11 @@ model SiteSettings {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }
+
+// === Key-value settings (notification read state, etc.) ===
+
+model SiteSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
