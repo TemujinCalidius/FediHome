@@ -119,6 +119,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
+  try {
+    return await composeHandler(req);
+  } catch (err) {
+    console.error("Compose handler failed:", err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Compose failed" },
+      { status: 500 }
+    );
+  }
+}
+
+async function composeHandler(req: NextRequest) {
   const body = await req.json();
   const {
     title,
@@ -183,11 +195,15 @@ export async function POST(req: NextRequest) {
   const audioTitles = (audios || []).map((a) => a.title || "");
   const audioCovers = (audios || []).map((a) => a.coverImage || "");
 
-  // Generate slug
+  // Generate slug — append a short timestamp suffix if it already exists
   const slugBase = title
     ? slugify(title)
     : slugify(content.slice(0, 40)) || `post-${Date.now().toString(36)}`;
-  const slug = slugBase;
+  let slug = slugBase;
+  const existing = await prisma.post.findUnique({ where: { slug }, select: { id: true } });
+  if (existing) {
+    slug = `${slugBase}-${Date.now().toString(36)}`;
+  }
 
   // Render content HTML
   let contentHtml: string;
