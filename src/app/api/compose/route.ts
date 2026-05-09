@@ -191,6 +191,7 @@ async function composeHandler(req: NextRequest) {
   const photoCaptions = (photos || []).map((p) => p.alt || "");
   const videoUrls = (videos || []).map((v) => v.url);
   const videoTitles = (videos || []).map((v) => v.title || "");
+  const videoThumbnails = (videos || []).map((v) => v.thumbnailUrl || "");
   const audioPaths = (audios || []).map((a) => a.url);
   const audioTitles = (audios || []).map((a) => a.title || "");
   const audioCovers = (audios || []).map((a) => a.coverImage || "");
@@ -236,6 +237,7 @@ async function composeHandler(req: NextRequest) {
       photoCaptions,
       videos: videoUrls,
       videoTitles,
+      videoThumbnails,
       audioPaths,
       audioTitles,
       audioCovers,

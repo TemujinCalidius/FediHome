@@ -1,12 +1,31 @@
 import type { NextConfig } from "next";
 
+const PEERTUBE_HOSTS = [
+  "makertube.net",
+  "tilvids.com",
+  "tube.tchncs.de",
+  "framatube.org",
+  "peertube.tv",
+  "video.hardlimit.com",
+  "diode.zone",
+  "share.tube",
+  "kolektiva.media",
+  "peertube.linuxrocks.online",
+];
+
 const nextConfig: NextConfig = {
   images: {
     // Add your own domain(s) here, e.g.:
-    // remotePatterns: [{ protocol: "https", hostname: "yourdomain.com" }],
-    remotePatterns: [],
+    // remotePatterns: [{ protocol: "https", hostname: "yourdomain.com" }, ...]
+    remotePatterns: [
+      ...PEERTUBE_HOSTS.map((hostname) => ({
+        protocol: "https" as const,
+        hostname,
+      })),
+    ],
   },
   async headers() {
+    const frameSrc = ["'self'", ...PEERTUBE_HOSTS.map((h) => `https://${h}`)].join(" ");
     return [
       {
         source: "/(.*)",
@@ -21,6 +40,7 @@ const nextConfig: NextConfig = {
               "media-src 'self' https:",
               "font-src 'self'",
               "connect-src 'self'",
+              `frame-src ${frameSrc}`,
               "frame-ancestors 'none'",
             ].join("; "),
           },

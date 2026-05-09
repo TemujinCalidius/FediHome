@@ -21,11 +21,12 @@ model Post {
   coverImage  String?
   photos         String[] // array of image paths for photo posts
   photoCaptions  String[] // parallel array of captions/alt text
-  videos         String[] // array of canonical PeerTube URLs (https://makertube.net/w/...)
-  videoTitles    String[] // parallel array of video titles
-  audioPaths     String[] // array of /uploads/audio/... mp3 paths
-  audioTitles    String[] // parallel array of audio titles
-  audioCovers    String[] // parallel array of audio cover image URLs (may be empty strings)
+  videos             String[] // array of canonical PeerTube URLs (https://makertube.net/w/...)
+  videoTitles        String[] // parallel array of video titles
+  videoThumbnails    String[] // parallel array of thumbnail URLs (may be empty strings)
+  audioPaths         String[] // array of /uploads/audio/... mp3 paths
+  audioTitles        String[] // parallel array of audio titles
+  audioCovers        String[] // parallel array of audio cover image URLs (may be empty strings)
   published   Boolean  @default(true)
   publishedAt DateTime @default(now())
   updatedAt   DateTime @updatedAt
