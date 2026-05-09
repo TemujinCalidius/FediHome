@@ -21,6 +21,11 @@ model Post {
   coverImage  String?
   photos         String[] // array of image paths for photo posts
   photoCaptions  String[] // parallel array of captions/alt text
+  videos         String[] // array of canonical PeerTube URLs (https://makertube.net/w/...)
+  videoTitles    String[] // parallel array of video titles
+  audioPaths     String[] // array of /uploads/audio/... mp3 paths
+  audioTitles    String[] // parallel array of audio titles
+  audioCovers    String[] // parallel array of audio cover image URLs (may be empty strings)
   published   Boolean  @default(true)
   publishedAt DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -99,6 +104,58 @@ model Photo {
 
   // Guest comments
   guestComments GuestComment[]
+
+  @@index([publishedAt])
+  @@index([category])
+}
+
+// === Videos (PeerTube embeds) ===
+
+model Video {
+  id           String   @id @default(cuid())
+  slug         String   @unique
+  title        String?
+  description  String?
+  embedUrl     String
+  embedHost    String
+  embedId      String
+  iframeSrc    String
+  thumbnailUrl String?
+  duration     Int?
+  category     String   @default("general")
+  tags         String[]
+  published    Boolean  @default(true)
+  publishedAt  DateTime @default(now())
+  hero         Boolean  @default(false)
+  heroOrder    Int?
+  apId         String?  @unique
+  likeCount    Int      @default(0)
+  boostCount   Int      @default(0)
+
+  @@index([publishedAt])
+  @@index([category])
+}
+
+// === Audio (uploaded MP3s) ===
+
+model Audio {
+  id           String   @id @default(cuid())
+  slug         String   @unique
+  title        String?
+  description  String?
+  mp3Path      String
+  durationSec  Int?
+  fileSize     Int?
+  coverImage   String?
+  category     String   @default("general")
+  tags         String[]
+  published    Boolean  @default(true)
+  publishedAt  DateTime @default(now())
+  hero         Boolean  @default(false)
+  heroOrder    Int?
+  apId         String?  @unique
+  likeCount    Int      @default(0)
+  boostCount   Int      @default(0)
 
   @@index([publishedAt])
   @@index([category])

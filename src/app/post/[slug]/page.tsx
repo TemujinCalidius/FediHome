@@ -5,6 +5,7 @@ import { marked } from "marked";
 import { cookies } from "next/headers";
 import { hashToken, safeCompare } from "@/lib/auth";
 import { LightboxGallery } from "@/components/ui/Lightbox";
+import { iframeSrcFor } from "@/lib/peertube";
 import { getPathHits, getKudosForPath } from "@/lib/tinylytics";
 import GuestCommentForm from "@/components/fedi/GuestCommentForm";
 import FediInteractions from "@/components/fedi/FediInteractions";
@@ -203,6 +204,62 @@ export default async function PostPage({
           </div>
         )}
       </LightboxGallery>
+
+      {/* Video embeds */}
+      {post.videos && post.videos.length > 0 && (
+        <div className="space-y-4 mb-8">
+          {post.videos.map((videoUrl, i) => {
+            const src = iframeSrcFor(videoUrl);
+            if (!src) return null;
+            return (
+              <figure key={videoUrl} className="space-y-2">
+                <div className="aspect-video rounded-xl overflow-hidden bg-black">
+                  <iframe
+                    src={src}
+                    title={post.videoTitles?.[i] || "Embedded video"}
+                    allow="fullscreen"
+                    sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+                    className="w-full h-full border-0"
+                  />
+                </div>
+                {post.videoTitles?.[i] && (
+                  <figcaption className="text-xs text-gray-500">{post.videoTitles[i]}</figcaption>
+                )}
+              </figure>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Audio players */}
+      {post.audioPaths && post.audioPaths.length > 0 && (
+        <div className="space-y-4 mb-8">
+          {post.audioPaths.map((src, i) => (
+            <figure key={src} className="bg-surface-800/50 border border-surface-700 rounded-xl p-4 flex items-center gap-4">
+              {post.audioCovers?.[i] ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={post.audioCovers[i]}
+                  alt=""
+                  className="w-20 h-20 object-cover rounded flex-shrink-0"
+                />
+              ) : (
+                <div className="w-20 h-20 bg-surface-700 rounded flex items-center justify-center flex-shrink-0">
+                  <svg className="w-10 h-10 text-accent-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 9l10.5-3m0 6.553v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 11-.99-3.467l2.31-.66a2.25 2.25 0 001.632-2.163zm0 0V2.25L9 5.25v10.303m0 0v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 01-.99-3.467l2.31-.66A2.25 2.25 0 009 15.553z" />
+                  </svg>
+                </div>
+              )}
+              <div className="flex-1 min-w-0">
+                {post.audioTitles?.[i] && (
+                  <figcaption className="text-sm text-white mb-2 truncate">{post.audioTitles[i]}</figcaption>
+                )}
+                <audio controls preload="metadata" src={src} className="w-full" />
+              </div>
+            </figure>
+          ))}
+        </div>
+      )}
 
       {/* Content */}
       <div

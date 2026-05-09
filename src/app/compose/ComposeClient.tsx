@@ -9,20 +9,49 @@ interface PhotoAttachment {
   preview: string;
 }
 
+interface VideoAttachment {
+  url: string;
+  title: string;
+  embedHost: string;
+  embedId: string;
+  iframeSrc: string;
+  thumbnailUrl: string | null;
+  duration: number | null;
+}
+
+interface AudioAttachment {
+  url: string;
+  title: string;
+  durationSec: number | null;
+  fileSize: number | null;
+}
+
 export default function ComposeClient() {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [description, setDescription] = useState("");
   const [photos, setPhotos] = useState<PhotoAttachment[]>([]);
+  const [videos, setVideos] = useState<VideoAttachment[]>([]);
+  const [audios, setAudios] = useState<AudioAttachment[]>([]);
   const [crosspostBluesky, setCrosspostBluesky] = useState(true);
   const [crosspostThreads, setCrosspostThreads] = useState(true);
   const [crosspostDayOne, setCrosspostDayOne] = useState(true);
   const [addToPhotography, setAddToPhotography] = useState(false);
   const [photoCategory, setPhotoCategory] = useState("general");
+  const [addToVideos, setAddToVideos] = useState(false);
+  const [videoCategory, setVideoCategory] = useState("general");
+  const [addToAudio, setAddToAudio] = useState(false);
+  const [audioCategory, setAudioCategory] = useState("general");
   const [uploading, setUploading] = useState(false);
+  const [audioUploading, setAudioUploading] = useState(false);
   const [posting, setPosting] = useState(false);
   const [result, setResult] = useState<{ success: boolean; url?: string; error?: string } | null>(null);
+  const [videoModalOpen, setVideoModalOpen] = useState(false);
+  const [videoUrlInput, setVideoUrlInput] = useState("");
+  const [videoParsing, setVideoParsing] = useState(false);
+  const [videoParseError, setVideoParseError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const audioInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const isArticle = title.trim().length > 0;
@@ -85,6 +114,88 @@ export default function ComposeClient() {
     });
   };
 
+  // Parse a PeerTube URL on the server → fetches title + thumbnail
+  const parseVideoUrl = async () => {
+    const url = videoUrlInput.trim();
+    if (!url) return;
+    setVideoParsing(true);
+    setVideoParseError(null);
+    try {
+      const res = await fetch("/api/video/parse", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setVideoParseError(err.error || "Could not parse video URL");
+        setVideoParsing(false);
+        return;
+      }
+      const data = await res.json();
+      setVideos((prev) => [
+        ...prev,
+        {
+          url: data.embedUrl,
+          title: data.title || "",
+          embedHost: data.embedHost,
+          embedId: data.embedId,
+          iframeSrc: data.iframeSrc,
+          thumbnailUrl: data.thumbnailUrl || null,
+          duration: data.duration || null,
+        },
+      ]);
+      setVideoUrlInput("");
+      setVideoModalOpen(false);
+    } catch {
+      setVideoParseError("Failed to reach the parser");
+    }
+    setVideoParsing(false);
+  };
+
+  const removeVideo = (index: number) => {
+    setVideos((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  // Upload audio MP3 to /api/media
+  const handleAudioSelect = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const file = files[0];
+    if (!file.type.startsWith("audio/")) return;
+
+    setAudioUploading(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch("/api/media", { method: "POST", body: form });
+      if (res.ok) {
+        const data = await res.json();
+        setAudios((prev) => [
+          ...prev,
+          {
+            url: data.url,
+            title: file.name.replace(/\.[^.]+$/, ""),
+            durationSec: data.durationSec || null,
+            fileSize: data.fileSize || null,
+          },
+        ]);
+      }
+    } finally {
+      setAudioUploading(false);
+    }
+  };
+
+  const removeAudio = (index: number) => {
+    setAudios((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const formatDuration = (sec: number | null) => {
+    if (!sec || sec < 0) return "";
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m}:${String(s).padStart(2, "0")}`;
+  };
+
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     handleFileSelect(e.dataTransfer.files);
@@ -104,11 +215,30 @@ export default function ComposeClient() {
           content: content.trim(),
           description: description.trim() || undefined,
           photos: photos.map((p) => ({ url: p.url, alt: p.alt })),
+          videos: videos.map((v) => ({
+            url: v.url,
+            title: v.title,
+            embedHost: v.embedHost,
+            embedId: v.embedId,
+            iframeSrc: v.iframeSrc,
+            thumbnailUrl: v.thumbnailUrl,
+            duration: v.duration,
+          })),
+          audios: audios.map((a) => ({
+            url: a.url,
+            title: a.title,
+            durationSec: a.durationSec,
+            fileSize: a.fileSize,
+          })),
           crosspostBluesky,
           crosspostThreads,
           crosspostDayOne,
           addToPhotography: photos.length > 0 && addToPhotography,
           photoCategory: addToPhotography ? photoCategory : undefined,
+          addToVideos: videos.length > 0 && addToVideos,
+          videoCategory: addToVideos ? videoCategory : undefined,
+          addToAudio: audios.length > 0 && addToAudio,
+          audioCategory: addToAudio ? audioCategory : undefined,
         }),
       });
 
@@ -120,6 +250,8 @@ export default function ComposeClient() {
         setContent("");
         setDescription("");
         setPhotos([]);
+        setVideos([]);
+        setAudios([]);
       } else {
         setResult({ success: false, error: data.error || "Failed to post" });
       }
@@ -308,6 +440,124 @@ export default function ComposeClient() {
         )}
       </div>
 
+      {/* Video attachments */}
+      <div>
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-xs text-gray-500">Videos ({videos.length})</span>
+          <button
+            type="button"
+            onClick={() => setVideoModalOpen(true)}
+            className="text-xs text-accent-400 hover:text-accent-300 transition-colors"
+          >
+            + Add video
+          </button>
+          <span className="text-[10px] text-gray-700">PeerTube / MakerTube embeds</span>
+        </div>
+
+        {videos.length > 0 && (
+          <div className="space-y-2">
+            {videos.map((video, i) => (
+              <div key={i} className="flex items-center gap-3 bg-surface-800/50 border border-surface-700 rounded-lg p-2">
+                {video.thumbnailUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={video.thumbnailUrl} alt="" className="w-20 h-12 object-cover rounded flex-shrink-0" />
+                ) : (
+                  <div className="w-20 h-12 bg-surface-700 rounded flex items-center justify-center text-[10px] text-gray-600 flex-shrink-0">
+                    no preview
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <input
+                    type="text"
+                    value={video.title}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setVideos((prev) => prev.map((x, j) => (j === i ? { ...x, title: v } : x)));
+                    }}
+                    placeholder="Video title"
+                    className="w-full bg-transparent text-sm text-white placeholder-gray-600 focus:outline-none"
+                  />
+                  <div className="text-[10px] text-gray-600 truncate">
+                    {video.embedHost}
+                    {video.duration ? ` · ${formatDuration(video.duration)}` : ""}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => removeVideo(i)}
+                  className="w-6 h-6 bg-surface-700 hover:bg-red-500 rounded flex items-center justify-center text-white text-xs"
+                  aria-label="Remove video"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Audio attachments */}
+      <div>
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-xs text-gray-500">Audio ({audios.length})</span>
+          <button
+            type="button"
+            onClick={() => audioInputRef.current?.click()}
+            disabled={audioUploading}
+            className="text-xs text-accent-400 hover:text-accent-300 transition-colors disabled:opacity-50"
+          >
+            {audioUploading ? "Uploading..." : "+ Add audio"}
+          </button>
+          <span className="text-[10px] text-gray-700">MP3, max 100MB</span>
+        </div>
+
+        <input
+          ref={audioInputRef}
+          type="file"
+          accept="audio/mpeg,audio/mp3,.mp3"
+          onChange={(e) => handleAudioSelect(e.target.files)}
+          className="hidden"
+        />
+
+        {audios.length > 0 && (
+          <div className="space-y-2">
+            {audios.map((audio, i) => (
+              <div key={i} className="flex items-center gap-3 bg-surface-800/50 border border-surface-700 rounded-lg p-2">
+                <div className="w-10 h-10 bg-surface-700 rounded flex items-center justify-center flex-shrink-0">
+                  <svg className="w-5 h-5 text-accent-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 9l10.5-3m0 6.553v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 11-.99-3.467l2.31-.66a2.25 2.25 0 001.632-2.163zm0 0V2.25L9 5.25v10.303m0 0v3.75a2.25 2.25 0 01-1.632 2.163l-1.32.377a1.803 1.803 0 01-.99-3.467l2.31-.66A2.25 2.25 0 009 15.553z" />
+                  </svg>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <input
+                    type="text"
+                    value={audio.title}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setAudios((prev) => prev.map((x, j) => (j === i ? { ...x, title: v } : x)));
+                    }}
+                    placeholder="Track title"
+                    className="w-full bg-transparent text-sm text-white placeholder-gray-600 focus:outline-none"
+                  />
+                  <div className="text-[10px] text-gray-600">
+                    {audio.durationSec ? `${formatDuration(audio.durationSec)}` : "?"}
+                    {audio.fileSize ? ` · ${(audio.fileSize / (1024 * 1024)).toFixed(1)} MB` : ""}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => removeAudio(i)}
+                  className="w-6 h-6 bg-surface-700 hover:bg-red-500 rounded flex items-center justify-center text-white text-xs"
+                  aria-label="Remove audio"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Crosspost toggles */}
       <div className="flex items-center gap-4 pt-2 border-t border-surface-700">
         <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -364,6 +614,110 @@ export default function ComposeClient() {
               <option value="street">Street</option>
             </select>
           )}
+        </div>
+      )}
+
+      {/* Video toggle — only show when videos are attached */}
+      {videos.length > 0 && (
+        <div className="flex items-center gap-4 pt-2 border-t border-surface-700">
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={addToVideos}
+              onChange={(e) => setAddToVideos(e.target.checked)}
+              className="rounded border-surface-600 bg-surface-800 text-accent-400 focus:ring-accent-400/30"
+            />
+            <span className="text-xs text-gray-500">Add to Videos</span>
+          </label>
+          {addToVideos && (
+            <select
+              value={videoCategory}
+              onChange={(e) => setVideoCategory(e.target.value)}
+              className="text-xs bg-surface-800 border border-surface-600 rounded px-2 py-1 text-gray-400"
+            >
+              <option value="general">General</option>
+              <option value="lore">Lore</option>
+              <option value="tutorial">Tutorial</option>
+              <option value="walk">Photo walk</option>
+            </select>
+          )}
+        </div>
+      )}
+
+      {/* Audio toggle — only show when audios are attached */}
+      {audios.length > 0 && (
+        <div className="flex items-center gap-4 pt-2 border-t border-surface-700">
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={addToAudio}
+              onChange={(e) => setAddToAudio(e.target.checked)}
+              className="rounded border-surface-600 bg-surface-800 text-accent-400 focus:ring-accent-400/30"
+            />
+            <span className="text-xs text-gray-500">Add to Audio</span>
+          </label>
+          {addToAudio && (
+            <select
+              value={audioCategory}
+              onChange={(e) => setAudioCategory(e.target.value)}
+              className="text-xs bg-surface-800 border border-surface-600 rounded px-2 py-1 text-gray-400"
+            >
+              <option value="general">General</option>
+              <option value="music">Music</option>
+              <option value="talk">Talk</option>
+              <option value="ambient">Ambient</option>
+            </select>
+          )}
+        </div>
+      )}
+
+      {/* Video URL modal */}
+      {videoModalOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
+          onClick={() => setVideoModalOpen(false)}
+        >
+          <div
+            className="bg-surface-900 border border-surface-700 rounded-xl p-5 max-w-md w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-sm font-semibold text-white mb-3">Add a video</h3>
+            <p className="text-xs text-gray-500 mb-3">
+              Paste a PeerTube / MakerTube URL. We&apos;ll fetch the title and thumbnail.
+            </p>
+            <input
+              type="url"
+              value={videoUrlInput}
+              onChange={(e) => setVideoUrlInput(e.target.value)}
+              placeholder="https://makertube.net/w/..."
+              className="w-full bg-surface-800 border border-surface-700 rounded px-3 py-2 text-sm text-white placeholder-gray-600 focus:border-accent-400/30 focus:outline-none mb-3"
+              autoFocus
+            />
+            {videoParseError && (
+              <p className="text-xs text-red-400 mb-3">{videoParseError}</p>
+            )}
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setVideoModalOpen(false);
+                  setVideoUrlInput("");
+                  setVideoParseError(null);
+                }}
+                className="text-xs text-gray-500 hover:text-white px-3 py-1.5"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={parseVideoUrl}
+                disabled={videoParsing || !videoUrlInput.trim()}
+                className="btn-primary text-xs disabled:opacity-50"
+              >
+                {videoParsing ? "Parsing..." : "Add"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

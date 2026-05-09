@@ -125,21 +125,47 @@ export async function POST(req: NextRequest) {
     content,
     description,
     photos,
+    videos,
+    audios,
     crosspostBluesky,
     crosspostThreads,
     crosspostDayOne,
     addToPhotography,
     photoCategory,
+    addToVideos,
+    videoCategory,
+    addToAudio,
+    audioCategory,
   } = body as {
     title?: string;
     content: string;
     description?: string;
     photos?: { url: string; alt: string }[];
+    videos?: {
+      url: string;
+      title: string;
+      embedHost: string;
+      embedId: string;
+      iframeSrc: string;
+      thumbnailUrl?: string | null;
+      duration?: number | null;
+    }[];
+    audios?: {
+      url: string;
+      title: string;
+      durationSec?: number | null;
+      fileSize?: number | null;
+      coverImage?: string | null;
+    }[];
     crosspostBluesky?: boolean;
     crosspostThreads?: boolean;
     crosspostDayOne?: boolean;
     addToPhotography?: boolean;
     photoCategory?: string;
+    addToVideos?: boolean;
+    videoCategory?: string;
+    addToAudio?: boolean;
+    audioCategory?: string;
   };
 
   if (!content?.trim()) {
@@ -151,6 +177,11 @@ export async function POST(req: NextRequest) {
   const tags = extractHashtags(content);
   const photoUrls = (photos || []).map((p) => p.url);
   const photoCaptions = (photos || []).map((p) => p.alt || "");
+  const videoUrls = (videos || []).map((v) => v.url);
+  const videoTitles = (videos || []).map((v) => v.title || "");
+  const audioPaths = (audios || []).map((a) => a.url);
+  const audioTitles = (audios || []).map((a) => a.title || "");
+  const audioCovers = (audios || []).map((a) => a.coverImage || "");
 
   // Generate slug
   const slugBase = title
@@ -187,6 +218,11 @@ export async function POST(req: NextRequest) {
       tags,
       photos: photoUrls,
       photoCaptions,
+      videos: videoUrls,
+      videoTitles,
+      audioPaths,
+      audioTitles,
+      audioCovers,
       published: true,
       apId: `${siteUrl}/post/${slug}`,
     },
@@ -214,6 +250,58 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Create Video records if "Add to Videos" is toggled
+  if (addToVideos && videos && videos.length > 0) {
+    for (let i = 0; i < videos.length; i++) {
+      const v = videos[i];
+      const videoSlug = `${slug}-video-${i + 1}`;
+      await prisma.video.create({
+        data: {
+          slug: videoSlug,
+          title: v.title || null,
+          embedUrl: v.url,
+          embedHost: v.embedHost,
+          embedId: v.embedId,
+          iframeSrc: v.iframeSrc,
+          thumbnailUrl: v.thumbnailUrl || null,
+          duration: v.duration || null,
+          category: videoCategory || "general",
+          tags,
+          published: true,
+          publishedAt: post.publishedAt,
+          apId: `${siteUrl}/videos/${videoSlug}`,
+        },
+      }).catch(() => {
+        // Ignore duplicate slug errors
+      });
+    }
+  }
+
+  // Create Audio records if "Add to Audio" is toggled
+  if (addToAudio && audios && audios.length > 0) {
+    for (let i = 0; i < audios.length; i++) {
+      const a = audios[i];
+      const audioSlug = `${slug}-audio-${i + 1}`;
+      await prisma.audio.create({
+        data: {
+          slug: audioSlug,
+          title: a.title || null,
+          mp3Path: a.url,
+          durationSec: a.durationSec || null,
+          fileSize: a.fileSize || null,
+          coverImage: a.coverImage || null,
+          category: audioCategory || "general",
+          tags,
+          published: true,
+          publishedAt: post.publishedAt,
+          apId: `${siteUrl}/audio/${audioSlug}`,
+        },
+      }).catch(() => {
+        // Ignore duplicate slug errors
+      });
+    }
+  }
+
   // Build AP content for federation
   let apContent: string;
   if (isArticle) {
@@ -224,8 +312,16 @@ export async function POST(req: NextRequest) {
     apContent = contentHtml;
   }
 
-  // Build AP attachment array for photos
-  const apAttachments = (photos || []).map((p) => {
+  // Append video URLs to AP content as plain links so Mastodon shows link previews
+  if (videos && videos.length > 0) {
+    const videoLinks = videos
+      .map((v) => `<p><a href="${v.url}" rel="nofollow noopener noreferrer">${v.url}</a></p>`)
+      .join("\n");
+    apContent = `${apContent}\n${videoLinks}`;
+  }
+
+  // Build AP attachment array for photos AND audio
+  const apImageAttachments = (photos || []).map((p) => {
     const url = p.url.startsWith("http") ? p.url : `${siteUrl}${p.url}`;
     const ext = url.split(".").pop()?.toLowerCase() || "jpg";
     const mimeMap: Record<string, string> = {
@@ -239,6 +335,18 @@ export async function POST(req: NextRequest) {
       name: p.alt || "",
     };
   });
+
+  const apAudioAttachments = (audios || []).map((a) => {
+    const url = a.url.startsWith("http") ? a.url : `${siteUrl}${a.url}`;
+    return {
+      type: "Document",
+      mediaType: "audio/mpeg",
+      url,
+      name: a.title || "",
+    };
+  });
+
+  const apAttachments = [...apImageAttachments, ...apAudioAttachments];
 
   // Build AP tag array for hashtags
   const apTags = tags.map((tag) => ({
@@ -275,9 +383,14 @@ export async function POST(req: NextRequest) {
 
   // Crossposting
   const postUrl = `${siteUrl}/post/${slug}`;
-  const crosspostText = isArticle
+  let crosspostText = isArticle
     ? (description?.trim() || stripMarkdown(content).slice(0, 300))
     : content;
+  // Append video URLs so Bluesky/Threads show link previews
+  if (videos && videos.length > 0) {
+    const videoLines = videos.map((v) => v.url).join("\n");
+    crosspostText = `${crosspostText}\n\n${videoLines}`;
+  }
 
   if (crosspostBluesky !== false) {
     // Build image list with full URLs for Bluesky upload

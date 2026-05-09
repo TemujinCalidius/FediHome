@@ -72,6 +72,15 @@ docker compose up -d
 - PostgreSQL 15+
 - A domain name with DNS access
 
+## Videos and Audio
+
+FediHome supports two new attachment types alongside photos:
+
+- **Videos** — paste a PeerTube URL in compose (allowlist in `src/lib/peertube.ts`; defaults include MakerTube, Framatube, TilVids, and a handful of other trusted instances). The system fetches title and thumbnail via PeerTube oEmbed and embeds the video on the post. Listing at `/videos`. Add custom hosts by editing `ALLOWED_HOSTS`.
+- **Audio** — upload MP3s up to 100MB. Native HTML5 player on post pages, listing at `/audio`, and a podcast RSS feed at `/audio/feed.xml`. Configure podcast metadata via env vars: `PODCAST_TITLE`, `PODCAST_AUTHOR`, `PODCAST_DESCRIPTION`, `PODCAST_EMAIL`, `PODCAST_IMAGE`.
+
+Both render natively as ActivityPub attachments — Mastodon, Pleroma, and Misskey will show the audio player or video link preview.
+
 ## Maintenance
 
 Run `npm run check-updates` to scan for outdated packages, security advisories, and new releases of key dependencies (Fedify, Next.js, Prisma, atproto, React). Findings appear in your notification bell under the **Updates** category. Dismiss or mark applied per item.

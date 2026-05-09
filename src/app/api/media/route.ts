@@ -3,11 +3,15 @@ import { verifyMicropubToken, verifyAdmin } from "@/lib/auth";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import sharp from "sharp";
+import { parseBuffer as parseAudioMetadata } from "music-metadata";
 
 // Images larger than this get optimized
 const MAX_DIMENSION = 2400; // px (longest edge)
 const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB — optimize anything bigger
 const WEBP_QUALITY = 85;
+
+// Audio cap (per-file)
+const MAX_AUDIO_SIZE = 100 * 1024 * 1024; // 100 MB
 
 export async function POST(req: NextRequest) {
   // Accept either Micropub token or admin cookie
@@ -23,15 +27,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "no file uploaded" }, { status: 400 });
   }
 
-  // Validate file type
-  const allowedTypes = [
+  const imageTypes = [
     "image/jpeg",
     "image/png",
     "image/webp",
     "image/gif",
     "image/heic",
   ];
-  if (!allowedTypes.includes(file.type)) {
+  const audioTypes = ["audio/mpeg", "audio/mp3"];
+
+  // Audio path
+  if (audioTypes.includes(file.type)) {
+    return await handleAudioUpload(file);
+  }
+
+  // Image path
+  if (!imageTypes.includes(file.type)) {
     return NextResponse.json({ error: "unsupported file type" }, { status: 400 });
   }
 
@@ -91,4 +102,48 @@ export async function POST(req: NextRequest) {
     status: 201,
     headers: { Location: url },
   });
+}
+
+async function handleAudioUpload(file: File): Promise<NextResponse> {
+  const buffer = Buffer.from(await file.arrayBuffer());
+
+  if (buffer.length > MAX_AUDIO_SIZE) {
+    return NextResponse.json(
+      { error: `audio file too large (max ${Math.round(MAX_AUDIO_SIZE / 1024 / 1024)}MB)` },
+      { status: 400 }
+    );
+  }
+
+  // Probe metadata for duration (best-effort — file still saved if probing fails)
+  let durationSec: number | null = null;
+  try {
+    const meta = await parseAudioMetadata(buffer, { mimeType: file.type });
+    if (meta.format.duration) {
+      durationSec = Math.round(meta.format.duration);
+    }
+  } catch {
+    // ignore — keep durationSec null
+  }
+
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const audioDir = path.join(process.cwd(), "public", "uploads", "audio", String(year), month);
+  await mkdir(audioDir, { recursive: true });
+
+  const timestamp = Date.now().toString(36);
+  const filename = `${timestamp}.mp3`;
+  const filePath = path.join(audioDir, filename);
+  await writeFile(filePath, buffer);
+
+  const siteUrl = process.env.SITE_URL || "https://samuellison.com";
+  const url = `${siteUrl}/uploads/audio/${year}/${month}/${filename}`;
+
+  return NextResponse.json(
+    { url, durationSec, fileSize: buffer.length, kind: "audio" },
+    {
+      status: 201,
+      headers: { Location: url },
+    }
+  );
 }
