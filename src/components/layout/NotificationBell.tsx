@@ -4,13 +4,14 @@ import { useState, useEffect, useRef } from "react";
 
 interface NotificationItem {
   id: string;
-  type: "like" | "boost" | "reply" | "follow" | "comment" | "dm";
+  type: "like" | "boost" | "reply" | "follow" | "comment" | "dm" | "update";
   source: string;
   actor: string;
   actorUrl: string | null;
   avatarUrl: string | null;
   summary: string;
   targetUrl: string | null;
+  maintenanceId: string | null;
   createdAt: string;
 }
 
@@ -21,15 +22,17 @@ const typeEmojis: Record<string, string> = {
   follow: "\uD83D\uDC64",
   comment: "\u270D\uFE0F",
   dm: "\u2709\uFE0F",
+  update: "\uD83D\uDD27",
 };
 
 const sourceColors: Record<string, string> = {
   fedi: "text-accent-400",
   bluesky: "text-blue-400",
   guest: "text-gray-400",
+  maintenance: "text-amber-400",
 };
 
-type Category = "all" | "like" | "boost" | "reply" | "follow" | "comment" | "dm";
+type Category = "all" | "like" | "boost" | "reply" | "follow" | "comment" | "dm" | "update";
 
 const categories: { key: Category; label: string }[] = [
   { key: "all", label: "All" },
@@ -39,6 +42,7 @@ const categories: { key: Category; label: string }[] = [
   { key: "follow", label: "Follows" },
   { key: "comment", label: "Comments" },
   { key: "dm", label: "Messages" },
+  { key: "update", label: "Updates" },
 ];
 
 function CategoryIcon({ type, className }: { type: Category; className?: string }) {
@@ -84,6 +88,12 @@ function CategoryIcon({ type, className }: { type: Category; className?: string 
       return (
         <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+        </svg>
+      );
+    case "update":
+      return (
+        <svg className={cls} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M11.42 15.17 17.25 21A2.652 2.652 0 0021 17.25l-5.877-5.877M11.42 15.17l2.496-3.03c.317-.384.74-.626 1.208-.766M11.42 15.17l-4.655 5.653a2.548 2.548 0 11-3.586-3.586l6.837-5.63m5.108-.233c.55-.164 1.163-.188 1.743-.14a4.5 4.5 0 004.486-6.336l-3.276 3.277a3.004 3.004 0 01-2.25-2.25l3.276-3.276a4.5 4.5 0 00-6.336 4.486c.091 1.076-.071 2.264-.904 2.95l-.102.085m-1.745 1.437L5.909 7.5H4.5L2.25 3.75l1.5-1.5L7.5 4.5v1.409l4.26 4.26m-1.745 1.437 1.745-1.437m6.615 8.206L15.75 15.75M4.867 19.125h.008v.008h-.008v-.008z" />
         </svg>
       );
   }
@@ -158,8 +168,33 @@ export default function NotificationBell() {
       window.open(item.actorUrl, "_blank");
       return;
     }
+    if (item.type === "update" && item.targetUrl) {
+      window.open(item.targetUrl, "_blank");
+      return;
+    }
     if (item.targetUrl) {
       window.location.href = item.targetUrl;
+    }
+  };
+
+  const handleMaintenanceAction = async (
+    e: React.MouseEvent,
+    id: string,
+    field: "applied" | "dismissed",
+  ) => {
+    e.stopPropagation();
+    try {
+      const res = await fetch(`/api/maintenance/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [field]: true }),
+      });
+      if (res.ok) {
+        setItems((prev) => prev.filter((i) => i.maintenanceId !== id));
+        fetchNotifications();
+      }
+    } catch {
+      // silently fail
     }
   };
 
@@ -222,10 +257,18 @@ export default function NotificationBell() {
                 </div>
               ) : (
                 displayItems.map((item) => (
-                  <button
+                  <div
                     key={item.id}
+                    role="button"
+                    tabIndex={0}
                     onClick={() => handleItemClick(item)}
-                    className="w-full flex items-start gap-3 px-4 py-3 hover:bg-surface-800/50 transition-colors border-b border-surface-800/50 last:border-0 text-left"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        handleItemClick(item);
+                      }
+                    }}
+                    className="w-full flex items-start gap-3 px-4 py-3 hover:bg-surface-800/50 transition-colors border-b border-surface-800/50 last:border-0 text-left cursor-pointer"
                   >
                     <div className="flex-shrink-0 mt-0.5">
                       {item.avatarUrl ? (
@@ -254,7 +297,31 @@ export default function NotificationBell() {
                         view profile
                       </span>
                     )}
-                  </button>
+                    {item.type === "update" && item.maintenanceId && (
+                      <div className="flex flex-col gap-1 flex-shrink-0">
+                        <button
+                          type="button"
+                          title="Mark applied"
+                          onClick={(e) => handleMaintenanceAction(e, item.maintenanceId!, "applied")}
+                          className="w-6 h-6 flex items-center justify-center rounded text-green-500 hover:bg-green-500/20 transition-colors"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          title="Dismiss"
+                          onClick={(e) => handleMaintenanceAction(e, item.maintenanceId!, "dismissed")}
+                          className="w-6 h-6 flex items-center justify-center rounded text-gray-500 hover:bg-red-500/20 hover:text-red-400 transition-colors"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 ))
               )}
             </div>

@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.1.8 (2026-05-09)
+
+### Security
+- Fix HIGH severity Fedify CVE [GHSA-gm9m-gwc4-hwgp](https://github.com/advisories/GHSA-gm9m-gwc4-hwgp) — resource exhaustion via unbounded HTTP redirects (Fedify 2.0.6 → 2.2.0)
+
+### Added
+- **Service update monitor** — `npm run check-updates` script reads `npm outdated`, `npm audit`, and GitHub release feeds for a curated watchlist (Fedify, Next.js, Prisma, atproto, React); findings appear in the notification bell under a new "Updates" category with dismiss/apply actions
+- **Hero slider** on `/photography` — opt-in via `Photo.hero` flag (disabled by default); 16:7 auto-advancing carousel with dot + arrow + swipe nav, respects `prefers-reduced-motion`
+- **`MaintenanceItem` model** + key-value `SiteSetting` model already added in 0.1.7 now powers maintenance read state
+- **Photo dimension columns** (`width`, `height`) backfilled via `sharp` — required for masonry layout
+- **Lightbox bottom action bar** — optional "View post" link surfaces detail-page comments/EXIF without forcing a full nav
+
+### Changed
+- **Photography grid switched from forced 1:1 uniform crop to true masonry** via `react-masonry-css` — portraits stay portrait, landscapes stay landscape, mixed orientations render at native aspect ratio
+- Photo click now opens a fullscreen Lightbox with arrow/keyboard/swipe nav across the entire portfolio (no longer routes to the blog post)
+- Notification API includes maintenance items as a new `update` type with wrench icon and amber accent
+
+### Updated dependencies
+- `@fedify/fedify` 2.0.6 → 2.2.0 (security)
+- `@fedify/next` 2.0.6 → 2.2.0
+- `@atproto/api` 0.19.4 → 0.19.16
+- `next` 16.2.0 → 16.2.6
+- `react`, `react-dom` 19.2.4 → 19.2.6
+- `nodemailer` 8.0.3 → 8.0.7
+- `tailwindcss` / `@tailwindcss/postcss` 4.2.2 → 4.3.0
+- `postcss` 8.5.8 → 8.5.14
+- `fast-xml-parser` 5.5.6 → 5.7.3
+- `marked` 17.0.4 → 17.0.6
+- `@prisma/client`, `prisma` 6.19.2 → 6.19.3
+- `@types/node` 25.5.0 → 25.6.2
+- New: `react-masonry-css` 1.0.16, `tsx` 4.21.0 (devDep)
+
 ## 0.1.7 (2026-04-11)
 
 ### Added

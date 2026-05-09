@@ -4,13 +4,14 @@ import { verifyAdmin } from "@/lib/auth";
 
 interface NotificationItem {
   id: string;
-  type: "like" | "boost" | "reply" | "follow" | "comment" | "dm";
+  type: "like" | "boost" | "reply" | "follow" | "comment" | "dm" | "update";
   source: string;
   actor: string;
   actorUrl: string | null;
   avatarUrl: string | null;
   summary: string;
   targetUrl: string | null;
+  maintenanceId: string | null;
   createdAt: string;
 }
 
@@ -68,6 +69,7 @@ export async function GET(req: NextRequest) {
       avatarUrl: null,
       summary: `commented on "${target.name}"`,
       targetUrl: target.url,
+      maintenanceId: null,
       createdAt: c.createdAt.toISOString(),
     });
   }
@@ -125,6 +127,7 @@ export async function GET(req: NextRequest) {
       avatarUrl: i.avatarUrl,
       summary: `${verb} "${target?.name || "your post"}"`,
       targetUrl: target?.url || null,
+      maintenanceId: null,
       createdAt: i.createdAt.toISOString(),
     });
   }
@@ -144,6 +147,7 @@ export async function GET(req: NextRequest) {
       avatarUrl: f.avatarUrl,
       summary: "followed you",
       targetUrl: f.actorUri,
+      maintenanceId: null,
       createdAt: f.createdAt.toISOString(),
     });
   }
@@ -174,9 +178,40 @@ export async function GET(req: NextRequest) {
         avatarUrl: sorted[0].senderAvatar,
         summary: `sent you a message`,
         targetUrl: "/timeline",
+        maintenanceId: null,
         createdAt: sorted[0].createdAt.toISOString(),
       });
     }
+  }
+
+  // 5. Maintenance items (package updates, security advisories, release notes)
+  const maintenanceItems = await prisma.maintenanceItem.findMany({
+    where: { dismissed: false, applied: false },
+    orderBy: { createdAt: "desc" },
+  });
+
+  for (const m of maintenanceItems) {
+    let summary: string;
+    if (m.kind === "update") {
+      summary = `${m.packageName} ${m.current ?? ""} → ${m.latest ?? ""}`.trim();
+    } else if (m.kind === "security") {
+      summary = `${(m.severity || "moderate").toUpperCase()} advisory in ${m.packageName}`;
+    } else {
+      summary = `${m.packageName} ${m.latest ?? ""} released`;
+    }
+
+    items.push({
+      id: `maintenance-${m.id}`,
+      type: "update",
+      source: "maintenance",
+      actor: m.kind === "security" ? "Security advisory" : m.kind === "release-note" ? "New release" : "Package update",
+      actorUrl: null,
+      avatarUrl: null,
+      summary: m.title || summary,
+      targetUrl: m.url,
+      maintenanceId: m.id,
+      createdAt: m.createdAt.toISOString(),
+    });
   }
 
   // Sort all items by date

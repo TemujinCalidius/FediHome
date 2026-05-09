@@ -82,6 +82,14 @@ model Photo {
   published   Boolean  @default(true)
   publishedAt DateTime @default(now())
 
+  // Intrinsic dimensions for masonry layout
+  width       Int?
+  height      Int?
+
+  // Hero slider on /photography
+  hero        Boolean  @default(false)
+  heroOrder   Int?
+
   // ActivityPub
   apId        String?  @unique
 
@@ -268,4 +276,21 @@ model SiteSetting {
   key       String   @id
   value     String
   updatedAt DateTime @updatedAt
+}
+
+model MaintenanceItem {
+  id          String   @id @default(cuid())
+  kind        String   // "update" | "security" | "release-note"
+  packageName String
+  current     String?
+  latest      String?
+  severity    String?
+  title       String
+  description String?
+  url         String?
+  dismissed   Boolean  @default(false)
+  applied     Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@unique([kind, packageName, latest])
 }

@@ -72,6 +72,26 @@ docker compose up -d
 - PostgreSQL 15+
 - A domain name with DNS access
 
+## Maintenance
+
+Run `npm run check-updates` to scan for outdated packages, security advisories, and new releases of key dependencies (Fedify, Next.js, Prisma, atproto, React). Findings appear in your notification bell under the **Updates** category. Dismiss or mark applied per item.
+
+```bash
+npm run check-updates
+```
+
+Backfill photo dimensions (one-off, after upgrading from <0.1.8) — required for the masonry layout to render without column collapse:
+
+```bash
+npm run backfill-photo-dimensions
+```
+
+Schedule the update check weekly via cron if you want passive monitoring:
+
+```cron
+0 9 * * 1 cd /path/to/fedihome && /usr/local/bin/npm run check-updates >> /tmp/fedihome-updates.log 2>&1
+```
+
 ## Documentation
 - [Getting Started](docs/getting-started.md) — First 10 minutes
 - [Configuration](docs/configuration.md) — All settings explained
