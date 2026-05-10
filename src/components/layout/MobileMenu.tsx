@@ -3,15 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-
-const navLinks = [
-  { label: "Home", href: "/" },
-  { label: "Journal", href: "/journal" },
-  { label: "Articles", href: "/articles" },
-  { label: "Photography", href: "/photography" },
-  { label: "Store", href: "/store" },
-  { label: "About", href: "/about" },
-];
+import { navLinks } from "@/lib/nav";
 
 export default function MobileMenu({ isAdmin }: { isAdmin: boolean }) {
   const [open, setOpen] = useState(false);

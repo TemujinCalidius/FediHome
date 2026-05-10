@@ -67,12 +67,18 @@ export default async function HomePage({
           <p className="text-gray-500 mt-4 leading-relaxed">
             Welcome to my FediHome &mdash; a personal space on the Fediverse.
           </p>
-          <div className="flex gap-3 mt-6">
+          <div className="flex flex-wrap gap-3 mt-6">
             <Link href="/about" className="btn-outlined text-xs">
               About Me
             </Link>
             <Link href="/photography" className="btn-outlined text-xs">
               Photography
+            </Link>
+            <Link href="/videos" className="btn-outlined text-xs">
+              Videos
+            </Link>
+            <Link href="/audio" className="btn-outlined text-xs">
+              Audio
             </Link>
           </div>
         </section>

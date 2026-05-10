@@ -4,16 +4,7 @@ import { cookies } from "next/headers";
 import NotificationBell from "./NotificationBell";
 import MobileMenu from "./MobileMenu";
 import { siteConfig } from "@/../site.config";
-
-const navLinks = [
-  { label: "Home", href: "/" },
-  { label: "Journal", href: "/journal" },
-  { label: "Articles", href: "/articles" },
-  { label: "Photography", href: "/photography" },
-  { label: "Videos", href: "/videos" },
-  { label: "Audio", href: "/audio" },
-  { label: "About", href: "/about" },
-];
+import { navLinks } from "@/lib/nav";
 
 export default async function Navbar() {
   const cookieStore = await cookies();

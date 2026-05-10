@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.10 (2026-05-10)
+
+### Fixed
+- **Bluesky video crossposts** now render as a tappable rich link card instead of a broken/missing preview. PeerTube/MakerTube thumbnails are fetched, uploaded as a blob, and attached as `app.bsky.embed.external` (uri + title + description + thumb). Posts with photos still use the existing `app.bsky.embed.images` path; posts with both photos and a video keep the photos embed and append the video URL inline. Threads/DayOne crossposts unchanged.
+- **Mobile menu drift** — `MobileMenu.tsx` was missing "Videos" and "Audio" entries (added in 0.1.9 to the desktop navbar) and still listed a stale "Store" item that never existed in FediHome. Both menus now read from a shared `src/lib/nav.ts` config to prevent future drift.
+
+### Changed
+- Home page intro now also links to Videos and Audio (in addition to About Me and Photography). Row uses `flex-wrap` so it tidies on mobile.
+
 ## 0.1.9 (2026-05-09)
 
 ### Added

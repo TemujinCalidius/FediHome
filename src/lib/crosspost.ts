@@ -8,14 +8,22 @@ export interface CrosspostImage {
   alt: string;
 }
 
+export interface CrosspostVideo {
+  url: string;
+  title: string;
+  description?: string;
+  thumbnailUrl?: string;
+}
+
 /**
  * Cross-post to Bluesky via AT Protocol.
- * Supports up to 4 inline images.
+ * Embed precedence: images (up to 4) > external video link card > none.
  */
 export async function crosspostToBluesky(
   content: string,
   url?: string,
-  images?: CrosspostImage[]
+  images?: CrosspostImage[],
+  video?: CrosspostVideo
 ): Promise<{ success: boolean; uri?: string; error?: string }> {
   const handle = process.env.BLUESKY_HANDLE;
   const password = process.env.BLUESKY_APP_PASSWORD;
@@ -44,8 +52,11 @@ export async function crosspostToBluesky(
     const rt = new RichText({ text });
     await rt.detectFacets(agent);
 
-    // Upload images if provided
-    const embed = await buildBlueskyEmbed(agent, images);
+    // Upload images if provided; otherwise fall back to video external embed.
+    let embed = await buildBlueskyEmbed(agent, images);
+    if (!embed && video) {
+      embed = await buildBlueskyVideoEmbed(agent, video);
+    }
 
     const result = await agent.post({
       text: rt.text,
@@ -112,6 +123,50 @@ async function buildBlueskyEmbed(
   return {
     $type: "app.bsky.embed.images",
     images: uploaded,
+  };
+}
+
+async function buildBlueskyVideoEmbed(
+  agent: BskyAgent,
+  video: CrosspostVideo
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): Promise<any | null> {
+  const mimeMap: Record<string, string> = {
+    jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png",
+    webp: "image/webp", gif: "image/gif",
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let thumb: any = undefined;
+  if (video.thumbnailUrl) {
+    try {
+      const res = await fetch(video.thumbnailUrl);
+      if (res.ok) {
+        const buffer = new Uint8Array(await res.arrayBuffer());
+        const ctHeader = res.headers.get("content-type") || "";
+        const ext = video.thumbnailUrl.split("?")[0].split(".").pop()?.toLowerCase() || "";
+        const contentType = ctHeader.startsWith("image/")
+          ? ctHeader
+          : (mimeMap[ext] || "image/jpeg");
+        const uploadRes = await agent.uploadBlob(buffer, { encoding: contentType });
+        thumb = uploadRes.data.blob;
+      }
+    } catch (err) {
+      console.error("Bluesky video thumbnail upload failed:", err);
+    }
+  }
+
+  const title = (video.title || "Video").slice(0, 300);
+  const description = (video.description || "").slice(0, 1000);
+
+  return {
+    $type: "app.bsky.embed.external",
+    external: {
+      uri: video.url,
+      title,
+      description,
+      ...(thumb ? { thumb } : {}),
+    },
   };
 }
 

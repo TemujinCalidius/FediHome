@@ -401,10 +401,11 @@ async function composeHandler(req: NextRequest) {
 
   // Crossposting
   const postUrl = `${siteUrl}/post/${slug}`;
-  let crosspostText = isArticle
+  const baseText = isArticle
     ? (description?.trim() || stripMarkdown(content).slice(0, 300))
     : content;
-  // Append video URLs so Bluesky/Threads show link previews
+  // Threads has no embed API in our integration — append video URLs inline.
+  let crosspostText = baseText;
   if (videos && videos.length > 0) {
     const videoLines = videos.map((v) => v.url).join("\n");
     crosspostText = `${crosspostText}\n\n${videoLines}`;
@@ -416,8 +417,24 @@ async function composeHandler(req: NextRequest) {
       url: p.url.startsWith("http") ? p.url : `${siteUrl}${p.url}`,
       alt: p.alt || "",
     }));
+    // When no images attached, send the first video as an external link card.
+    // In that case omit the video URL from the text to avoid duplicating it next to the card.
+    const firstVideo = (bskyImages.length === 0 && videos && videos.length > 0)
+      ? {
+          url: videos[0].url,
+          title: videos[0].title || "Video",
+          description: baseText.slice(0, 300),
+          thumbnailUrl: videos[0].thumbnailUrl || undefined,
+        }
+      : undefined;
+    const bskyText = firstVideo ? baseText : crosspostText;
     try {
-      const bskyResult = await crosspostToBluesky(crosspostText, postUrl, bskyImages.length > 0 ? bskyImages : undefined);
+      const bskyResult = await crosspostToBluesky(
+        bskyText,
+        postUrl,
+        bskyImages.length > 0 ? bskyImages : undefined,
+        firstVideo,
+      );
       if (bskyResult.success && bskyResult.uri) {
         await prisma.post.update({
           where: { id: post.id },
