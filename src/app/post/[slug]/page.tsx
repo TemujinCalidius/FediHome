@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import Image from "next/image";
+import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { marked } from "marked";
 import { cookies } from "next/headers";
@@ -11,7 +12,9 @@ import { getPathHits, getKudosForPath } from "@/lib/tinylytics";
 import GuestCommentForm from "@/components/fedi/GuestCommentForm";
 import FediInteractions from "@/components/fedi/FediInteractions";
 import ReplyToComment from "@/components/fedi/ReplyToComment";
+import AuthorFollowUpForm from "@/components/fedi/AuthorFollowUpForm";
 import KudosButton from "@/components/ui/KudosButton";
+import { siteConfig } from "@/../site.config";
 import type { Metadata } from "next";
 
 function linkHashtags(html: string): string {
@@ -61,6 +64,13 @@ export default async function PostPage({
       guestComments: {
         where: { status: "approved" },
         orderBy: { createdAt: "asc" },
+      },
+      followUps: {
+        where: { published: true },
+        orderBy: { publishedAt: "asc" },
+      },
+      inReplyTo: {
+        select: { slug: true, title: true, content: true },
       },
     },
   });
@@ -139,6 +149,19 @@ export default async function PostPage({
     <article className="max-w-3xl mx-auto px-6 py-16">
       {/* Header */}
       <header className="mb-8">
+        {post.inReplyTo && (
+          <div className="text-sm text-gray-500 mb-3">
+            <Link
+              href={`/post/${post.inReplyTo.slug}`}
+              className="text-accent-400 hover:text-accent-300 transition-colors"
+            >
+              ↩ in reply to{" "}
+              <span className="underline">
+                {post.inReplyTo.title || post.inReplyTo.content.slice(0, 60).trim() + (post.inReplyTo.content.length > 60 ? "…" : "")}
+              </span>
+            </Link>
+          </div>
+        )}
         <div className="flex items-center gap-3 mb-4">
           <time className="text-sm text-accent-400 font-mono">
             {post.publishedAt.toLocaleDateString("en-AU", {
@@ -299,9 +322,46 @@ export default async function PostPage({
           Comments
         </h2>
 
-        {/* Approved guest comments + fedi replies + bluesky replies */}
-        {(post.guestComments.length > 0 || replies.length > 0 || blueskyReplies.length > 0) ? (
+        {/* Approved guest comments + fedi replies + bluesky replies + author follow-ups */}
+        {(post.guestComments.length > 0 || replies.length > 0 || blueskyReplies.length > 0 || post.followUps.length > 0) ? (
           <div className="space-y-4 mb-8">
+            {/* Author follow-ups (self-replies cross-posted to threads) */}
+            {post.followUps.map((followUp) => (
+              <div key={followUp.id} className="glass-card p-4 border-l-2 border-accent-400/40">
+                <div className="flex items-center gap-2 mb-2">
+                  <Image
+                    src={siteConfig.avatarPath}
+                    alt=""
+                    width={24}
+                    height={24}
+                    className="rounded-full"
+                  />
+                  <span className="text-sm font-semibold text-white">{siteConfig.authorName}</span>
+                  <span className="text-xs text-accent-400">Author follow-up</span>
+                  <time className="text-xs text-gray-600 ml-auto">
+                    {followUp.publishedAt.toLocaleDateString("en-AU", {
+                      month: "short",
+                      day: "numeric",
+                    })}
+                  </time>
+                </div>
+                <div
+                  className="text-gray-300 text-sm [&_a]:text-accent-400 [&_a]:hover:underline"
+                  dangerouslySetInnerHTML={{
+                    __html: followUp.contentHtml || `<p>${followUp.content.replace(/\n/g, "<br>")}</p>`,
+                  }}
+                />
+                <div className="mt-2">
+                  <Link
+                    href={`/post/${followUp.slug}`}
+                    className="text-xs text-accent-400 hover:text-accent-300"
+                  >
+                    View follow-up thread →
+                  </Link>
+                </div>
+              </div>
+            ))}
+
             {/* Fedi replies (incoming + own) */}
             {replies.map((reply) => (
               <div key={reply.id} className={`glass-card p-4 ${reply.isOwn ? "border-l-2 border-accent-400/40" : ""}`}>
@@ -380,6 +440,13 @@ export default async function PostPage({
           <p className="text-gray-600 text-sm mb-8">
             No comments yet. Be the first to share your thoughts.
           </p>
+        )}
+
+        {/* Author follow-up form — admin only, only on top-level posts */}
+        {isAdmin && !post.inReplyToPostId && (
+          <div className="mb-8">
+            <AuthorFollowUpForm postId={post.id} />
+          </div>
         )}
 
         {/* Guest comment form */}

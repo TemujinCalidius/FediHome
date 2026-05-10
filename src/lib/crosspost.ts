@@ -37,17 +37,7 @@ export async function crosspostToBluesky(
     const agent = new BskyAgent({ service: "https://bsky.social" });
     await agent.login({ identifier: handle, password });
 
-    // Truncate for Bluesky's 300 char limit
-    let text = content;
-    if (url) {
-      const maxContentLen = 300 - url.length - 2;
-      if (text.length > maxContentLen) {
-        text = text.slice(0, maxContentLen - 3) + "...";
-      }
-      text = text + "\n\n" + url;
-    } else if (text.length > 300) {
-      text = text.slice(0, 297) + "...";
-    }
+    const text = truncateForBluesky(content, url);
 
     // Parse rich text (handles links, mentions, hashtags)
     const rt = new RichText({ text });
@@ -70,6 +60,89 @@ export async function crosspostToBluesky(
   } catch (err) {
     return { success: false, error: String(err) };
   }
+}
+
+/**
+ * Cross-post a threaded reply to Bluesky. Used for author follow-ups: the new
+ * post is attached as a reply under `parentBlueskyUri` so Bluesky renders it
+ * as part of the same thread. If the parent is itself already a reply, the
+ * thread root is preserved (AT Protocol requires `root` to point to the
+ * top-level post of the conversation, not the immediate parent).
+ */
+export async function crosspostReplyToBluesky(
+  content: string,
+  parentBlueskyUri: string,
+  url?: string,
+  images?: CrosspostImage[],
+  video?: CrosspostVideo,
+): Promise<{ success: boolean; uri?: string; error?: string }> {
+  const handle = process.env.BLUESKY_HANDLE;
+  const password = process.env.BLUESKY_APP_PASSWORD;
+
+  if (!handle || !password) {
+    return { success: false, error: "Bluesky credentials not configured" };
+  }
+
+  try {
+    const agent = new BskyAgent({ service: "https://bsky.social" });
+    await agent.login({ identifier: handle, password });
+
+    const uriParts = parentBlueskyUri.replace("at://", "").split("/");
+    const repo = uriParts[0];
+    const rkey = uriParts[uriParts.length - 1];
+
+    const parentPost = (await agent.getPost({ repo, rkey })) as {
+      uri: string;
+      cid: string;
+      value: Record<string, unknown>;
+    };
+    const parentCid = parentPost.cid;
+    const parentReplyRef = parentPost.value.reply as
+      | { root: { uri: string; cid: string }; parent: { uri: string; cid: string } }
+      | undefined;
+    const rootRef = parentReplyRef
+      ? { uri: parentReplyRef.root.uri, cid: parentReplyRef.root.cid }
+      : { uri: parentBlueskyUri, cid: parentCid };
+
+    const text = truncateForBluesky(content, url);
+
+    const rt = new RichText({ text });
+    await rt.detectFacets(agent);
+
+    let embed = await buildBlueskyEmbed(agent, images);
+    if (!embed && video) {
+      embed = await buildBlueskyVideoEmbed(agent, video);
+    }
+
+    const result = await agent.post({
+      text: rt.text,
+      facets: rt.facets,
+      createdAt: new Date().toISOString(),
+      reply: {
+        root: rootRef,
+        parent: { uri: parentBlueskyUri, cid: parentCid },
+      },
+      ...(embed ? { embed } : {}),
+    });
+
+    return { success: true, uri: result.uri };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+}
+
+function truncateForBluesky(content: string, url?: string): string {
+  let text = content;
+  if (url) {
+    const maxContentLen = 300 - url.length - 2;
+    if (text.length > maxContentLen) {
+      text = text.slice(0, maxContentLen - 3) + "...";
+    }
+    text = text + "\n\n" + url;
+  } else if (text.length > 300) {
+    text = text.slice(0, 297) + "...";
+  }
+  return text;
 }
 
 async function buildBlueskyEmbed(

@@ -51,8 +51,14 @@ model Post {
   // Bluesky replies
   blueskyReplies BlueskyReply[]
 
+  // Author follow-up threading: a Post can be a reply to another of our own Posts.
+  inReplyToPostId String?
+  inReplyTo       Post?   @relation("PostFollowUps", fields: [inReplyToPostId], references: [id])
+  followUps       Post[]  @relation("PostFollowUps")
+
   @@index([publishedAt])
   @@index([category])
+  @@index([inReplyToPostId])
 }
 
 // === Bluesky Replies ===

@@ -14,7 +14,10 @@ export async function GET(
 ) {
   const { slug } = await params;
 
-  const post = await prisma.post.findUnique({ where: { slug } });
+  const post = await prisma.post.findUnique({
+    where: { slug },
+    include: { inReplyTo: { select: { apId: true } } },
+  });
   if (!post || !post.published || !post.apId) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
@@ -49,6 +52,7 @@ export async function GET(
     published: post.publishedAt.toISOString(),
     to: ["https://www.w3.org/ns/activitystreams#Public"],
     cc: [`${siteUrl}/ap/followers`],
+    ...(post.inReplyTo?.apId ? { inReplyTo: post.inReplyTo.apId } : {}),
     ...(attachment.length > 0 ? { attachment } : {}),
     ...(tags.length > 0 ? { tag: tags } : {}),
   };

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { verifyAdmin, verifyOrigin } from "@/lib/auth";
 import { deliverToFollowers } from "@/lib/http-signatures";
-import { crosspostToBluesky, crosspostToThreads, crosspostToDayOne } from "@/lib/crosspost";
+import { crosspostToBluesky, crosspostReplyToBluesky, crosspostToThreads, crosspostToDayOne } from "@/lib/crosspost";
 import { sanitizeHtml } from "@/lib/sanitize";
 import path from "path";
 
@@ -148,6 +148,7 @@ async function composeHandler(req: NextRequest) {
     videoCategory,
     addToAudio,
     audioCategory,
+    inReplyToPostId,
   } = body as {
     title?: string;
     content: string;
@@ -178,10 +179,22 @@ async function composeHandler(req: NextRequest) {
     videoCategory?: string;
     addToAudio?: boolean;
     audioCategory?: string;
+    inReplyToPostId?: string;
   };
 
   if (!content?.trim()) {
     return NextResponse.json({ error: "Content is required" }, { status: 400 });
+  }
+
+  let parentPost: { id: string; apId: string | null; blueskyUri: string | null } | null = null;
+  if (inReplyToPostId) {
+    parentPost = await prisma.post.findUnique({
+      where: { id: inReplyToPostId },
+      select: { id: true, apId: true, blueskyUri: true },
+    });
+    if (!parentPost) {
+      return NextResponse.json({ error: "Parent post not found" }, { status: 404 });
+    }
   }
 
   const isArticle = !!title?.trim();
@@ -243,6 +256,7 @@ async function composeHandler(req: NextRequest) {
       audioCovers,
       published: true,
       apId: `${siteUrl}/post/${slug}`,
+      ...(parentPost ? { inReplyToPostId: parentPost.id } : {}),
     },
   });
 
@@ -390,6 +404,7 @@ async function composeHandler(req: NextRequest) {
       published: post.publishedAt.toISOString(),
       to: ["https://www.w3.org/ns/activitystreams#Public"],
       cc: [`${siteUrl}/ap/followers`],
+      ...(parentPost?.apId ? { inReplyTo: parentPost.apId } : {}),
       ...(apAttachments.length > 0 ? { attachment: apAttachments } : {}),
       ...(apTags.length > 0 ? { tag: apTags } : {}),
     },
@@ -429,12 +444,20 @@ async function composeHandler(req: NextRequest) {
       : undefined;
     const bskyText = firstVideo ? baseText : crosspostText;
     try {
-      const bskyResult = await crosspostToBluesky(
-        bskyText,
-        postUrl,
-        bskyImages.length > 0 ? bskyImages : undefined,
-        firstVideo,
-      );
+      const bskyResult = parentPost?.blueskyUri
+        ? await crosspostReplyToBluesky(
+            bskyText,
+            parentPost.blueskyUri,
+            postUrl,
+            bskyImages.length > 0 ? bskyImages : undefined,
+            firstVideo,
+          )
+        : await crosspostToBluesky(
+            bskyText,
+            postUrl,
+            bskyImages.length > 0 ? bskyImages : undefined,
+            firstVideo,
+          );
       if (bskyResult.success && bskyResult.uri) {
         await prisma.post.update({
           where: { id: post.id },
@@ -446,13 +469,15 @@ async function composeHandler(req: NextRequest) {
     }
   }
 
-  if (crosspostThreads !== false) {
+  // Threads/DayOne don't have a useful threading model for follow-ups, so we
+  // only fire them on top-level posts.
+  if (!parentPost && crosspostThreads !== false) {
     crosspostToThreads(crosspostText, postUrl).catch((err) =>
       console.error("Threads crosspost failed:", err)
     );
   }
 
-  if (crosspostDayOne !== false) {
+  if (!parentPost && crosspostDayOne !== false) {
     const dayOneImages = (photos || []).map((p) => {
       const url = p.url.startsWith("http") ? p.url : `${siteUrl}${p.url}`;
       const localPath = url.includes("/uploads/")

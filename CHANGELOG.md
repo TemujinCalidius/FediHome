@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.1.12 (2026-05-11)
+
+### Added
+- **Author follow-ups on microblog posts.** From your own post detail page, an admin-only "Add follow-up" button lets you compose a threaded reply that cross-posts to Bluesky as a real reply (uses `reply.root` and `reply.parent` against the original's stored AT URI, with thread-root resolution if the parent is itself a reply) and federates as an ActivityPub Note with `inReplyTo` set to the parent's `apId`. Follow-ups become first-class `Post` rows with their own slug, permalink, and federation, but are hidden from the homepage feed, journal, articles, RSS, XML-RPC, and profile post counts — they appear inline on the original post's page as author-styled comment cards (uses `siteConfig.authorName` and `siteConfig.avatarPath`) with a "View follow-up thread →" link, and a "↩ in reply to [original]" header at the top of any follow-up's permalink. Threads/DayOne are skipped for follow-ups (no useful threading model). Replies-to-incoming-comments still stay platform-local (existing behavior unchanged). UI is gated to top-level posts in v1; the data model already supports chained follow-ups.
+
+### Schema
+- New self-referential FK on `Post`: `inReplyToPostId` (nullable) → `Post.id`, with reverse relations `inReplyTo` / `followUps` and an index on `inReplyToPostId`. Apply with `npx prisma db push`. Existing rows get `NULL`.
+
+### Files
+- New `src/lib/crosspost.ts:crosspostReplyToBluesky()` — resolves the parent CID via `agent.getPost`, walks up to the thread root if the parent is itself a reply, then calls `agent.post` with the proper `reply.root` / `reply.parent` refs. Shares text-truncation / embed-building with the existing `crosspostToBluesky` (extracted into a private `truncateForBluesky` helper).
+- New `src/components/fedi/AuthorFollowUpForm.tsx` — small client form (textarea + 300-char counter + submit) that POSTs `{ content, inReplyToPostId }` to `/api/compose` and refreshes on success.
+- `src/app/api/compose/route.ts` — accepts optional `inReplyToPostId`; routes Bluesky to the threaded helper when the parent has a `blueskyUri`; sets `inReplyTo: parent.apId` on the federated AP `Create` activity; gates Threads/DayOne to top-level only.
+- `src/app/post/[slug]/page.tsx` — fetches `followUps` and `inReplyTo`; renders follow-ups inline; renders the in-reply-to header; mounts the form when `isAdmin && !post.inReplyToPostId`.
+- `src/app/page.tsx`, `src/app/journal/page.tsx`, `src/app/articles/page.tsx`, `src/app/feed.xml/route.ts`, `src/app/users/[username]/page.tsx`, `src/app/xmlrpc/route.ts` — listing queries filtered with `inReplyToPostId: null` so follow-ups don't clutter feeds.
+- `src/app/ap/outbox/route.ts`, `src/app/ap/post/[slug]/route.ts` — emit `inReplyTo` in the AP object so other servers thread follow-ups correctly.
+
 ## 0.1.11 (2026-05-10)
 
 ### Security

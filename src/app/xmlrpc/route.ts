@@ -226,7 +226,7 @@ export async function POST(req: NextRequest) {
     case "metaWeblog.getRecentPosts": {
       const count = parseInt(extractParam(body, 3) || "10", 10);
       const posts = await prisma.post.findMany({
-        where: { published: true },
+        where: { published: true, inReplyToPostId: null },
         orderBy: { publishedAt: "desc" },
         take: count,
       });

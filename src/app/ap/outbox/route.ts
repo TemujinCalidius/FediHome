@@ -8,6 +8,7 @@ export async function GET() {
     where: { published: true, apId: { not: null } },
     orderBy: { publishedAt: "desc" },
     take: 50,
+    include: { inReplyTo: { select: { apId: true } } },
   });
 
   const items = posts.map((post) => {
@@ -44,6 +45,7 @@ export async function GET() {
         url: `${siteUrl}/post/${post.slug}`,
         to: ["https://www.w3.org/ns/activitystreams#Public"],
         cc: [`${siteUrl}/ap/followers`],
+        ...(post.inReplyTo?.apId ? { inReplyTo: post.inReplyTo.apId } : {}),
         ...(attachment.length > 0 ? { attachment } : {}),
         ...(tags.length > 0 ? { tag: tags } : {}),
       },

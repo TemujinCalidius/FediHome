@@ -5,7 +5,7 @@ export async function GET() {
   const siteUrl = siteConfig.url;
 
   const posts = await prisma.post.findMany({
-    where: { published: true },
+    where: { published: true, inReplyToPostId: null },
     orderBy: { publishedAt: "desc" },
     take: 50,
   });

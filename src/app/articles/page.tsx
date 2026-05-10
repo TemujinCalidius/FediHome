@@ -19,7 +19,7 @@ export default async function ArticlesPage({
   const params = await searchParams;
   const page = Math.max(1, parseInt(params.page || "1", 10));
 
-  const where = { published: true, category: "article" };
+  const where = { published: true, category: "article", inReplyToPostId: null };
   const totalPosts = await prisma.post.count({ where });
   const totalPages = Math.ceil(totalPosts / POSTS_PER_PAGE);
 

@@ -17,11 +17,15 @@ export default async function HomePage({
   const params = await searchParams;
   const page = Math.max(1, parseInt(params.page || "1", 10));
 
-  const totalPosts = await prisma.post.count({ where: { published: true } });
+  // Hide author follow-ups from the homepage feed — they appear inline on the
+  // original post's page instead.
+  const totalPosts = await prisma.post.count({
+    where: { published: true, inReplyToPostId: null },
+  });
   const totalPages = Math.ceil(totalPosts / POSTS_PER_PAGE);
 
   const recentPosts = await prisma.post.findMany({
-    where: { published: true },
+    where: { published: true, inReplyToPostId: null },
     orderBy: { publishedAt: "desc" },
     take: POSTS_PER_PAGE,
     skip: (page - 1) * POSTS_PER_PAGE,

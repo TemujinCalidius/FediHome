@@ -36,7 +36,7 @@ export default async function UserProfilePage({
   if (username !== fediHandle) notFound();
 
   const [postCount, followerCount, followingCount] = await Promise.all([
-    prisma.post.count(),
+    prisma.post.count({ where: { inReplyToPostId: null } }),
     prisma.fediFollower.count(),
     prisma.fediFollowing.count(),
   ]);
