@@ -80,7 +80,11 @@ sed -i.bak "s|^DATABASE_URL=.*|DATABASE_URL=$DB_URL|" .env.local && rm -f .env.l
 
 echo ""
 echo -e "${BLUE}Setting up database...${NC}"
-npx prisma migrate deploy
+# Push schema directly from prisma/schema.prisma. FediHome doesn't track
+# migration files (prisma/migrations/) — db push creates the tables on first
+# install and adds new columns on upgrades. Refuses by default if a change
+# would drop data; that's the right safety stance for this workflow.
+npx prisma db push
 
 echo -e "${BLUE}Building FediHome...${NC}"
 npm run build

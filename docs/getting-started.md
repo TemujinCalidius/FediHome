@@ -49,10 +49,16 @@ DATABASE_URL=postgresql://user:password@localhost:5432/fedihome
 Then set up the database and build:
 
 ```bash
-npx prisma migrate deploy
+npx prisma db push
 npm run build
 npm start
 ```
+
+> `prisma db push` syncs your database to `prisma/schema.prisma`. FediHome
+> doesn't ship migration files; the schema is the source of truth and
+> `db push` is run once at install and again after each upgrade. Prisma
+> refuses any push that would drop data unless you pass `--accept-data-loss`,
+> so it's safe to run on existing databases.
 
 ### Option C: Docker
 

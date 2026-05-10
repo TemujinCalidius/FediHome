@@ -146,19 +146,24 @@ createdb fedihome
 sudo -u postgres createdb fedihome
 ```
 
-### Running Migrations
+### Syncing the Schema
 
-After pulling updates that include schema changes:
+FediHome doesn't track migration files — `prisma/schema.prisma` is the source
+of truth and `prisma db push` syncs your database to it.
 
-```bash
-npx prisma migrate deploy
-```
-
-For development (generates migration files):
+After pulling updates that include schema changes (look for a "Schema" entry
+in the changelog), run:
 
 ```bash
-npx prisma migrate dev --name describe-your-change
+npx prisma db push
 ```
+
+`db push` is additive-safe: Prisma refuses any push that would drop data
+unless you pass `--accept-data-loss`, so it's safe on production databases
+with real content.
+
+If you change `schema.prisma` yourself while developing, run the same
+command — it'll sync the local database to your edits.
 
 ### Inspecting the Database
 

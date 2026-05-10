@@ -37,7 +37,7 @@ Thanks for your interest in contributing to FediHome! This guide will help you g
 
 5. **Set up the database:**
    ```bash
-   npx prisma migrate deploy
+   npx prisma db push
    ```
 
 6. **Start the dev server:**
@@ -52,7 +52,7 @@ Thanks for your interest in contributing to FediHome! This guide will help you g
 
 - **TypeScript** with strict mode enabled. All new code should be fully typed.
 - **Tailwind CSS** for styling. Use utility classes and the existing design tokens defined in `src/app/globals.css` (surface colors, accent colors, font families).
-- **Prisma** for all database access. The schema is in `prisma/schema.prisma`. After changing the schema, run `npx prisma migrate dev --name describe-your-change` to generate a migration.
+- **Prisma** for all database access. The schema is in `prisma/schema.prisma`. FediHome doesn't track migration files — after changing the schema, run `npx prisma db push` to sync your local database, and document the change in the changelog under a "Schema" heading so operators know to run `db push` after upgrading.
 - **Next.js App Router** conventions. Pages go in `src/app/`, API routes use `route.ts` files, and shared components live in `src/components/`.
 - Prefer named exports for components and utility functions.
 - Keep files focused: one component per file, one API route per file.

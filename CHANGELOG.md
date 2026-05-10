@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.1.13 (2026-05-11)
+
+### Fixed
+- **New installs would never create database tables.** `install.sh`, the Dockerfile, the README, and the deployment docs all ran `npx prisma migrate deploy` — but FediHome doesn't track migration files (no `prisma/migrations/` directory). With nothing to deploy, `migrate deploy` exited cleanly without creating any tables, so a fresh `curl install.sh | bash` produced an app that crashed the moment it tried to query Postgres. Verified with the actual Prisma CLI: against an empty `prisma/migrations/` it prints *"No migration found in prisma/migrations / No pending migrations to apply"* and creates zero tables.
+- Switched `install.sh`, `Dockerfile`, `README.md`, `CONTRIBUTING.md`, and the relevant `docs/*.md` to `npx prisma db push`, which is what the project's no-migrations workflow actually requires. `db push` reads `prisma/schema.prisma` directly and creates/updates tables to match. Prisma refuses any push that would drop data unless you pass `--accept-data-loss`, so it's also safe to run on existing production databases when upgrading.
+- **Dockerfile**: container now runs `npx prisma db push --skip-generate` at startup before launching the server, so the schema is synced against whatever database `DATABASE_URL` points at — first install or upgrade. The Prisma CLI is now copied into the runner stage (was builder-only) for this purpose.
+
+### Notes for upgraders
+- Existing operators don't need to do anything — your DB already has the tables. Future `git pull && npx prisma db push && npm run build && pm2 restart fedihome` upgrade flow remains unchanged.
+- Contributors changing `prisma/schema.prisma`: run `npx prisma db push` (no `migrate dev`) and document the change under a "Schema" heading in the changelog.
+
 ## 0.1.12 (2026-05-11)
 
 ### Added

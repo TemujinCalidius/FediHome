@@ -80,10 +80,10 @@ FEDI_HANDLE=yourhandle
 FEDI_DOMAIN=yourdomain.com
 ```
 
-Run migrations and build:
+Push the schema and build:
 
 ```bash
-npx prisma migrate deploy
+npx prisma db push
 npm run build
 ```
 
@@ -246,7 +246,7 @@ If using Cloudflare Tunnel, see [Cloudflare Tunnel](cloudflare-tunnel.md) instea
 cd /opt/fedihome    # or wherever you installed it
 git pull
 npm install
-npx prisma migrate deploy
+npx prisma db push
 npm run build
 pm2 restart fedihome
 ```

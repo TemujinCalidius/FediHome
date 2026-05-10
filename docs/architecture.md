@@ -226,8 +226,9 @@ Here is the full lifecycle of a post:
 ### Adding a New Database Model
 
 1. Add the model to `prisma/schema.prisma`
-2. Run `npx prisma migrate dev --name add-bookmarks`
-3. The Prisma client regenerates automatically and provides typed access
+2. Run `npx prisma db push` to sync your local database (FediHome doesn't track migration files; the schema is the source of truth)
+3. Run `npx prisma generate` if your editor's typed client doesn't auto-update
+4. Document the change in `CHANGELOG.md` under a "Schema" heading so operators know to run `db push` when upgrading
 
 ### Adding a New Crosspost Target
 

@@ -52,7 +52,7 @@ cd fedihome
 npm install
 cp .env.example .env.local
 # Edit .env.local with your database URL
-npx prisma migrate deploy
+npx prisma db push
 npm run build
 npm start
 ```
