@@ -3,7 +3,8 @@ export const dynamic = "force-dynamic";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { hashToken, safeCompare } from "@/lib/auth";
+import { verifyAdminCookieValue } from "@/lib/auth";
+import { sanitizeHtml } from "@/lib/sanitize";
 import { isTinylyticsConfigured, getSiteStats, getLeaderboard, getRecentHits, getUserJourneys } from "@/lib/tinylytics";
 import TimelineClient from "./TimelineClient";
 import TimelineLogin from "./TimelineLogin";
@@ -14,21 +15,25 @@ export const metadata = {
 };
 
 export default async function TimelinePage() {
-  // Cookie stores SHA-256 hash of ADMIN_SECRET
   const cookieStore = await cookies();
   const adminToken = cookieStore.get("sl_admin")?.value;
-  const expectedHash = hashToken(process.env.ADMIN_SECRET || "");
-  const isAdmin = !!adminToken && safeCompare(adminToken, expectedHash);
+  const isAdmin = verifyAdminCookieValue(adminToken);
 
   if (!isAdmin) {
     return <TimelineLogin />;
   }
   // Fetch first page of timeline posts (top-level only for initial load)
-  const fediPosts = await prisma.fediPost.findMany({
+  const fediPostsRaw = await prisma.fediPost.findMany({
     where: { inReplyTo: null, boostedBy: null },
     orderBy: { publishedAt: "desc" },
     take: 21, // 20 + 1 to check for more
   });
+  // Re-sanitize contentHtml on every emit — protects against legacy rows
+  // that were stored before sanitization was tightened.
+  const fediPosts = fediPostsRaw.map((p) => ({
+    ...p,
+    contentHtml: p.contentHtml ? sanitizeHtml(p.contentHtml) : null,
+  }));
   const hasMore = fediPosts.length > 20;
   const initialPosts = hasMore ? fediPosts.slice(0, 20) : fediPosts;
   const nextCursor = hasMore
@@ -57,10 +62,14 @@ export default async function TimelinePage() {
   const followerCount = followers.length;
 
   // Fetch direct messages grouped by conversation
-  const directMessages = await prisma.directMessage.findMany({
+  const directMessagesRaw = await prisma.directMessage.findMany({
     orderBy: { createdAt: "desc" },
     take: 200,
   });
+  const directMessages = directMessagesRaw.map((m) => ({
+    ...m,
+    contentHtml: m.contentHtml ? sanitizeHtml(m.contentHtml) : null,
+  }));
 
   // Fetch analytics data (if Tinylytics is configured)
   const analyticsData = isTinylyticsConfigured()

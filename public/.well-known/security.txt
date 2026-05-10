@@ -1,0 +1,4 @@
+Contact: mailto:samuel@familylison.com
+Expires: 2027-05-10T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://samuellison.com/.well-known/security.txt

@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.1.11 (2026-05-10)
+
+### Security
+This release applies the cross-portable findings from a deep security audit run against the sister project samuellison-web on 2026-05-10. (Findings tagged H4/H6/C4/C5/H7 from the previous fedihome audit were already fixed.)
+
+#### Critical
+- **AP inbox SSRF.** `verifyIncomingSignature`, `fetchActorInfo`, and `handleBoost`'s remote-post fetch now reject URLs whose hostname is in private/loopback/CGNAT/link-local space — and additionally DNS-resolve to defeat rebinding. New `src/lib/url-guard.ts` exports `isPrivateUrl` (public, with decimal/hex/octal IPv4 + IPv6 ULA + link-local + v4-mapped) and an async `assertPublicHost` for trust-boundary fetches.
+- **HTML sanitizer entity bypass.** `src/lib/sanitize.ts` now decodes HTML entities before checking dangerous URI schemes, so `&#x6a;avascript:alert(1)` no longer slips through to federated content rendered with `dangerouslySetInnerHTML`. Also strips `<iframe>` and catches self-closing `<script/>`/`<style/>`.
+
+#### High
+- **`image/svg+xml` removed** from the `/uploads/[...path]` MIME map. The route no longer serves uploaded SVGs (XSS-prone when navigated directly).
+- **CSP hardening.** Dropped `'unsafe-eval'` from `script-src`. Added `Strict-Transport-Security`, `Permissions-Policy`, and `object-src 'none'`/`base-uri 'self'`/`form-action 'self'`. New per-route `/uploads/*` header (`default-src 'none'; sandbox`) so any payload that slips media validation can't execute scripts.
+- **XML-RPC brute force.** `/xmlrpc` no longer accepts `ADMIN_SECRET` as the password — Micropub bearer tokens only — and is now per-bucket rate-limited (10 attempts / 60s, same `TRUSTED_PROXY` model as the admin login route).
+
+#### Medium
+- **CSRF on guest endpoints.** `verifyOrigin` is now applied to `/api/comments` and `/api/kudos`.
+- **Bluesky thumbnail fetch SSRF.** `crosspostToBluesky`'s video link-card path rejects private/internal `thumbnailUrl`s and adds a 10s timeout.
+- **XML-RPC content & XML injection.** Post titles and IDs are XML-escaped on output; CDATA-wrapped content has internal `]]>` split to prevent CDATA termination.
+- **`verifyOrigin` protocol check.** Validates protocol in addition to hostname.
+
+#### Low / hygiene
+- `<script>`/`<style>` strip regex extended to catch self-closing variants.
+- Middleware uses `pathname.slice` instead of `pathname.replace`.
+- Removed unused `isAdminRequest` helper from `src/lib/auth.ts`.
+- Added `/.well-known/security.txt` template (replace email before deploying).
+
+### Notes for forks
+- This release does **not** introduce the DB-backed session-token model from samuellison-web. FediHome's existing per-login HMAC-bound cookie (added in a prior release) is functionally equivalent for the H4 finding. Operators wanting the DB-session approach should adapt from samuellison-web v0.4.0.
+
 ## 0.1.10 (2026-05-10)
 
 ### Fixed

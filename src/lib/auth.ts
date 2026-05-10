@@ -52,47 +52,51 @@ export async function generateToken(label: string): Promise<string> {
   return token;
 }
 
-/** Simple admin check — check for admin token in cookie or Authorization header */
-export function isAdminRequest(authHeader: string | null): boolean {
-  if (!authHeader?.startsWith("Bearer ")) return false;
-  const token = authHeader.slice(7);
-  return safeCompare(token, process.env.ADMIN_SECRET || "");
-}
-
-/** Verify admin via cookie. Use in API route handlers. */
-export function verifyAdmin(req: { cookies: { get(name: string): { value: string } | undefined } }): boolean {
-  const cookie = req.cookies.get("sl_admin")?.value;
+/**
+ * Verify the admin session cookie.
+ *
+ * Format: "<sessionId>.<hmac>" where hmac = HMAC-SHA256(ADMIN_SECRET, sessionId).
+ * Each successful login generates a unique sessionId, so the cookie value is
+ * no longer a deterministic function of ADMIN_SECRET (H4).
+ */
+export function verifyAdminCookieValue(cookie: string | undefined): boolean {
   if (!cookie) return false;
-  const expectedHash = crypto.createHash("sha256").update(process.env.ADMIN_SECRET || "").digest("hex");
-  return safeCompare(cookie, expectedHash);
+  const adminSecret = process.env.ADMIN_SECRET || "";
+  if (!adminSecret) return false;
+  const dot = cookie.indexOf(".");
+  if (dot <= 0 || dot === cookie.length - 1) return false;
+  const sessionId = cookie.slice(0, dot);
+  const sentMac = cookie.slice(dot + 1);
+  if (!/^[a-f0-9]{32}$/i.test(sessionId)) return false;
+  if (!/^[a-f0-9]{64}$/i.test(sentMac)) return false;
+  const expectedMac = crypto
+    .createHmac("sha256", adminSecret)
+    .update(sessionId)
+    .digest("hex");
+  return safeCompare(sentMac, expectedMac);
 }
 
-/** CSRF origin check. Returns true if origin is allowed. */
+export function verifyAdmin(req: { cookies: { get(name: string): { value: string } | undefined } }): boolean {
+  return verifyAdminCookieValue(req.cookies.get("sl_admin")?.value);
+}
+
+/** CSRF origin check. Returns true if origin matches site URL (hostname AND protocol). */
 export function verifyOrigin(req: { headers: { get(name: string): string | null } }): boolean {
   const origin = req.headers.get("origin");
   const referer = req.headers.get("referer");
   const siteUrl = process.env.SITE_URL || "http://localhost:3000";
-  const siteDomain = new URL(siteUrl).hostname;
+  const expected = new URL(siteUrl);
 
-  // Allow if origin matches
-  if (origin) {
+  const matches = (urlStr: string): boolean => {
     try {
-      return new URL(origin).hostname === siteDomain;
+      const u = new URL(urlStr);
+      return u.hostname === expected.hostname && u.protocol === expected.protocol;
     } catch {
       return false;
     }
-  }
+  };
 
-  // Fall back to referer
-  if (referer) {
-    try {
-      return new URL(referer).hostname === siteDomain;
-    } catch {
-      return false;
-    }
-  }
-
-  // No origin or referer — could be a same-origin request from some browsers
-  // or a direct API call. Allow for GET, block for state-changing methods.
+  if (origin) return matches(origin);
+  if (referer) return matches(referer);
   return false;
 }

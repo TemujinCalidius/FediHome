@@ -26,6 +26,9 @@ const nextConfig: NextConfig = {
   },
   async headers() {
     const frameSrc = ["'self'", ...PEERTUBE_HOSTS.map((h) => `https://${h}`)].join(" ");
+    // NOTE: 'unsafe-inline' on script-src is still required for Next.js App Router
+    // hydration data scripts. Tightening to nonces is tracked separately and needs
+    // every <Script> usage updated to read a nonce from middleware.
     return [
       {
         source: "/(.*)",
@@ -34,7 +37,7 @@ const nextConfig: NextConfig = {
             key: "Content-Security-Policy",
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+              "script-src 'self' 'unsafe-inline'",
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' https: data:",
               "media-src 'self' https:",
@@ -42,11 +45,25 @@ const nextConfig: NextConfig = {
               "connect-src 'self'",
               `frame-src ${frameSrc}`,
               "frame-ancestors 'none'",
+              "object-src 'none'",
+              "base-uri 'self'",
+              "form-action 'self'",
             ].join("; "),
           },
+          { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains; preload" },
           { key: "X-Frame-Options", value: "DENY" },
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), interest-cohort=()" },
+        ],
+      },
+      // Stricter sandbox for user-uploaded content — even if a stored payload
+      // slips through media validation, scripts in it cannot execute.
+      {
+        source: "/uploads/:path*",
+        headers: [
+          { key: "Content-Security-Policy", value: "default-src 'none'; sandbox" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
         ],
       },
     ];

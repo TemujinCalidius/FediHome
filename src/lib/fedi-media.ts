@@ -1,178 +1,204 @@
 import { writeFile, mkdir, readdir, stat, unlink } from "fs/promises";
 import path from "path";
 import sharp from "sharp";
+import { isPrivateUrl, assertPublicHost } from "./url-guard";
+
+export { isPrivateUrl, assertPublicHost };
+
+const FETCH_TIMEOUT_MS = 10_000;
+const MAX_REDIRECT_HOPS = 5;
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024; // 20MB cap before Sharp ingestion (H9)
+const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
+const MAX_HTML_BYTES = 1 * 1024 * 1024; // 1MB for OG-fetch
+// Cap Sharp's input pixel count to neutralize decompression bombs (M7).
+const SHARP_MAX_PIXELS = 100_000_000;
 
 /**
- * SSRF protection: reject URLs pointing to private/internal IP ranges.
+ * Fetch a URL with SSRF + size + redirect protection. Returns null on any
+ * policy violation or transport error. Manually follows up to MAX_REDIRECT_HOPS
+ * redirects, re-checking each hop against isPrivateUrl.
  */
-function isPrivateUrl(urlStr: string): boolean {
-  try {
-    const parsed = new URL(urlStr);
-    const host = parsed.hostname;
-
-    // Reject common private/reserved hostnames
-    if (
-      host === "localhost" ||
-      host === "[::1]" ||
-      host === "0.0.0.0" ||
-      host.endsWith(".local") ||
-      host.endsWith(".internal")
-    ) {
-      return true;
-    }
-
-    // Reject private IPv4 ranges
-    if (
-      host.startsWith("127.") ||       // 127.0.0.0/8 loopback
-      host.startsWith("10.") ||        // 10.0.0.0/8
-      host.startsWith("192.168.") ||   // 192.168.0.0/16
-      host.startsWith("169.254.") ||   // 169.254.0.0/16 link-local
-      host.startsWith("100.64.")       // 100.64.0.0/10 CGNAT
-    ) {
-      return true;
-    }
-
-    // 172.16.0.0 - 172.31.255.255
-    const match172 = host.match(/^172\.(\d+)\./);
-    if (match172) {
-      const second = parseInt(match172[1], 10);
-      if (second >= 16 && second <= 31) return true;
-    }
-
-    return false;
-  } catch {
-    return true; // reject unparseable URLs
+async function safeFetch(
+  url: string,
+  opts: {
+    maxBytes: number;
+    accept?: string;
+    contentTypePrefix?: string;
+    rejectContentTypeContains?: string;
   }
+): Promise<{ buffer: Buffer; contentType: string; finalUrl: string } | null> {
+  let current = url;
+  for (let hop = 0; hop < MAX_REDIRECT_HOPS; hop++) {
+    // DNS-resolve and reject anything that points at private/loopback/etc.
+    // Doing this on every redirect hop closes the rebinding/redirect-chain
+    // SSRF (H1).
+    if (!(await assertPublicHost(current))) return null;
+    let res: Response;
+    try {
+      res = await fetch(current, {
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        redirect: "manual",
+        headers: opts.accept ? { Accept: opts.accept } : undefined,
+      });
+    } catch {
+      return null;
+    }
+    if (res.status >= 300 && res.status < 400) {
+      const loc = res.headers.get("location");
+      if (!loc) return null;
+      try {
+        current = new URL(loc, current).toString();
+      } catch {
+        return null;
+      }
+      continue;
+    }
+    if (!res.ok) return null;
+
+    const contentType = res.headers.get("content-type") || "";
+    if (opts.contentTypePrefix && !contentType.startsWith(opts.contentTypePrefix)) {
+      return null;
+    }
+    if (
+      opts.rejectContentTypeContains &&
+      contentType.toLowerCase().includes(opts.rejectContentTypeContains)
+    ) {
+      return null;
+    }
+
+    const declared = parseInt(res.headers.get("content-length") || "0", 10);
+    if (declared > opts.maxBytes) return null;
+
+    const reader = res.body?.getReader();
+    if (!reader) return null;
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    try {
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!value) continue;
+        total += value.byteLength;
+        if (total > opts.maxBytes) {
+          await reader.cancel();
+          return null;
+        }
+        chunks.push(value);
+      }
+    } catch {
+      return null;
+    }
+    if (total === 0) return null;
+
+    const buffer = Buffer.concat(chunks.map((c) => Buffer.from(c)));
+    return { buffer, contentType, finalUrl: current };
+  }
+  return null;
 }
 
 export interface EmbedData {
   url: string;
   title: string | null;
   description: string | null;
-  image: string | null; // local proxied path
+  image: string | null;
   siteName: string | null;
 }
 
 /**
  * Download a remote image to public/uploads/fedi/YYYY/MM/<base36>.ext
- * Returns the local URL path (e.g., /uploads/fedi/2026/03/abc123.jpg)
+ * Returns the local URL path or null on failure.
  */
 export async function proxyImage(remoteUrl: string): Promise<string | null> {
-  if (isPrivateUrl(remoteUrl)) return null;
-  try {
-    const res = await fetch(remoteUrl, {
-      signal: AbortSignal.timeout(10000),
-      headers: { Accept: "image/*" },
-    });
-    if (!res.ok) return null;
+  const result = await safeFetch(remoteUrl, {
+    maxBytes: MAX_IMAGE_BYTES,
+    accept: "image/*",
+    contentTypePrefix: "image/",
+    rejectContentTypeContains: "svg",
+  });
+  if (!result) return null;
+  let buffer = result.buffer;
+  const contentType = result.contentType;
 
-    const contentType = res.headers.get("content-type") || "";
-    if (!contentType.startsWith("image/")) return null;
-    // Reject SVG to prevent XSS via stored SVG files
-    if (contentType.includes("svg")) return null;
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let buffer: Buffer = Buffer.from(await res.arrayBuffer()) as any;
-    if (buffer.length === 0) return null;
-
-    // Strip EXIF metadata (GPS, camera serial, etc.) — skip GIFs to preserve animation
-    if (!contentType.includes("gif")) {
-      try { buffer = await sharp(buffer).rotate().toBuffer() as any; } catch { /* keep original if sharp fails */ }
+  // Strip EXIF metadata; cap pixel count to defang decompression bombs.
+  if (!contentType.includes("gif")) {
+    try {
+      buffer = (await sharp(buffer, { limitInputPixels: SHARP_MAX_PIXELS })
+        .rotate()
+        .toBuffer()) as Buffer;
+    } catch {
+      /* keep original if sharp fails */
     }
-
-    // Determine extension from content-type
-    const extMap: Record<string, string> = {
-      "image/jpeg": "jpg",
-      "image/png": "png",
-      "image/webp": "webp",
-      "image/gif": "gif",
-    };
-    let ext = extMap[contentType] || "jpg";
-    // Fallback: try from URL
-    if (!extMap[contentType]) {
-      const urlExt = remoteUrl.split("?")[0].split(".").pop()?.toLowerCase();
-      if (urlExt && ["jpg", "jpeg", "png", "webp", "gif"].includes(urlExt)) {
-        ext = urlExt === "jpeg" ? "jpg" : urlExt;
-      }
-    }
-
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, "0");
-    const uploadDir = path.join(process.cwd(), "public", "uploads", "fedi", String(year), month);
-    await mkdir(uploadDir, { recursive: true });
-
-    const filename = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}.${ext}`;
-    const filePath = path.join(uploadDir, filename);
-    await writeFile(filePath, buffer);
-
-    return `/uploads/fedi/${year}/${month}/${filename}`;
-  } catch {
-    return null;
   }
+
+  const extMap: Record<string, string> = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+    "image/gif": "gif",
+  };
+  let ext = extMap[contentType] || "jpg";
+  if (!extMap[contentType]) {
+    const urlExt = remoteUrl.split("?")[0].split(".").pop()?.toLowerCase();
+    if (urlExt && ["jpg", "jpeg", "png", "webp", "gif"].includes(urlExt)) {
+      ext = urlExt === "jpeg" ? "jpg" : urlExt;
+    }
+  }
+
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const uploadDir = path.join(process.cwd(), "public", "uploads", "fedi", String(year), month);
+  await mkdir(uploadDir, { recursive: true });
+
+  const filename = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}.${ext}`;
+  const filePath = path.join(uploadDir, filename);
+  await writeFile(filePath, buffer);
+
+  return `/uploads/fedi/${year}/${month}/${filename}`;
 }
 
 /**
- * Download a remote video to public/uploads/fedi/YYYY/MM/<base36>.ext
- * Returns the local URL path or null on failure.
- * Max 50MB per video to avoid filling disk.
+ * Download a remote video to public/uploads/fedi/YYYY/MM/<base36>.ext.
+ * Max 50MB to avoid filling disk.
  */
 export async function proxyVideo(remoteUrl: string): Promise<string | null> {
-  if (isPrivateUrl(remoteUrl)) return null;
-  try {
-    const res = await fetch(remoteUrl, {
-      signal: AbortSignal.timeout(30000),
-    });
-    if (!res.ok) return null;
+  const result = await safeFetch(remoteUrl, {
+    maxBytes: MAX_VIDEO_BYTES,
+    contentTypePrefix: "video/",
+  });
+  if (!result) return null;
+  const { buffer, contentType } = result;
 
-    const contentType = res.headers.get("content-type") || "";
-    if (!contentType.startsWith("video/")) return null;
-
-    // Check content-length before downloading if available
-    const contentLength = parseInt(res.headers.get("content-length") || "0", 10);
-    if (contentLength > 50 * 1024 * 1024) return null; // skip >50MB
-
-    const buffer = Buffer.from(await res.arrayBuffer());
-    if (buffer.length === 0 || buffer.length > 50 * 1024 * 1024) return null;
-
-    const extMap: Record<string, string> = {
-      "video/mp4": "mp4",
-      "video/webm": "webm",
-      "video/ogg": "ogg",
-      "video/quicktime": "mov",
-    };
-    let ext = extMap[contentType] || "mp4";
-    if (!extMap[contentType]) {
-      const urlExt = remoteUrl.split("?")[0].split(".").pop()?.toLowerCase();
-      if (urlExt && ["mp4", "webm", "ogg", "mov"].includes(urlExt)) {
-        ext = urlExt;
-      }
+  const extMap: Record<string, string> = {
+    "video/mp4": "mp4",
+    "video/webm": "webm",
+    "video/ogg": "ogg",
+    "video/quicktime": "mov",
+  };
+  let ext = extMap[contentType] || "mp4";
+  if (!extMap[contentType]) {
+    const urlExt = remoteUrl.split("?")[0].split(".").pop()?.toLowerCase();
+    if (urlExt && ["mp4", "webm", "ogg", "mov"].includes(urlExt)) {
+      ext = urlExt;
     }
-
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, "0");
-    const uploadDir = path.join(process.cwd(), "public", "uploads", "fedi", String(year), month);
-    await mkdir(uploadDir, { recursive: true });
-
-    const filename = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}.${ext}`;
-    const filePath = path.join(uploadDir, filename);
-    await writeFile(filePath, buffer);
-
-    // Run cleanup in background (don't await)
-    trimFediStorage().catch(() => {});
-
-    return `/uploads/fedi/${year}/${month}/${filename}`;
-  } catch {
-    return null;
   }
+
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const uploadDir = path.join(process.cwd(), "public", "uploads", "fedi", String(year), month);
+  await mkdir(uploadDir, { recursive: true });
+
+  const filename = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}.${ext}`;
+  const filePath = path.join(uploadDir, filename);
+  await writeFile(filePath, buffer);
+
+  trimFediStorage().catch(() => {});
+
+  return `/uploads/fedi/${year}/${month}/${filename}`;
 }
 
-/**
- * Keep total fedi media storage under a size limit.
- * Deletes oldest files first until under the cap.
- * Default limit: 2GB
- */
 const STORAGE_LIMIT_BYTES = 2 * 1024 * 1024 * 1024; // 2GB
 
 async function getAllFiles(dir: string): Promise<{ path: string; mtimeMs: number; size: number }[]> {
@@ -201,7 +227,6 @@ export async function trimFediStorage(): Promise<{ deleted: number; freedBytes: 
   const totalSize = files.reduce((sum, f) => sum + f.size, 0);
   if (totalSize <= STORAGE_LIMIT_BYTES) return { deleted: 0, freedBytes: 0 };
 
-  // Sort oldest first
   files.sort((a, b) => a.mtimeMs - b.mtimeMs);
 
   let currentSize = totalSize;
@@ -223,10 +248,6 @@ export async function trimFediStorage(): Promise<{ deleted: number; freedBytes: 
   return { deleted, freedBytes };
 }
 
-/**
- * Process AP attachment array.
- * Images and videos get proxied locally.
- */
 export async function processAttachments(
   attachments: unknown[] | undefined
 ): Promise<{ urls: string[]; types: string[] }> {
@@ -243,25 +264,21 @@ export async function processAttachments(
     const mediaType = (a.mediaType as string) || "";
 
     if (mediaType.startsWith("video/")) {
-      // Skip proxying for major video platforms — they handle their own delivery
       const skipProxy = /youtube\.com|youtu\.be|vimeo\.com|twitch\.tv|streamable\.com/i.test(url);
       if (skipProxy) {
         urls.push(url);
         types.push("video");
       } else {
-        // Proxy fedi server videos locally for reliable playback
         const localPath = await proxyVideo(url);
         urls.push(localPath || url);
         types.push("video");
       }
     } else if (mediaType.startsWith("image/") || !mediaType) {
-      // Default to image if no mediaType specified
       const localPath = await proxyImage(url);
       if (localPath) {
         urls.push(localPath);
         types.push("image");
       } else {
-        // Fallback: keep remote URL if proxy fails
         urls.push(url);
         types.push("image");
       }
@@ -273,102 +290,57 @@ export async function processAttachments(
 
 /**
  * Extract first meaningful URL from HTML content and fetch OpenGraph metadata.
- * Returns null if no link found or fetch fails.
  */
 export async function fetchLinkEmbed(htmlContent: string): Promise<EmbedData | null> {
   try {
-    // Extract all href URLs from HTML content
     const allHrefs = htmlContent.matchAll(/href="(https?:\/\/[^"]+)"/g);
     let url: string | null = null;
-
     for (const match of allHrefs) {
       const candidate = match[1];
-      // Skip @mention links (Mastodon wraps usernames in links to their profile)
       if (candidate.match(/\/users\/[^/]+$/) || candidate.match(/\/@[^/]+$/)) continue;
-      // Skip hashtag links
       if (candidate.match(/\/tags\/[^/]+$/)) continue;
-      // Skip media URLs (images, videos)
       if (/\.(jpg|jpeg|png|gif|webp|mp4|webm|mov|svg)(\?|$)/i.test(candidate)) continue;
       url = candidate;
       break;
     }
-
     if (!url) return null;
 
-    // Block SSRF — reject private/internal IPs
-    try {
-      const parsed = new URL(url);
-      const host = parsed.hostname;
-      if (
-        host === "localhost" ||
-        host.startsWith("127.") ||
-        host.startsWith("10.") ||
-        host.startsWith("192.168.") ||
-        host.startsWith("172.16.") ||
-        host.startsWith("172.17.") ||
-        host.startsWith("172.18.") ||
-        host.startsWith("172.19.") ||
-        host.startsWith("172.2") ||
-        host.startsWith("172.30.") ||
-        host.startsWith("172.31.") ||
-        host === "169.254.169.254" ||
-        host.endsWith(".local") ||
-        host === "[::1]" ||
-        host === "0.0.0.0"
-      ) {
-        return null;
-      }
-    } catch {
-      return null;
-    }
-
-    const res = await fetch(url, {
-      signal: AbortSignal.timeout(5000),
-      headers: {
-        Accept: "text/html",
-        "User-Agent": "samuellison.com embed fetcher",
-      },
-      redirect: "follow",
+    const result = await safeFetch(url, {
+      maxBytes: MAX_HTML_BYTES,
+      accept: "text/html",
+      contentTypePrefix: "text/html",
     });
-    if (!res.ok) return null;
+    if (!result) return null;
+    const html = result.buffer.toString("utf-8");
 
-    const contentType = res.headers.get("content-type") || "";
-    if (!contentType.includes("text/html")) return null;
+    const ogTitle = html.match(/<meta[^>]*property="og:title"[^>]*content="([^"]*)"/)?.[1] ||
+      html.match(/<meta[^>]*content="([^"]*)"[^>]*property="og:title"/)?.[1] || null;
 
-    const html = await res.text();
+    const ogDesc = html.match(/<meta[^>]*property="og:description"[^>]*content="([^"]*)"/)?.[1] ||
+      html.match(/<meta[^>]*content="([^"]*)"[^>]*property="og:description"/)?.[1] || null;
 
-    // Parse OpenGraph meta tags
-    const ogTitle = html.match(/<meta[^>]*property="og:title"[^>]*content="([^"]*)"/)
-      ?.[1] || html.match(/<meta[^>]*content="([^"]*)"[^>]*property="og:title"/)
-      ?.[1] || null;
+    const ogImage = html.match(/<meta[^>]*property="og:image"[^>]*content="([^"]*)"/)?.[1] ||
+      html.match(/<meta[^>]*content="([^"]*)"[^>]*property="og:image"/)?.[1] || null;
 
-    const ogDesc = html.match(/<meta[^>]*property="og:description"[^>]*content="([^"]*)"/)
-      ?.[1] || html.match(/<meta[^>]*content="([^"]*)"[^>]*property="og:description"/)
-      ?.[1] || null;
+    const ogSiteName = html.match(/<meta[^>]*property="og:site_name"[^>]*content="([^"]*)"/)?.[1] ||
+      html.match(/<meta[^>]*content="([^"]*)"[^>]*property="og:site_name"/)?.[1] || null;
 
-    const ogImage = html.match(/<meta[^>]*property="og:image"[^>]*content="([^"]*)"/)
-      ?.[1] || html.match(/<meta[^>]*content="([^"]*)"[^>]*property="og:image"/)
-      ?.[1] || null;
-
-    const ogSiteName = html.match(/<meta[^>]*property="og:site_name"[^>]*content="([^"]*)"/)
-      ?.[1] || html.match(/<meta[^>]*content="([^"]*)"[^>]*property="og:site_name"/)
-      ?.[1] || null;
-
-    // Fall back to <title> if no og:title
     const title = ogTitle || html.match(/<title>([^<]*)<\/title>/)?.[1] || null;
-    const description = ogDesc || html.match(/<meta[^>]*name="description"[^>]*content="([^"]*)"/)
-      ?.[1] || null;
+    const description = ogDesc ||
+      html.match(/<meta[^>]*name="description"[^>]*content="([^"]*)"/)?.[1] || null;
 
     if (!title && !description) return null;
 
-    // Proxy the OG image locally
     let localImage: string | null = null;
     if (ogImage) {
-      // Resolve relative URLs
-      const absoluteImage = ogImage.startsWith("http")
-        ? ogImage
-        : new URL(ogImage, url).href;
-      localImage = await proxyImage(absoluteImage);
+      try {
+        const absoluteImage = ogImage.startsWith("http")
+          ? ogImage
+          : new URL(ogImage, result.finalUrl).href;
+        localImage = await proxyImage(absoluteImage);
+      } catch {
+        localImage = null;
+      }
     }
 
     return {

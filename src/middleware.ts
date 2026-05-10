@@ -36,7 +36,7 @@ export function middleware(req: NextRequest) {
       accept.includes("application/activity+json") ||
       accept.includes("application/ld+json")
     ) {
-      const slug = pathname.replace("/post/", "");
+      const slug = pathname.slice("/post/".length);
       const url = req.nextUrl.clone();
       url.pathname = `/ap/post/${slug}`;
       return NextResponse.rewrite(url);

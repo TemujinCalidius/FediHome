@@ -1,26 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { deliverActivity, verifyIncomingSignature } from "@/lib/http-signatures";
+import { deliverActivity, verifyIncomingSignature, actorMatchesSigner } from "@/lib/http-signatures";
 import { processAttachments, fetchLinkEmbed } from "@/lib/fedi-media";
 import { sanitizeHtml } from "@/lib/sanitize";
+import { assertPublicHost } from "@/lib/url-guard";
 
 const siteUrl = process.env.SITE_URL || "http://localhost:3000";
+const ACTOR_FETCH_TIMEOUT_MS = 8000;
 
 export async function POST(req: NextRequest) {
-  // Verify HTTP signature — reject unsigned/invalid requests
-  const sigHeader = req.headers.get("signature");
-  if (!sigHeader) {
-    return NextResponse.json({ error: "signature required" }, { status: 401 });
-  }
-  const valid = await verifyIncomingSignature(req);
-  if (!valid) {
-    console.warn("AP inbox: rejected invalid HTTP signature");
+  // Read body as text first so we can validate Digest against the actual bytes
+  // and reject before parsing (C4).
+  const rawBody = await req.text();
+
+  const verification = await verifyIncomingSignature(req, rawBody);
+  if (!verification.valid) {
+    console.warn(`AP inbox: rejected signature (${verification.reason})`);
     return NextResponse.json({ error: "invalid signature" }, { status: 401 });
   }
 
   let activity;
   try {
-    activity = await req.json();
+    activity = JSON.parse(rawBody);
   } catch {
     return NextResponse.json({ error: "invalid json" }, { status: 400 });
   }
@@ -28,12 +29,21 @@ export async function POST(req: NextRequest) {
   const type = activity.type;
   const actorUri = typeof activity.actor === "string" ? activity.actor : activity.actor?.id;
 
-  // Log all incoming activities for debugging
-  console.log(`AP inbox: ${type} from ${actorUri}`);
-
   if (!actorUri) {
     return NextResponse.json({ error: "missing actor" }, { status: 400 });
   }
+
+  // C5: bind the verified keyId-derived actor to the claimed activity actor.
+  // Otherwise any signer can post follows/likes/boosts attributed to anyone.
+  if (!actorMatchesSigner(verification.actorUri, actorUri)) {
+    console.warn(
+      `AP inbox: keyId/actor mismatch (signer=${verification.actorUri} claimed=${actorUri})`
+    );
+    return NextResponse.json({ error: "keyId/actor mismatch" }, { status: 401 });
+  }
+
+  // L1: encode actorUri before logging to prevent log-injection via newlines
+  console.log(`AP inbox: ${type} from ${encodeURIComponent(actorUri)}`);
 
   switch (type) {
     case "Follow":
@@ -78,9 +88,11 @@ export async function POST(req: NextRequest) {
 }
 
 async function fetchActorInfo(actorUri: string) {
+  if (!(await assertPublicHost(actorUri))) return null;
   try {
     const res = await fetch(actorUri, {
       headers: { Accept: "application/activity+json" },
+      signal: AbortSignal.timeout(ACTOR_FETCH_TIMEOUT_MS),
     });
     if (!res.ok) return null;
     const actor = await res.json();
@@ -235,6 +247,7 @@ async function handleBoost(actorUri: string, activity: Record<string, unknown>) 
   if (existing) return;
 
   // Fetch the original post from the remote server
+  if (!(await assertPublicHost(targetApId))) return;
   try {
     const res = await fetch(targetApId, {
       headers: { Accept: "application/activity+json, application/ld+json" },

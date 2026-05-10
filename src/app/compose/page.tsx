@@ -12,8 +12,8 @@ export const metadata = {
 export default async function ComposePage() {
   const cookieStore = await cookies();
   const adminToken = cookieStore.get("sl_admin")?.value;
-  const { hashToken, safeCompare } = await import("@/lib/auth");
-  const isAdmin = !!adminToken && safeCompare(adminToken, hashToken(process.env.ADMIN_SECRET || ""));
+  const { verifyAdminCookieValue } = await import("@/lib/auth");
+  const isAdmin = verifyAdminCookieValue(adminToken);
 
   if (!isAdmin) {
     return <TimelineLogin />;

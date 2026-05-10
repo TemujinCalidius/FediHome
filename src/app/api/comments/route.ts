@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import crypto from "crypto";
+import { verifyOrigin } from "@/lib/auth";
 
 export async function POST(req: NextRequest) {
+  if (!verifyOrigin(req)) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
   const body = await req.json();
   const { guestName, guestEmail, content, postId, photoId, website } = body;
 
@@ -33,11 +37,15 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Rate limiting — hash the IP
-  const ip =
-    req.headers.get("x-forwarded-for")?.split(",")[0] ||
-    req.headers.get("x-real-ip") ||
-    "unknown";
+  // Rate limiting — hash the IP. Trust forwarded headers only when a known
+  // reverse proxy is in front (H3): otherwise an attacker rotates XFF values
+  // to mint unlimited buckets and defeat the limit.
+  const trustProxy = process.env.TRUSTED_PROXY === "true";
+  const ip = trustProxy
+    ? (req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+       req.headers.get("x-real-ip") ||
+       "unknown")
+    : "default";
   const ipHash = crypto.createHash("sha256").update(ip).digest("hex");
 
   // Check rate: max 3 comments per IP per hour

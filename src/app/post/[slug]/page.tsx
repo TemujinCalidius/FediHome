@@ -3,7 +3,8 @@ import Image from "next/image";
 import { prisma } from "@/lib/db";
 import { marked } from "marked";
 import { cookies } from "next/headers";
-import { hashToken, safeCompare } from "@/lib/auth";
+import { verifyAdminCookieValue } from "@/lib/auth";
+import { sanitizeHtml } from "@/lib/sanitize";
 import { LightboxGallery } from "@/components/ui/Lightbox";
 import { iframeSrcFor } from "@/lib/peertube";
 import { getPathHits, getKudosForPath } from "@/lib/tinylytics";
@@ -52,7 +53,7 @@ export default async function PostPage({
   // Check admin status for reply buttons
   const cookieStore = await cookies();
   const adminCookie = cookieStore.get("sl_admin")?.value;
-  const isAdmin = !!adminCookie && safeCompare(adminCookie, hashToken(process.env.ADMIN_SECRET || ""));
+  const isAdmin = verifyAdminCookieValue(adminCookie);
 
   const post = await prisma.post.findUnique({
     where: { slug },
@@ -264,7 +265,11 @@ export default async function PostPage({
       {/* Content */}
       <div
         className="prose-sl text-gray-300 leading-relaxed [&_a]:text-accent-400 [&_a:hover]:text-accent-300 [&_a]:underline [&_p]:mb-4 [&_h2]:font-display [&_h2]:text-white [&_h2]:text-xl [&_h2]:mt-8 [&_h2]:mb-3 [&_h3]:font-display [&_h3]:text-white [&_h3]:text-lg [&_h3]:mt-6 [&_h3]:mb-2 [&_ul]:list-disc [&_ul]:ml-5 [&_ul]:mb-4 [&_ol]:list-decimal [&_ol]:ml-5 [&_ol]:mb-4 [&_li]:mb-1 [&_blockquote]:border-l-4 [&_blockquote]:border-accent-400/30 [&_blockquote]:pl-4 [&_blockquote]:italic [&_blockquote]:text-gray-400 [&_code]:bg-surface-800 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-accent-300 [&_code]:text-sm [&_strong]:text-white"
-        dangerouslySetInnerHTML={{ __html: linkHashtags(post.contentHtml || (marked.parse(post.content) as string)) }}
+        dangerouslySetInnerHTML={{
+          __html: linkHashtags(
+            post.contentHtml ?? sanitizeHtml(marked.parse(post.content) as string)
+          ),
+        }}
       />
 
       {/* Analytics + Kudos */}
@@ -318,7 +323,7 @@ export default async function PostPage({
                     <span className="text-xs text-gray-700">via Fediverse</span>
                   )}
                 </div>
-                <div className="text-gray-400 text-sm [&_a]:text-accent-400 [&_a]:hover:underline" dangerouslySetInnerHTML={{ __html: reply.content || "" }} />
+                <div className="text-gray-400 text-sm [&_a]:text-accent-400 [&_a]:hover:underline" dangerouslySetInnerHTML={{ __html: sanitizeHtml(reply.content || "") }} />
                 {isAdmin && !reply.isOwn && post.apId && (
                   <div className="mt-2">
                     <ReplyToComment

@@ -1,7 +1,12 @@
 import crypto from "crypto";
 import { prisma } from "./db";
+import { assertPublicHost } from "./url-guard";
 
 const SITE_URL = process.env.SITE_URL || "http://localhost:3000";
+
+const REQUIRED_SIGNED_HEADERS = ["(request-target)", "host", "date", "digest"];
+const ACTOR_FETCH_TIMEOUT_MS = 8000;
+const REPLAY_WINDOW_MS = 60 * 60 * 1000; // ±1 hour
 
 /**
  * Sign an outgoing HTTP request with HTTP Signatures (draft-cavage-http-signatures-12)
@@ -49,6 +54,7 @@ export async function signedFetch(
       Host: parsedUrl.host,
     },
     body,
+    signal: AbortSignal.timeout(ACTOR_FETCH_TIMEOUT_MS),
   });
 }
 
@@ -96,49 +102,132 @@ export async function deliverToFollowers(
   await Promise.allSettled(promises);
 }
 
+export type SignatureVerification =
+  | { valid: true; actorUri: string }
+  | { valid: false; reason: string };
+
 /**
- * Verify an incoming HTTP signature (basic verification)
+ * Verify an incoming HTTP signature.
+ *
+ * Caller must supply the raw request body so that:
+ *   1. We can recompute Digest and compare to the signed Digest header.
+ *   2. The body cannot be tampered with after signature verification.
+ *
+ * Returns the actor URI extracted from `keyId`. Callers must compare this
+ * to the activity's `actor` field to prevent cross-actor spoofing (C5).
  */
 export async function verifyIncomingSignature(
-  req: Request
-): Promise<boolean> {
+  req: Request,
+  rawBody: string
+): Promise<SignatureVerification> {
   const sigHeader = req.headers.get("signature");
-  if (!sigHeader) return false; // No signature = skip verification for now
+  if (!sigHeader) return { valid: false, reason: "missing signature header" };
 
-  // Parse signature header
+  // Parse signature header — split on commas, then split each on first '='
   const parts: Record<string, string> = {};
   for (const part of sigHeader.split(",")) {
-    const [key, ...val] = part.split("=");
-    parts[key.trim()] = val.join("=").replace(/^"|"$/g, "");
+    const eq = part.indexOf("=");
+    if (eq === -1) continue;
+    const key = part.slice(0, eq).trim();
+    const val = part.slice(eq + 1).trim().replace(/^"|"$/g, "");
+    parts[key] = val;
   }
 
-  if (!parts.keyId || !parts.signature || !parts.headers) return false;
+  if (!parts.keyId || !parts.signature || !parts.headers) {
+    return { valid: false, reason: "malformed signature header" };
+  }
+
+  // H6: enforce minimum signed headers so the signature commits to body+host+time
+  const signedHeaders = parts.headers.split(/\s+/).filter(Boolean);
+  for (const required of REQUIRED_SIGNED_HEADERS) {
+    if (!signedHeaders.includes(required)) {
+      return { valid: false, reason: `signature must cover ${required}` };
+    }
+  }
+
+  // H6: replay window — Date header must be within ±1 hour
+  const dateHeader = req.headers.get("date");
+  const dateMs = dateHeader ? Date.parse(dateHeader) : NaN;
+  if (!Number.isFinite(dateMs) || Math.abs(Date.now() - dateMs) > REPLAY_WINDOW_MS) {
+    return { valid: false, reason: "date header missing or outside replay window" };
+  }
+
+  // C4: Digest header must match SHA-256 of the actual request body
+  const expectedDigest =
+    "SHA-256=" + crypto.createHash("sha256").update(rawBody).digest("base64");
+  const sentDigest = req.headers.get("digest") || "";
+  const expectedBuf = Buffer.from(expectedDigest);
+  const sentBuf = Buffer.from(sentDigest);
+  if (
+    expectedBuf.length !== sentBuf.length ||
+    !crypto.timingSafeEqual(expectedBuf, sentBuf)
+  ) {
+    return { valid: false, reason: "digest mismatch" };
+  }
+
+  // Fetch the signer's public key (with timeout to prevent slowloris-style DoS — H7)
+  const actorUriFromKey = parts.keyId.split("#")[0];
+  // SSRF guard: keyId originates from an attacker-controlled signature header.
+  if (!(await assertPublicHost(actorUriFromKey))) {
+    return { valid: false, reason: "keyId resolves to private/blocked host" };
+  }
+  let actor: { publicKey?: { publicKeyPem?: string }; id?: string };
+  try {
+    const actorRes = await fetch(actorUriFromKey, {
+      headers: { Accept: "application/activity+json" },
+      signal: AbortSignal.timeout(ACTOR_FETCH_TIMEOUT_MS),
+    });
+    if (!actorRes.ok) return { valid: false, reason: `actor fetch failed: ${actorRes.status}` };
+    actor = await actorRes.json();
+  } catch (err) {
+    return { valid: false, reason: `actor fetch error: ${err instanceof Error ? err.message : String(err)}` };
+  }
+
+  const publicKeyPem = actor.publicKey?.publicKeyPem;
+  if (!publicKeyPem) return { valid: false, reason: "no public key in actor" };
+
+  // Reconstruct signing string in the order specified by `headers=`
+  const url = new URL(req.url);
+  const method = req.method.toLowerCase();
+  const signingParts: string[] = [];
+  for (const h of signedHeaders) {
+    if (h === "(request-target)") {
+      signingParts.push(`(request-target): ${method} ${url.pathname}${url.search}`);
+    } else {
+      const val = req.headers.get(h);
+      if (val === null) {
+        return { valid: false, reason: `signed header ${h} not present on request` };
+      }
+      signingParts.push(`${h}: ${val}`);
+    }
+  }
+  const signingString = signingParts.join("\n");
 
   try {
-    // Fetch the signer's public key
-    const actorRes = await fetch(parts.keyId.split("#")[0], {
-      headers: { Accept: "application/activity+json" },
-    });
-    if (!actorRes.ok) return false;
-
-    const actor = await actorRes.json();
-    const publicKeyPem = actor.publicKey?.publicKeyPem;
-    if (!publicKeyPem) return false;
-
-    // Reconstruct signing string
-    const url = new URL(req.url);
-    const headerList = parts.headers.split(" ");
-    const signingParts = headerList.map((h) => {
-      if (h === "(request-target)") return `(request-target): post ${url.pathname}`;
-      const val = req.headers.get(h);
-      return `${h}: ${val}`;
-    });
-    const signingString = signingParts.join("\n");
-
-    // Verify
     const verifier = crypto.createVerify("sha256");
     verifier.update(signingString);
-    return verifier.verify(publicKeyPem, parts.signature, "base64");
+    const ok = verifier.verify(publicKeyPem, parts.signature, "base64");
+    if (!ok) return { valid: false, reason: "signature verification failed" };
+  } catch (err) {
+    return { valid: false, reason: `verifier error: ${err instanceof Error ? err.message : String(err)}` };
+  }
+
+  return { valid: true, actorUri: actorUriFromKey };
+}
+
+/**
+ * Returns true if a verified signer (actorUri from keyId) is allowed to act
+ * on behalf of the actor claimed in the activity body.
+ *
+ * Strict: hostname must match. Mastodon, Pixelfed, etc. all use the same
+ * hostname for keyId and actor.id. This blocks the cross-domain spoofing
+ * scenario described in C5 of the audit.
+ */
+export function actorMatchesSigner(signerUri: string, claimedActorUri: string): boolean {
+  try {
+    const a = new URL(signerUri);
+    const b = new URL(claimedActorUri);
+    return a.host.toLowerCase() === b.host.toLowerCase();
   } catch {
     return false;
   }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { verifyAdmin } from "@/lib/auth";
+import { sanitizeHtml } from "@/lib/sanitize";
 
 const PAGE_SIZE = 20;
 
@@ -33,10 +34,16 @@ export async function GET(req: NextRequest) {
 
   const hasMore = posts.length > PAGE_SIZE;
   const page = hasMore ? posts.slice(0, PAGE_SIZE) : posts;
+  // Re-sanitize contentHtml on every emit (protects against any legacy rows
+  // stored before sanitization was tightened).
+  const safePage = page.map((p) => ({
+    ...p,
+    contentHtml: p.contentHtml ? sanitizeHtml(p.contentHtml) : null,
+  }));
   const nextCursor = hasMore ? page[page.length - 1].publishedAt.toISOString() : null;
 
   return NextResponse.json({
-    posts: JSON.parse(JSON.stringify(page)),
+    posts: JSON.parse(JSON.stringify(safePage)),
     nextCursor,
   });
 }

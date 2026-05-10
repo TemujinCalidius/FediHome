@@ -1,16 +1,64 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
-import { hashToken, safeCompare } from "@/lib/auth";
+import { hashToken } from "@/lib/auth";
+import { sanitizeHtml } from "@/lib/sanitize";
+import { marked } from "marked";
 
 /**
  * XML-RPC endpoint (MetaWeblog API) for compatibility with micro.blog app
  * and other blogging clients that don't support Micropub.
+ *
+ * Auth: Micropub bearer tokens only (the password parameter is treated as a
+ * Micropub token and looked up in AuthToken). The legacy ADMIN_SECRET
+ * fallback was removed — a single high-entropy secret over an unrate-limited
+ * XML-RPC endpoint is a brute-force liability.
+ *
+ * Rate limit: per-bucket, same TRUSTED_PROXY model as the admin login route.
  */
 
-function xmlResponse(xml: string): Response {
+const RATE_MAX_ATTEMPTS = 10;
+const RATE_WINDOW_MS = 60_000;
+const rateBuckets = new Map<string, { count: number; resetAt: number }>();
+
+function getRateLimitKey(req: NextRequest): string {
+  if (process.env.TRUSTED_PROXY === "true") {
+    const xff = req.headers.get("x-forwarded-for");
+    if (xff) return xff.split(",")[0].trim() || "default";
+  }
+  return "default";
+}
+
+function isRateLimited(key: string): boolean {
+  const now = Date.now();
+  const entry = rateBuckets.get(key);
+  if (!entry || entry.resetAt < now) {
+    rateBuckets.set(key, { count: 1, resetAt: now + RATE_WINDOW_MS });
+    return false;
+  }
+  entry.count++;
+  return entry.count > RATE_MAX_ATTEMPTS;
+}
+
+function xmlResponse(xml: string, status = 200): Response {
   return new Response(xml, {
+    status,
     headers: { "Content-Type": "text/xml; charset=utf-8" },
   });
+}
+
+/** Escape characters that are special in XML text. */
+function xmlEscape(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+/** Wrap text safely in CDATA, splitting any internal `]]>` so it can't terminate the section. */
+function cdata(s: string): string {
+  return `<![CDATA[${s.replace(/]]>/g, "]]]]><![CDATA[>")}]]>`;
 }
 
 function methodResponse(params: string): string {
@@ -22,7 +70,7 @@ function fault(code: number, message: string): string {
   return `<?xml version="1.0"?>
 <methodResponse><fault><value><struct>
 <member><name>faultCode</name><value><int>${code}</int></value></member>
-<member><name>faultString</name><value><string>${message}</string></value></member>
+<member><name>faultString</name><value><string>${xmlEscape(message)}</string></value></member>
 </struct></value></fault></methodResponse>`;
 }
 
@@ -50,9 +98,8 @@ function extractStruct(xml: string): Record<string, string> {
   return result;
 }
 
-async function verifyAuth(username: string, password: string): Promise<boolean> {
-  // Accept admin secret OR any valid Micropub token as password
-  if (safeCompare(password, process.env.ADMIN_SECRET || "")) return true;
+async function verifyAuth(password: string): Promise<boolean> {
+  if (!password) return false;
   const hash = hashToken(password);
   const token = await prisma.authToken.findUnique({ where: { tokenHash: hash } });
   return !!token;
@@ -63,15 +110,17 @@ function slugify(text: string): string {
 }
 
 export async function POST(req: NextRequest) {
+  if (isRateLimited(getRateLimitKey(req))) {
+    return xmlResponse(fault(429, "rate limit exceeded"), 429);
+  }
+
   const body = await req.text();
   const methodMatch = body.match(/<methodName>([\s\S]*?)<\/methodName>/);
   const method = methodMatch?.[1]?.trim() || "";
 
-  // Auth check for most methods
   if (!["system.listMethods", "mt.supportedMethods"].includes(method)) {
-    const username = extractParam(body, 1);
     const password = extractParam(body, 2);
-    if (!(await verifyAuth(username, password))) {
+    if (!(await verifyAuth(password))) {
       return xmlResponse(fault(403, "Authentication failed"));
     }
   }
@@ -99,7 +148,7 @@ export async function POST(req: NextRequest) {
         <value><struct>
           <member><name>blogid</name><value><string>1</string></value></member>
           <member><name>blogName</name><value><string>FediHome</string></value></member>
-          <member><name>url</name><value><string>${siteUrl}</string></value></member>
+          <member><name>url</name><value><string>${xmlEscape(siteUrl)}</string></value></member>
         </struct></value>
       </data></array></value></param>`));
 
@@ -128,12 +177,14 @@ export async function POST(req: NextRequest) {
       const title = struct.title || null;
       const content = struct.description || "";
       const slug = slugify(title || content.slice(0, 40) || "post-" + Date.now().toString(36));
+      const contentHtml = sanitizeHtml(marked.parse(content) as string);
 
       const post = await prisma.post.create({
         data: {
           slug,
           title: title || null,
           content,
+          contentHtml,
           category: "note",
           tags: [],
           published: true,
@@ -141,8 +192,11 @@ export async function POST(req: NextRequest) {
         },
       });
 
-      // Federate + crosspost
       const { deliverToFollowers } = await import("@/lib/http-signatures");
+      const escapedContent = content
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
       const activity = {
         "@context": "https://www.w3.org/ns/activitystreams",
         id: `${siteUrl}/ap/create/${post.id}`,
@@ -153,7 +207,7 @@ export async function POST(req: NextRequest) {
           type: title ? "Article" : "Note",
           id: post.apId,
           attributedTo: `${siteUrl}/ap/actor`,
-          content: `<p>${content.replace(/\n/g, "<br>")}</p>`,
+          content: `<p>${escapedContent.replace(/\n/g, "<br>")}</p>`,
           url: `${siteUrl}/post/${slug}`,
           published: post.publishedAt.toISOString(),
           to: ["https://www.w3.org/ns/activitystreams#Public"],
@@ -166,7 +220,7 @@ export async function POST(req: NextRequest) {
       crosspostToBluesky(content, `${siteUrl}/post/${slug}`).catch(() => {});
       crosspostToThreads(content, `${siteUrl}/post/${slug}`).catch(() => {});
 
-      return xmlResponse(methodResponse(`<param><value><string>${post.id}</string></value></param>`));
+      return xmlResponse(methodResponse(`<param><value><string>${xmlEscape(post.id)}</string></value></param>`));
     }
 
     case "metaWeblog.getRecentPosts": {
@@ -178,10 +232,10 @@ export async function POST(req: NextRequest) {
       });
 
       const items = posts.map((p) => `<value><struct>
-        <member><name>postid</name><value><string>${p.id}</string></value></member>
-        <member><name>title</name><value><string>${p.title || ""}</string></value></member>
-        <member><name>description</name><value><string><![CDATA[${p.content}]]></string></value></member>
-        <member><name>link</name><value><string>${siteUrl}/post/${p.slug}</string></value></member>
+        <member><name>postid</name><value><string>${xmlEscape(p.id)}</string></value></member>
+        <member><name>title</name><value><string>${xmlEscape(p.title || "")}</string></value></member>
+        <member><name>description</name><value><string>${cdata(p.content)}</string></value></member>
+        <member><name>link</name><value><string>${xmlEscape(`${siteUrl}/post/${p.slug}`)}</string></value></member>
         <member><name>dateCreated</name><value><dateTime.iso8601>${p.publishedAt.toISOString()}</dateTime.iso8601></value></member>
       </struct></value>`).join("\n");
 
@@ -194,10 +248,10 @@ export async function POST(req: NextRequest) {
       if (!post) return xmlResponse(fault(404, "Post not found"));
 
       return xmlResponse(methodResponse(`<param><value><struct>
-        <member><name>postid</name><value><string>${post.id}</string></value></member>
-        <member><name>title</name><value><string>${post.title || ""}</string></value></member>
-        <member><name>description</name><value><string><![CDATA[${post.content}]]></string></value></member>
-        <member><name>link</name><value><string>${siteUrl}/post/${post.slug}</string></value></member>
+        <member><name>postid</name><value><string>${xmlEscape(post.id)}</string></value></member>
+        <member><name>title</name><value><string>${xmlEscape(post.title || "")}</string></value></member>
+        <member><name>description</name><value><string>${cdata(post.content)}</string></value></member>
+        <member><name>link</name><value><string>${xmlEscape(`${siteUrl}/post/${post.slug}`)}</string></value></member>
       </struct></value></param>`));
     }
 

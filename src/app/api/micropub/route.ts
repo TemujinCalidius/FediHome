@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyMicropubToken } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { sanitizeHtml } from "@/lib/sanitize";
+import { marked } from "marked";
 
 function slugify(text: string): string {
   return text
@@ -104,12 +106,14 @@ export async function POST(req: NextRequest) {
 
   const slug = generateSlug(title, content);
   const siteUrl = process.env.SITE_URL || "http://localhost:3000";
+  const contentHtml = sanitizeHtml(marked.parse(content) as string);
 
   const post = await prisma.post.create({
     data: {
       slug,
       title,
       content,
+      contentHtml,
       category,
       tags,
       photos,
@@ -121,6 +125,10 @@ export async function POST(req: NextRequest) {
   // Federate the post via ActivityPub
   if (post.published) {
     const { deliverToFollowers } = await import("@/lib/http-signatures");
+    const escapedContent = content
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
     const activity = {
       "@context": "https://www.w3.org/ns/activitystreams",
       id: `${siteUrl}/ap/create/${post.id}`,
@@ -131,7 +139,7 @@ export async function POST(req: NextRequest) {
         type: title ? "Article" : "Note",
         id: post.apId,
         attributedTo: `${siteUrl}/ap/actor`,
-        content: `<p>${content.replace(/\n/g, "<br>")}</p>`,
+        content: `<p>${escapedContent.replace(/\n/g, "<br>")}</p>`,
         url: `${siteUrl}/post/${slug}`,
         published: post.publishedAt.toISOString(),
         to: ["https://www.w3.org/ns/activitystreams#Public"],

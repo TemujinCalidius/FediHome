@@ -2,6 +2,7 @@ import { BskyAgent, RichText } from "@atproto/api";
 import { readFile } from "fs/promises";
 import path from "path";
 import nodemailer from "nodemailer";
+import { isPrivateUrl } from "./url-guard";
 
 export interface CrosspostImage {
   url: string; // full URL or local path
@@ -138,9 +139,9 @@ async function buildBlueskyVideoEmbed(
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let thumb: any = undefined;
-  if (video.thumbnailUrl) {
+  if (video.thumbnailUrl && !isPrivateUrl(video.thumbnailUrl)) {
     try {
-      const res = await fetch(video.thumbnailUrl);
+      const res = await fetch(video.thumbnailUrl, { signal: AbortSignal.timeout(10000) });
       if (res.ok) {
         const buffer = new Uint8Array(await res.arrayBuffer());
         const ctHeader = res.headers.get("content-type") || "";
@@ -286,15 +287,25 @@ export async function crosspostToDayOne(
  * Convert a public URL to a local filesystem path.
  * e.g., "https://example.com/uploads/2026/03/x.webp" → "/path/to/public/uploads/2026/03/x.webp"
  * Returns null for external URLs.
+ *
+ * M2: resolve the path and reject anything that escapes `public/uploads`. A
+ * URL like `${SITE_URL}/uploads/../../etc/passwd` would otherwise read /etc/passwd
+ * and ship it to Bluesky as a "photo".
  */
 function urlToLocalPath(url: string): string | null {
   const siteUrl = process.env.SITE_URL || "http://localhost:3000";
+  let relativePath: string | null = null;
   if (url.startsWith(siteUrl + "/uploads/")) {
-    const relativePath = url.slice(siteUrl.length); // "/uploads/2026/03/x.webp"
-    return path.join(process.cwd(), "public", relativePath);
+    relativePath = url.slice(siteUrl.length);
+  } else if (url.startsWith("/uploads/")) {
+    relativePath = url;
   }
-  if (url.startsWith("/uploads/")) {
-    return path.join(process.cwd(), "public", url);
+  if (!relativePath) return null;
+
+  const uploadsRoot = path.resolve(process.cwd(), "public", "uploads");
+  const resolved = path.resolve(process.cwd(), "public", "." + relativePath);
+  if (resolved !== uploadsRoot && !resolved.startsWith(uploadsRoot + path.sep)) {
+    return null;
   }
-  return null;
+  return resolved;
 }

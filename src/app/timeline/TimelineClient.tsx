@@ -320,7 +320,7 @@ function PostCard({
       <div
         className="text-gray-400 text-sm leading-relaxed [&_a]:text-accent-400 [&_a]:hover:underline"
         dangerouslySetInnerHTML={{
-          __html: post.contentHtml || post.content,
+          __html: post.contentHtml || "",
         }}
       />
 
@@ -541,7 +541,7 @@ function ThreadView({
                   <div
                     className="text-gray-400 text-sm leading-relaxed mt-1 [&_a]:text-accent-400 [&_a]:hover:underline"
                     dangerouslySetInnerHTML={{
-                      __html: post.contentHtml || post.content,
+                      __html: post.contentHtml || "",
                     }}
                   />
 

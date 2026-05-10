@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createKudos, getKudosForPath } from "@/lib/tinylytics";
+import { verifyOrigin } from "@/lib/auth";
 
 // Rate limit: 1 kudos per IP per path per hour
 const kudosLog = new Map<string, number>();
@@ -14,6 +15,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  if (!verifyOrigin(req)) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
   const { path } = await req.json();
   if (!path || typeof path !== "string") {
     return NextResponse.json({ error: "path required" }, { status: 400 });

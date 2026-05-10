@@ -2,8 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { deliverActivity, deliverToFollowers } from "@/lib/http-signatures";
 import { processAttachments, fetchLinkEmbed } from "@/lib/fedi-media";
+import { assertPublicHost, isPrivateUrl } from "@/lib/url-guard";
 import { verifyAdmin, verifyOrigin } from "@/lib/auth";
+import { sanitizeHtml } from "@/lib/sanitize";
 import { siteConfig } from "@/../site.config";
+
+const REMOTE_FETCH_TIMEOUT_MS = 8000;
 
 const siteUrl = siteConfig.url;
 
@@ -34,7 +38,13 @@ export async function POST(req: NextRequest) {
       const targetApId = comment.post?.apId || comment.photo?.apId;
       if (targetApId) {
         const noteId = `${siteUrl}/ap/comment/${comment.id}`;
-        const noteContent = `<p><strong>${comment.guestName}</strong> (via ${new URL(siteUrl).hostname}):</p><p>${comment.content}</p>`;
+        // H3: HTML-escape guest-supplied content before embedding it in the
+        // federated Note. Receivers re-sanitize, but unsanitized HTML on the
+        // wire is still a stored-XSS waiting to happen on small fedi servers
+        // and on our own site if rendering paths change.
+        const escape = (s: string) =>
+          s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        const noteContent = `<p><strong>${escape(comment.guestName)}</strong> (via ${escape(new URL(siteUrl).hostname)}):</p><p>${escape(comment.content)}</p>`;
 
         const activity = {
           "@context": "https://www.w3.org/ns/activitystreams",
@@ -300,10 +310,16 @@ export async function POST(req: NextRequest) {
 
       // Discover actor via WebFinger
       try {
-        const wfRes = await fetch(
-          `https://${domain}/.well-known/webfinger?resource=acct:${username}@${domain}`,
-          { headers: { Accept: "application/jrd+json" } }
-        );
+        // Validate domain — same character set we'd accept from a Mastodon handle.
+        if (!/^[a-z0-9.-]+$/i.test(domain) || domain.includes("..")) {
+          throw new Error("invalid domain");
+        }
+        const wfUrl = `https://${domain}/.well-known/webfinger?resource=acct:${encodeURIComponent(username)}@${encodeURIComponent(domain)}`;
+        if (isPrivateUrl(wfUrl)) throw new Error("blocked: private host");
+        const wfRes = await fetch(wfUrl, {
+          headers: { Accept: "application/jrd+json" },
+          signal: AbortSignal.timeout(REMOTE_FETCH_TIMEOUT_MS),
+        });
         if (!wfRes.ok) throw new Error("WebFinger failed");
 
         const wfData = await wfRes.json();
@@ -313,14 +329,27 @@ export async function POST(req: NextRequest) {
         );
 
         if (!actorLink?.href) throw new Error("No actor link found");
+        // H8: a malicious WebFinger response could point us at internal services.
+        // Use assertPublicHost (DNS-resolves) so a rebinding hostname is caught.
+        if (!(await assertPublicHost(actorLink.href))) {
+          throw new Error("blocked: actor URL resolves to private host");
+        }
 
         // Fetch actor profile
         const actorRes = await fetch(actorLink.href, {
           headers: { Accept: "application/activity+json" },
+          signal: AbortSignal.timeout(REMOTE_FETCH_TIMEOUT_MS),
         });
         if (!actorRes.ok) throw new Error("Actor fetch failed");
 
         const actor = await actorRes.json();
+        // H8: the actor's own claimed inbox/outbox could point at internal services.
+        if (typeof actor.inbox !== "string" || !(await assertPublicHost(actor.inbox))) {
+          throw new Error("blocked: actor inbox resolves to private host");
+        }
+        if (actor.outbox && (typeof actor.outbox !== "string" || !(await assertPublicHost(actor.outbox)))) {
+          throw new Error("blocked: actor outbox resolves to private host");
+        }
 
         // Store following record
         await prisma.fediFollowing.upsert({
@@ -344,6 +373,7 @@ export async function POST(req: NextRequest) {
           try {
             const outboxRes = await fetch(actor.outbox, {
               headers: { Accept: "application/activity+json" },
+              signal: AbortSignal.timeout(REMOTE_FETCH_TIMEOUT_MS),
             });
             if (outboxRes.ok) {
               const outbox = await outboxRes.json();
@@ -354,7 +384,8 @@ export async function POST(req: NextRequest) {
 
                 const { urls: mediaUrls, types: mediaTypes } =
                   await processAttachments(note.attachment);
-                const embed = await fetchLinkEmbed(note.content);
+                const safeContent = sanitizeHtml(note.content || "");
+                const embed = await fetchLinkEmbed(safeContent);
                 const inReplyTo = (note.inReplyTo as string) || null;
                 const conversationId =
                   note.conversation || note.context || inReplyTo || note.id || null;
@@ -364,8 +395,8 @@ export async function POST(req: NextRequest) {
                   create: {
                     actorUri: actorLink.href,
                     apId: note.id,
-                    content: note.content,
-                    contentHtml: note.content,
+                    content: safeContent,
+                    contentHtml: safeContent,
                     mediaUrls,
                     mediaTypes,
                     inReplyTo,
