@@ -4,6 +4,7 @@ node_modules/
 # Next.js build
 .next/
 out/
+tsconfig.tsbuildinfo
 
 # Environment (contains secrets)
 .env
