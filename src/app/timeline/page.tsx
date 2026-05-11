@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db";
 import { verifyAdminCookieValue } from "@/lib/auth";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { isTinylyticsConfigured, getSiteStats, getLeaderboard, getRecentHits, getUserJourneys } from "@/lib/tinylytics";
+import { siteConfig } from "@/../site.config";
 import TimelineClient from "./TimelineClient";
 import TimelineLogin from "./TimelineLogin";
 
@@ -59,7 +60,60 @@ export default async function TimelinePage() {
   const followers = await prisma.fediFollower.findMany({
     orderBy: { createdAt: "desc" },
   });
-  const followerCount = followers.length;
+
+  // Fetch Bluesky graph (mirrored locally via syncBlueskyGraph)
+  const [bskyFollowers, bskyFollowing] = await Promise.all([
+    prisma.blueskyFollower.findMany({ orderBy: { createdAt: "desc" } }),
+    prisma.blueskyFollowing.findMany({ orderBy: { createdAt: "desc" } }),
+  ]);
+
+  const mergedFollowers = [
+    ...followers.map((f) => ({
+      source: "fedi" as const,
+      id: f.id,
+      actorUri: f.actorUri,
+      username: f.username,
+      domain: f.domain,
+      displayName: f.displayName,
+      avatarUrl: f.avatarUrl,
+      createdAt: f.createdAt,
+    })),
+    ...bskyFollowers.map((b) => ({
+      source: "bsky" as const,
+      id: b.id,
+      did: b.did,
+      handle: b.handle,
+      displayName: b.displayName,
+      avatarUrl: b.avatarUrl,
+      createdAt: b.createdAt,
+    })),
+  ].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
+
+  const mergedFollowing = [
+    ...following.map((f) => ({
+      source: "fedi" as const,
+      id: f.id,
+      actorUri: f.actorUri,
+      username: f.username,
+      domain: f.domain,
+      displayName: f.displayName,
+      avatarUrl: f.avatarUrl,
+      createdAt: f.createdAt,
+    })),
+    ...bskyFollowing.map((b) => ({
+      source: "bsky" as const,
+      id: b.id,
+      did: b.did,
+      handle: b.handle,
+      followUri: b.followUri,
+      displayName: b.displayName,
+      avatarUrl: b.avatarUrl,
+      createdAt: b.createdAt,
+    })),
+  ].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
+
+  const totalFollowerCount = followers.length + bskyFollowers.length;
+  const totalFollowingCount = following.length + bskyFollowing.length;
 
   // Fetch direct messages grouped by conversation
   const directMessagesRaw = await prisma.directMessage.findMany({
@@ -88,8 +142,8 @@ export default async function TimelinePage() {
           Timeline
         </h1>
         <div className="flex items-center gap-4 text-sm text-gray-500">
-          <span>{followerCount} followers</span>
-          <span>{following.length} following</span>
+          <span>{totalFollowerCount} followers</span>
+          <span>{totalFollowingCount} following</span>
           <a
             href="/compose"
             className="btn-primary text-xs !py-1.5"
@@ -102,11 +156,12 @@ export default async function TimelinePage() {
       <TimelineClient
         initialPosts={JSON.parse(JSON.stringify(initialPosts))}
         initialCursor={nextCursor}
-        following={JSON.parse(JSON.stringify(following))}
-        followers={JSON.parse(JSON.stringify(followers))}
+        following={JSON.parse(JSON.stringify(mergedFollowing))}
+        followers={JSON.parse(JSON.stringify(mergedFollowers))}
         pendingComments={JSON.parse(JSON.stringify(pendingComments))}
         directMessages={JSON.parse(JSON.stringify(directMessages))}
         analyticsData={analyticsData ? JSON.parse(JSON.stringify(analyticsData)) : null}
+        fediAddress={siteConfig.fediAddress}
       />
     </div>
   );

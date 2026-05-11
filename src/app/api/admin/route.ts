@@ -6,6 +6,12 @@ import { assertPublicHost, isPrivateUrl } from "@/lib/url-guard";
 import { verifyAdmin, verifyOrigin } from "@/lib/auth";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { siteConfig } from "@/../site.config";
+import {
+  syncBlueskyGraph,
+  followBlueskyAccount,
+  unfollowBlueskyAccount,
+  resolveBlueskyActor,
+} from "@/lib/bluesky-graph";
 
 const REMOTE_FETCH_TIMEOUT_MS = 8000;
 
@@ -223,8 +229,9 @@ export async function POST(req: NextRequest) {
         const { BskyAgent } = await import("@atproto/api");
         const agent = new BskyAgent({ service: "https://bsky.social" });
         await agent.login({ identifier: bskyHandle, password: bskyPassword });
+        const chatAgent = agent.withProxy("bsky_chat", "did:web:api.bsky.chat");
 
-        const sendRes = await agent.api.chat.bsky.convo.sendMessage({
+        const sendRes = await chatAgent.api.chat.bsky.convo.sendMessage({
           convoId,
           message: { text: bskyDmContent },
         });
@@ -655,6 +662,47 @@ export async function POST(req: NextRequest) {
       }
 
       return NextResponse.json({ success: true, scanned: recentReplies.length, created });
+    }
+
+    case "sync_bluesky_graph": {
+      try {
+        const counts = await syncBlueskyGraph();
+        return NextResponse.json({ success: true, ...counts });
+      } catch (err) {
+        console.error("Bluesky graph sync failed:", err);
+        return NextResponse.json({ error: "Bluesky graph sync failed" }, { status: 500 });
+      }
+    }
+
+    case "bsky_follow": {
+      const { did, handleOrDid } = body;
+      try {
+        const targetDid = did || (handleOrDid ? await resolveBlueskyActor(handleOrDid) : null);
+        if (!targetDid) {
+          return NextResponse.json({ error: "did or handleOrDid required" }, { status: 400 });
+        }
+        await followBlueskyAccount(targetDid);
+        return NextResponse.json({ success: true });
+      } catch (err) {
+        console.error("Bluesky follow failed:", err);
+        return NextResponse.json({ error: `Bluesky follow failed: ${err}` }, { status: 500 });
+      }
+    }
+
+    case "bsky_unfollow": {
+      const { followingId } = body;
+      if (!followingId) {
+        return NextResponse.json({ error: "followingId required" }, { status: 400 });
+      }
+      try {
+        await unfollowBlueskyAccount(followingId);
+        return NextResponse.json({ success: true });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        const status = message.includes("Missing followUri") ? 422 : 500;
+        console.error("Bluesky unfollow failed:", err);
+        return NextResponse.json({ error: message }, { status });
+      }
     }
 
     default:

@@ -13,15 +13,18 @@ export async function pollBlueskyDMs(): Promise<{ convos: number; messages: numb
   await agent.login({ identifier: handle, password });
   const myDid = agent.session!.did;
 
+  // Chat endpoints live on a separate service; route via the proxy header.
+  const chatAgent = agent.withProxy("bsky_chat", "did:web:api.bsky.chat");
+
   // List recent conversations
-  const convosRes = await agent.api.chat.bsky.convo.listConvos({ limit: 20 });
+  const convosRes = await chatAgent.api.chat.bsky.convo.listConvos({ limit: 20 });
   if (!convosRes.success) return { convos: 0, messages: 0 };
 
   let totalMessages = 0;
 
   for (const convo of convosRes.data.convos) {
     // Get messages in this conversation
-    const messagesRes = await agent.api.chat.bsky.convo.getMessages({
+    const messagesRes = await chatAgent.api.chat.bsky.convo.getMessages({
       convoId: convo.id,
       limit: 30,
     });

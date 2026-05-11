@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.1.14 (2026-05-12)
+
+### Added
+- **Unified Bluesky + Fediverse followers/following in the admin Timeline.** The header counts beside the **+ Compose** button (`src/app/timeline/page.tsx`) now show the combined total across both networks. The **Followers** and **Following** tabs render a single merged list sorted by `createdAt` desc, with a small `bsky` pill on Bluesky rows; profile links route to `https://bsky.app/profile/{handle}` for Bluesky entries. Each tab gains a **Sync Bluesky** button that pulls the live graph from the AT Protocol (`getFollowers` + `getFollows`, paginated 100/page) and reconciles it into the local DB — rows whose DID is not seen during sync are deleted so unfollows propagate. **Follow Back** on a Bluesky follower not yet in the following list creates a real `app.bsky.graph.follow` record. **Unfollow** on a Bluesky following row calls `agent.deleteFollow()` against the stored follow-record URI. The Follow form in the Following tab now accepts either a Fediverse handle (`@user@domain`) or a Bluesky handle/DID (`name.bsky.social`, `did:plc:...`) — handler classifies via a `@user@host.tld` regex and routes to the right backend action. Empty-state copy in the Followers tab now uses `siteConfig.fediAddress` instead of a hardcoded handle (a stray personal handle had been carried over in past releases; sanitized in this release).
+- **Daily scheduled Bluesky sync.** New `scripts/scheduled-bluesky-sync.ts` runs `syncBlueskyGraph()` and `pollBlueskyDMs()` once and exits. Intended to be wired up as a PM2 cron entry — script header documents the `pm2 start ... --cron-restart "0 3 * * *" --no-autorestart` invocation — or via system crontab. Manual one-shot: `npx tsx --env-file=.env.local scripts/scheduled-bluesky-sync.ts`. Not auto-installed; operators run the `pm2 start` command once on the host (then `pm2 save`).
+
+### Fixed
+- **Bluesky chat (DM) endpoints now use the required proxy header.** `pollBlueskyDMs()` (`src/lib/bluesky-dm-poll.ts`) and the `bsky_dm_reply` admin action (`src/app/api/admin/route.ts`) were calling `agent.api.chat.bsky.convo.*` against `bsky.social` directly, which returns HTTP 501 `MethodNotImplemented`. Both now route via `agent.withProxy("bsky_chat", "did:web:api.bsky.chat")`. Without this, the manual "Poll Bluesky" button and outgoing Bluesky DM replies were silently broken — verified by reproducing the 501 from a standalone runner. The same fix lets `scheduled-bluesky-sync.ts` actually pull DMs.
+
+### Schema
+- Two new Prisma models: `BlueskyFollower` and `BlueskyFollowing` (the latter carries a nullable `followUri` for the AT URI of our follow record, required to call `deleteFollow`). Apply with `npx prisma db push`. Existing tables are untouched.
+
+### Files
+- New `src/lib/bluesky-graph.ts` — `syncBlueskyGraph()` paginates `getFollowers` / `getFollows` and reconciles the local mirrors with prune-on-miss; `followBlueskyAccount()` / `unfollowBlueskyAccount()` create and undo follow records, persisting the AT URI returned from `agent.follow()`; `resolveBlueskyActor()` turns a handle (or DID) into a DID via `agent.resolveHandle`.
+- New `scripts/scheduled-bluesky-sync.ts` — standalone tsx script for cron use.
+- `src/app/api/admin/route.ts` — three new actions: `sync_bluesky_graph`, `bsky_follow` (accepts `did` or `handleOrDid`), `bsky_unfollow` (by local `followingId`, returns 422 if the row lacks `followUri`). DM-reply proxy header fix in the `bsky_dm_reply` branch.
+- `src/lib/bluesky-dm-poll.ts` — chat-service proxy header on `listConvos` / `getMessages`.
+- `src/app/timeline/page.tsx` — loads `blueskyFollower` / `blueskyFollowing` alongside the Fedi tables, builds discriminated-union merged arrays sorted by `createdAt` desc, derives `totalFollowerCount` / `totalFollowingCount` for the header, and passes `siteConfig.fediAddress` through to the client.
+- `src/app/timeline/TimelineClient.tsx` — `FollowerItem` / `FollowingItem` are now `{ source: "fedi" } | { source: "bsky" }` unions; both tab renderers branch on `source` for the identity row, profile link, Follow Back / Unfollow targets, and Sync Bluesky button. The Follow form's submit handler detects `@user@domain` via regex and falls back to `bsky_follow` otherwise. Accepts a new `fediAddress` prop used in the empty-state copy.
+
 ## 0.1.13 (2026-05-11)
 
 ### Fixed

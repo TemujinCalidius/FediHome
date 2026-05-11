@@ -218,6 +218,27 @@ model FediFollowing {
   createdAt DateTime @default(now())
 }
 
+model BlueskyFollower {
+  id          String   @id @default(cuid())
+  did         String   @unique
+  handle      String
+  displayName String?
+  avatarUrl   String?
+  createdAt   DateTime @default(now())
+  fetchedAt   DateTime @default(now())
+}
+
+model BlueskyFollowing {
+  id          String   @id @default(cuid())
+  did         String   @unique
+  handle      String
+  displayName String?
+  avatarUrl   String?
+  followUri   String?
+  createdAt   DateTime @default(now())
+  fetchedAt   DateTime @default(now())
+}
+
 model FediPost {
   id          String   @id @default(cuid())
   actorUri    String

@@ -47,14 +47,27 @@ interface FediPostItem {
   boostedByName: string | null;
 }
 
-interface FollowingItem {
-  id: string;
-  actorUri: string;
-  username: string;
-  domain: string;
-  displayName: string | null;
-  avatarUrl: string | null;
-}
+type FollowingItem =
+  | {
+      source: "fedi";
+      id: string;
+      actorUri: string;
+      username: string;
+      domain: string;
+      displayName: string | null;
+      avatarUrl: string | null;
+      createdAt: string;
+    }
+  | {
+      source: "bsky";
+      id: string;
+      did: string;
+      handle: string;
+      followUri: string | null;
+      displayName: string | null;
+      avatarUrl: string | null;
+      createdAt: string;
+    };
 
 interface PendingComment {
   id: string;
@@ -65,15 +78,26 @@ interface PendingComment {
   photo: { slug: string; title: string | null } | null;
 }
 
-interface FollowerItem {
-  id: string;
-  actorUri: string;
-  username: string;
-  domain: string;
-  displayName: string | null;
-  avatarUrl: string | null;
-  createdAt: string;
-}
+type FollowerItem =
+  | {
+      source: "fedi";
+      id: string;
+      actorUri: string;
+      username: string;
+      domain: string;
+      displayName: string | null;
+      avatarUrl: string | null;
+      createdAt: string;
+    }
+  | {
+      source: "bsky";
+      id: string;
+      did: string;
+      handle: string;
+      displayName: string | null;
+      avatarUrl: string | null;
+      createdAt: string;
+    };
 
 interface AnalyticsData {
   stats: { totalHits: number; totalKudos: number } | null;
@@ -945,6 +969,7 @@ export default function TimelineClient({
   pendingComments,
   directMessages = [],
   analyticsData,
+  fediAddress,
 }: {
   initialPosts: FediPostItem[];
   initialCursor: string | null;
@@ -953,6 +978,7 @@ export default function TimelineClient({
   pendingComments: PendingComment[];
   directMessages?: DirectMessageItem[];
   analyticsData?: AnalyticsData | null;
+  fediAddress: string;
 }) {
   const [tab, setTab] = useState<"feed" | "moderation" | "followers" | "following" | "messages" | "analytics">("feed");
   const [showReplies, setShowReplies] = useState(false);
@@ -1263,61 +1289,100 @@ export default function TimelineClient({
       {/* Followers */}
       {tab === "followers" && (
         <div className="space-y-2">
+          <div className="flex justify-end mb-2">
+            <button
+              onClick={async () => {
+                await fetch("/api/admin", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ action: "sync_bluesky_graph" }),
+                });
+                window.location.reload();
+              }}
+              className="text-xs text-blue-400 hover:text-blue-300 border border-blue-800/50 px-3 py-1.5 rounded-lg"
+            >
+              Sync Bluesky
+            </button>
+          </div>
           {followers.length === 0 ? (
             <div className="glass-card p-8 text-center">
-              <p className="text-gray-500">No followers yet. Share your Fedi handle <span className="text-accent-400 font-mono">@samuel@samuellison.com</span> to get discovered.</p>
+              <p className="text-gray-500">No followers yet. Share your Fedi handle <span className="text-accent-400 font-mono">{fediAddress}</span> to get discovered.</p>
             </div>
           ) : (
-            followers.map((f) => (
-              <div key={f.id} className="glass-card p-4 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  {f.avatarUrl ? (
-                    <img src={f.avatarUrl} alt="" className="w-10 h-10 rounded-full" />
-                  ) : (
-                    <div className="w-10 h-10 rounded-full bg-surface-700" />
-                  )}
-                  <div>
-                    <p className="text-sm font-semibold text-white">{f.displayName || f.username}</p>
+            followers.map((f) => {
+              const profileUrl = f.source === "fedi" ? f.actorUri : `https://bsky.app/profile/${f.handle}`;
+              const handleLabel = f.source === "fedi" ? `@${f.username}@${f.domain}` : `@${f.handle}`;
+              const fallbackName = f.source === "fedi" ? f.username : f.handle;
+              const isFollowing = f.source === "fedi"
+                ? following.some((fw) => fw.source === "fedi" && fw.actorUri === f.actorUri)
+                : following.some((fw) => fw.source === "bsky" && fw.did === f.did);
+              return (
+                <div key={`${f.source}:${f.id}`} className="glass-card p-4 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    {f.avatarUrl ? (
+                      <img src={f.avatarUrl} alt="" className="w-10 h-10 rounded-full" />
+                    ) : (
+                      <div className="w-10 h-10 rounded-full bg-surface-700" />
+                    )}
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-semibold text-white">{f.displayName || fallbackName}</p>
+                        {f.source === "bsky" && (
+                          <span className="text-[10px] uppercase tracking-wide text-blue-400 border border-blue-800/60 px-1.5 py-0.5 rounded">bsky</span>
+                        )}
+                      </div>
+                      <a
+                        href={profileUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-gray-500 hover:text-accent-400 transition-colors"
+                      >
+                        {handleLabel}
+                      </a>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
                     <a
-                      href={f.actorUri}
+                      href={profileUrl}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-xs text-gray-500 hover:text-accent-400 transition-colors"
                     >
-                      @{f.username}@{f.domain}
+                      View Profile
                     </a>
+                    {!isFollowing && (
+                      <button
+                        onClick={async () => {
+                          if (f.source === "fedi") {
+                            await fetch("/api/admin", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({
+                                action: "follow",
+                                handle: `@${f.username}@${f.domain}`,
+                              }),
+                            });
+                          } else {
+                            await fetch("/api/admin", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({
+                                action: "bsky_follow",
+                                did: f.did,
+                              }),
+                            });
+                          }
+                          window.location.reload();
+                        }}
+                        className="btn-primary text-xs !py-1 !px-3"
+                      >
+                        Follow Back
+                      </button>
+                    )}
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <a
-                    href={f.actorUri}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs text-gray-500 hover:text-accent-400 transition-colors"
-                  >
-                    View Profile
-                  </a>
-                  {!following.some((fw) => fw.actorUri === f.actorUri) && (
-                    <button
-                      onClick={async () => {
-                        await fetch("/api/admin", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({
-                            action: "follow",
-                            handle: `@${f.username}@${f.domain}`,
-                          }),
-                        });
-                        window.location.reload();
-                      }}
-                      className="btn-primary text-xs !py-1 !px-3"
-                    >
-                      Follow Back
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       )}
@@ -1327,27 +1392,45 @@ export default function TimelineClient({
         <div>
           {/* Follow form */}
           <div className="glass-card p-5 mb-6">
-            <h3 className="text-sm font-semibold text-white mb-3">
-              Follow an Account
-            </h3>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-white">
+                Follow an Account
+              </h3>
+              <button
+                onClick={async () => {
+                  await fetch("/api/admin", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ action: "sync_bluesky_graph" }),
+                  });
+                  window.location.reload();
+                }}
+                className="text-xs text-blue-400 hover:text-blue-300 border border-blue-800/50 px-3 py-1.5 rounded-lg"
+              >
+                Sync Bluesky
+              </button>
+            </div>
             <div className="flex gap-2">
               <input
                 type="text"
-                placeholder="@user@mastodon.social"
+                placeholder="@user@mastodon.social or name.bsky.social"
                 value={followHandle}
                 onChange={(e) => setFollowHandle(e.target.value)}
                 className="flex-1 bg-surface-800 border border-surface-700 rounded-lg px-4 py-2 text-sm text-white placeholder-gray-600 focus:border-accent-400/30 focus:outline-none"
               />
               <button
                 onClick={async () => {
-                  if (!followHandle.trim()) return;
+                  const raw = followHandle.trim();
+                  if (!raw) return;
+                  const fediRe = /^@?[^@\s]+@[^@\s]+\.[^@\s]+$/;
+                  const isFedi = fediRe.test(raw);
+                  const payload = isFedi
+                    ? { action: "follow", handle: raw }
+                    : { action: "bsky_follow", handleOrDid: raw };
                   await fetch("/api/admin", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                      action: "follow",
-                      handle: followHandle.trim(),
-                    }),
+                    body: JSON.stringify(payload),
                   });
                   setFollowHandle("");
                   window.location.reload();
@@ -1366,48 +1449,66 @@ export default function TimelineClient({
                 Not following anyone yet.
               </p>
             ) : (
-              following.map((f) => (
-                <div
-                  key={f.id}
-                  className="glass-card p-4 flex items-center justify-between"
-                >
-                  <div className="flex items-center gap-3">
-                    {f.avatarUrl ? (
-                      <img
-                        src={f.avatarUrl}
-                        alt=""
-                        className="w-8 h-8 rounded-full"
-                      />
-                    ) : (
-                      <div className="w-8 h-8 rounded-full bg-surface-700" />
-                    )}
-                    <div>
-                      <p className="text-sm font-semibold text-white">
-                        {f.displayName || f.username}
-                      </p>
-                      <p className="text-xs text-gray-600">
-                        @{f.username}@{f.domain}
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={async () => {
-                      await fetch("/api/admin", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({
-                          action: "unfollow",
-                          followingId: f.id,
-                        }),
-                      });
-                      window.location.reload();
-                    }}
-                    className="text-xs text-gray-500 hover:text-red-400 transition-colors"
+              following.map((f) => {
+                const handleLabel = f.source === "fedi" ? `@${f.username}@${f.domain}` : `@${f.handle}`;
+                const fallbackName = f.source === "fedi" ? f.username : f.handle;
+                const profileUrl = f.source === "fedi" ? f.actorUri : `https://bsky.app/profile/${f.handle}`;
+                const bskyNeedsSync = f.source === "bsky" && !f.followUri;
+                return (
+                  <div
+                    key={`${f.source}:${f.id}`}
+                    className="glass-card p-4 flex items-center justify-between"
                   >
-                    Unfollow
-                  </button>
-                </div>
-              ))
+                    <div className="flex items-center gap-3">
+                      {f.avatarUrl ? (
+                        <img
+                          src={f.avatarUrl}
+                          alt=""
+                          className="w-8 h-8 rounded-full"
+                        />
+                      ) : (
+                        <div className="w-8 h-8 rounded-full bg-surface-700" />
+                      )}
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-semibold text-white">
+                            {f.displayName || fallbackName}
+                          </p>
+                          {f.source === "bsky" && (
+                            <span className="text-[10px] uppercase tracking-wide text-blue-400 border border-blue-800/60 px-1.5 py-0.5 rounded">bsky</span>
+                          )}
+                        </div>
+                        <a
+                          href={profileUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-gray-600 hover:text-accent-400 transition-colors"
+                        >
+                          {handleLabel}
+                        </a>
+                      </div>
+                    </div>
+                    <button
+                      disabled={bskyNeedsSync}
+                      title={bskyNeedsSync ? "Sync Bluesky and retry" : undefined}
+                      onClick={async () => {
+                        const payload = f.source === "fedi"
+                          ? { action: "unfollow", followingId: f.id }
+                          : { action: "bsky_unfollow", followingId: f.id };
+                        await fetch("/api/admin", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify(payload),
+                        });
+                        window.location.reload();
+                      }}
+                      className="text-xs text-gray-500 hover:text-red-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-gray-500"
+                    >
+                      Unfollow
+                    </button>
+                  </div>
+                );
+              })
             )}
           </div>
         </div>
