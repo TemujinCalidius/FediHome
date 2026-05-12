@@ -40,12 +40,18 @@ FediHome is a self-hosted, single-user publishing platform that connects to the 
 
 ## Quick Start
 
-### Option 1: Script install
+### Option 1: AI-assisted install (recommended for non-technical users)
+
+If you don't know how to code, the easiest way is to let an AI install it for you. Open [Claude Code](https://claude.com/claude-code) in an empty folder and paste the prompt from [docs/install-with-ai.md](docs/install-with-ai.md). It'll install Node.js and PostgreSQL if you don't have them, create a database, set up your secrets, and walk you through the setup wizard — answering any questions in plain English.
+
+### Option 2: Script install
 ```bash
 curl -sSL https://raw.githubusercontent.com/TemujinCalidius/fedihome/main/install.sh | bash
 ```
 
-### Option 2: Manual install
+The installer will offer to install PostgreSQL for you if it's missing, auto-create a local database, generate your admin secret, and build the app. Then visit `http://localhost:3000/setup` to configure your instance via the setup wizard.
+
+### Option 3: Manual install
 ```bash
 git clone https://github.com/TemujinCalidius/fedihome.git
 cd fedihome
@@ -57,9 +63,7 @@ npm run build
 npm start
 ```
 
-Then visit `http://localhost:3000/setup` to configure your instance.
-
-### Option 3: Docker
+### Option 4: Docker
 ```bash
 git clone https://github.com/TemujinCalidius/fedihome.git
 cd fedihome
@@ -69,8 +73,8 @@ docker compose up -d
 
 ## Requirements
 - Node.js 20+ (or Docker)
-- PostgreSQL 15+
-- A domain name with DNS access
+- PostgreSQL 15+ (the installer can set this up for you)
+- A domain name with DNS access (only needed when you go public)
 
 ## Videos and Audio
 
@@ -81,12 +85,27 @@ FediHome supports two new attachment types alongside photos:
 
 Both render natively as ActivityPub attachments — Mastodon, Pleroma, and Misskey will show the audio player or video link preview.
 
-## Maintenance
+## Updating
 
-Run `npm run check-updates` to scan for outdated packages, security advisories, and new releases of key dependencies (Fedify, Next.js, Prisma, atproto, React). Findings appear in your notification bell under the **Updates** category. Dismiss or mark applied per item.
+To update to the latest version:
+
+```bash
+cd /path/to/fedihome
+npm run update
+```
+
+This runs `update.sh`, which fetches new code, shows you what's new, asks for confirmation, installs dependencies, applies any schema changes (Prisma refuses if data would be lost), rebuilds, and restarts the server (pm2 / systemd / docker compose — whichever it finds).
+
+Want passive notifications when there's a new version? Run `npm run check-updates` and a "FediHome update available" item will appear in your admin notification bell whenever upstream `main` is ahead of your checkout. The same command also scans for outdated dependencies, security advisories, and new releases of key libraries (Fedify, Next.js, Prisma, atproto, React).
 
 ```bash
 npm run check-updates
+```
+
+Schedule it weekly via cron:
+
+```cron
+0 9 * * 1 cd /path/to/fedihome && /usr/local/bin/npm run check-updates >> /tmp/fedihome-updates.log 2>&1
 ```
 
 Backfill photo dimensions (one-off, after upgrading from <0.1.8) — required for the masonry layout to render without column collapse:
@@ -95,13 +114,8 @@ Backfill photo dimensions (one-off, after upgrading from <0.1.8) — required fo
 npm run backfill-photo-dimensions
 ```
 
-Schedule the update check weekly via cron if you want passive monitoring:
-
-```cron
-0 9 * * 1 cd /path/to/fedihome && /usr/local/bin/npm run check-updates >> /tmp/fedihome-updates.log 2>&1
-```
-
 ## Documentation
+- [Install with AI](docs/install-with-ai.md) — Non-technical install using Claude Code
 - [Getting Started](docs/getting-started.md) — First 10 minutes
 - [Configuration](docs/configuration.md) — All settings explained
 - [Deployment](docs/deployment.md) — Production setup with Cloudflare/VPS/Docker

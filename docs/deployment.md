@@ -242,8 +242,19 @@ If using Cloudflare Tunnel, see [Cloudflare Tunnel](cloudflare-tunnel.md) instea
 
 ## Updating FediHome
 
+The simplest way is the bundled updater, which handles git pull, dependency install, schema migration, rebuild, and restart in one command:
+
 ```bash
 cd /opt/fedihome    # or wherever you installed it
+npm run update
+```
+
+It auto-detects how FediHome is running (pm2, systemd, or docker compose) and restarts it after the build. Before pulling, it shows you the new commit log and asks for confirmation.
+
+If you'd rather run the steps manually:
+
+```bash
+cd /opt/fedihome
 git pull
 npm install
 npx prisma db push
@@ -251,7 +262,7 @@ npm run build
 pm2 restart fedihome
 ```
 
-For Docker:
+For Docker (manual):
 
 ```bash
 git pull

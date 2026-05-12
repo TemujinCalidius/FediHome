@@ -221,8 +221,133 @@ function compareVersions(a: string, b: string): number {
   return 0;
 }
 
+const FEDIHOME_REPO = process.env.FEDIHOME_REPO || "TemujinCalidius/fedihome";
+const FEDIHOME_BRANCH = process.env.FEDIHOME_BRANCH || "main";
+
+// Compare the local checkout's HEAD against the upstream branch tip on GitHub.
+// If we're behind, surface a single "FediHome update available" maintenance
+// item with the latest commit subjects so the admin can see what's new at a
+// glance and run `npm run update` to apply it.
+async function checkFediHomeSelf() {
+  let localSha: string | null = null;
+  try {
+    localSha = execSync("git rev-parse HEAD", { encoding: "utf-8" }).trim();
+  } catch {
+    // Not a git checkout (e.g. installed from a tarball). Skip — we can't
+    // tell what version they're on.
+    return 0;
+  }
+  if (!localSha) return 0;
+
+  try {
+    const res = await fetch(
+      `https://api.github.com/repos/${FEDIHOME_REPO}/commits/${FEDIHOME_BRANCH}`,
+      {
+        headers: { Accept: "application/vnd.github+json" },
+        signal: AbortSignal.timeout(10000),
+      },
+    );
+    if (!res.ok) return 0;
+    const head = (await res.json()) as { sha?: string };
+    const remoteSha = head.sha;
+    if (!remoteSha) return 0;
+
+    if (remoteSha === localSha) {
+      // Up to date — clear any stale "update available" item so the bell doesn't
+      // keep nagging after the user has updated.
+      await prisma.maintenanceItem.deleteMany({
+        where: { kind: "release-note", packageName: "fedihome" },
+      });
+      return 0;
+    }
+
+    // Behind. Pull the list of commits between local..remote (newest first)
+    // and use them for a human-readable description.
+    let description = "";
+    try {
+      const compare = await fetch(
+        `https://api.github.com/repos/${FEDIHOME_REPO}/compare/${localSha}...${remoteSha}`,
+        {
+          headers: { Accept: "application/vnd.github+json" },
+          signal: AbortSignal.timeout(10000),
+        },
+      );
+      if (compare.ok) {
+        const data = (await compare.json()) as {
+          ahead_by?: number;
+          commits?: { sha: string; commit: { message: string } }[];
+        };
+        const ahead = data.ahead_by ?? 0;
+        const lines = (data.commits || [])
+          .slice(-10)
+          .reverse()
+          .map((c) => `• ${c.commit.message.split("\n")[0]}`);
+        description = `${ahead} new commit${ahead === 1 ? "" : "s"} on ${FEDIHOME_BRANCH}:\n${lines.join("\n")}\n\nRun \`npm run update\` to apply.`;
+      }
+    } catch {
+      // Compare endpoint failed — fall back to a generic message
+    }
+
+    const shortSha = remoteSha.slice(0, 7);
+    const installedVersion = readInstalledFediHomeVersion();
+
+    await prisma.maintenanceItem.upsert({
+      where: {
+        kind_packageName_latest: {
+          kind: "release-note",
+          packageName: "fedihome",
+          latest: shortSha,
+        },
+      },
+      create: {
+        kind: "release-note",
+        packageName: "fedihome",
+        current: installedVersion,
+        latest: shortSha,
+        title: `FediHome update available (${shortSha})`,
+        description: description || `New commits on ${FEDIHOME_BRANCH}. Run \`npm run update\`.`,
+        url: `https://github.com/${FEDIHOME_REPO}/compare/${localSha}...${remoteSha}`,
+      },
+      update: {
+        current: installedVersion,
+        title: `FediHome update available (${shortSha})`,
+        description: description || `New commits on ${FEDIHOME_BRANCH}. Run \`npm run update\`.`,
+        url: `https://github.com/${FEDIHOME_REPO}/compare/${localSha}...${remoteSha}`,
+      },
+    });
+
+    // Clear older entries pointing at superseded SHAs so only the latest one
+    // shows in the bell.
+    await prisma.maintenanceItem.deleteMany({
+      where: {
+        kind: "release-note",
+        packageName: "fedihome",
+        latest: { not: shortSha },
+      },
+    });
+
+    return 1;
+  } catch {
+    return 0;
+  }
+}
+
+function readInstalledFediHomeVersion(): string {
+  try {
+    const raw = readFileSync(join(process.cwd(), "package.json"), "utf-8");
+    const pkg = JSON.parse(raw) as { version?: string };
+    return pkg.version || "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
 async function main() {
-  console.log("Checking for updates...");
+  console.log("Checking for FediHome updates...");
+  const self = await checkFediHomeSelf();
+  console.log(`  ${self} FediHome update(s) recorded`);
+
+  console.log("Checking for outdated packages...");
   const updates = await checkOutdated();
   console.log(`  ${updates} package update(s) recorded`);
 
