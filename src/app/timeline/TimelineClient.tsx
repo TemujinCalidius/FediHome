@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { LightboxGallery } from "@/components/ui/Lightbox";
 
 function PostMedia({ urls, types, maxH }: { urls: string[]; types: string[]; maxH: string }) {
@@ -119,6 +119,8 @@ interface DirectMessageItem {
   bskyConvoId: string | null;
   isOutgoing: boolean;
   createdAt: string;
+  deliveredAt: string | null;
+  deliveryError: string | null;
 }
 
 interface Conversation {
@@ -645,90 +647,369 @@ function ThreadView({
   );
 }
 
-const READ_TIMESTAMPS_KEY = "dm-read-timestamps";
-
-function getReadTimestamps(): Record<string, string> {
-  try {
-    return JSON.parse(localStorage.getItem(READ_TIMESTAMPS_KEY) || "{}");
-  } catch {
-    return {};
+/**
+ * Pure conversation grouping. Read state comes from props (server-backed),
+ * so this is shared between MessagesTab and the unread-count tab badge.
+ */
+function buildConversations(
+  directMessages: DirectMessageItem[],
+  readState: Record<string, string>
+): Conversation[] {
+  const groups = new Map<string, DirectMessageItem[]>();
+  for (const msg of directMessages) {
+    const existing = groups.get(msg.conversationKey) || [];
+    existing.push(msg);
+    groups.set(msg.conversationKey, existing);
   }
+
+  return Array.from(groups.entries())
+    .map(([key, messages]) => {
+      const sorted = messages.sort(
+        (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      );
+      const lastMessage = sorted[sorted.length - 1];
+      const lastIncoming = [...sorted].reverse().find((m) => !m.isOutgoing);
+      const lastOutgoing = [...sorted].reverse().find((m) => m.isOutgoing);
+      const lastReadAt = readState[key];
+      const hasUnread = lastIncoming
+        ? (() => {
+            const incomingDate = new Date(lastIncoming.createdAt);
+            const lastOutgoingDate = lastOutgoing ? new Date(lastOutgoing.createdAt) : null;
+            const lastReadDate = lastReadAt ? new Date(lastReadAt) : null;
+            const latestAck = [lastOutgoingDate, lastReadDate]
+              .filter((d): d is Date => d !== null)
+              .reduce<Date | null>((a, b) => (a && a > b ? a : b), null);
+            return !latestAck || incomingDate > latestAck;
+          })()
+        : false;
+
+      return {
+        key,
+        source: lastMessage.source,
+        handle: lastIncoming?.senderHandle || lastMessage.senderHandle,
+        name: lastIncoming?.senderName || lastMessage.senderName,
+        avatar: lastIncoming?.senderAvatar || lastMessage.senderAvatar,
+        senderUri: lastIncoming?.senderUri || lastMessage.senderUri,
+        bskyConvoId: lastMessage.bskyConvoId,
+        messages: sorted,
+        lastMessage,
+        hasUnread,
+      };
+    })
+    .sort(
+      (a, b) =>
+        new Date(b.lastMessage.createdAt).getTime() -
+        new Date(a.lastMessage.createdAt).getTime()
+    );
 }
 
-function markConversationRead(conversationKey: string) {
-  const timestamps = getReadTimestamps();
-  timestamps[conversationKey] = new Date().toISOString();
-  localStorage.setItem(READ_TIMESTAMPS_KEY, JSON.stringify(timestamps));
+function NewMessageModal({
+  following,
+  followers,
+  onClose,
+}: {
+  following: FollowingItem[];
+  followers: FollowerItem[];
+  onClose: () => void;
+}) {
+  const [tab, setTab] = useState<"following" | "followers" | "other">("following");
+  const [search, setSearch] = useState("");
+  const [recipient, setRecipient] = useState<
+    | { source: "fedi"; handle: string; name: string | null; avatar: string | null; actorUri?: string }
+    | { source: "bsky"; handle: string; name: string | null; avatar: string | null; did?: string }
+    | null
+  >(null);
+  const [otherHandle, setOtherHandle] = useState("");
+  const [otherSource, setOtherSource] = useState<"fedi" | "bsky">("fedi");
+  const [content, setContent] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const list = tab === "following" ? following : tab === "followers" ? followers : [];
+  const filtered = list.filter((p) => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    if (p.source === "fedi") {
+      return (
+        p.username.toLowerCase().includes(q) ||
+        p.domain.toLowerCase().includes(q) ||
+        (p.displayName?.toLowerCase().includes(q) ?? false)
+      );
+    }
+    return (
+      p.handle.toLowerCase().includes(q) ||
+      (p.displayName?.toLowerCase().includes(q) ?? false)
+    );
+  });
+
+  const pickFromList = (p: FollowingItem | FollowerItem) => {
+    if (p.source === "fedi") {
+      setRecipient({
+        source: "fedi",
+        handle: `@${p.username}@${p.domain}`,
+        name: p.displayName,
+        avatar: p.avatarUrl,
+        actorUri: p.actorUri,
+      });
+    } else {
+      setRecipient({
+        source: "bsky",
+        handle: p.handle,
+        name: p.displayName,
+        avatar: p.avatarUrl,
+        did: p.did,
+      });
+    }
+    setError(null);
+  };
+
+  const pickOther = () => {
+    const trimmed = otherHandle.trim().replace(/^@/, "");
+    if (!trimmed) {
+      setError("Handle required");
+      return;
+    }
+    if (otherSource === "fedi") {
+      if (!trimmed.includes("@")) {
+        setError("Fedi handle must be user@domain");
+        return;
+      }
+      setRecipient({ source: "fedi", handle: `@${trimmed}`, name: null, avatar: null });
+    } else {
+      setRecipient({ source: "bsky", handle: trimmed, name: null, avatar: null });
+    }
+    setError(null);
+  };
+
+  const send = async () => {
+    if (!recipient || !content.trim() || sending) return;
+    setSending(true);
+    setError(null);
+
+    const body: Record<string, string> =
+      recipient.source === "fedi"
+        ? recipient.actorUri
+          ? { action: "dm_new_fedi", content: content.trim(), recipientUri: recipient.actorUri }
+          : { action: "dm_new_fedi", content: content.trim(), recipientHandle: recipient.handle }
+        : recipient.did
+          ? { action: "bsky_dm_new", content: content.trim(), recipientDid: recipient.did }
+          : { action: "bsky_dm_new", content: content.trim(), recipientHandle: recipient.handle };
+
+    try {
+      const res = await fetch("/api/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || `Send failed (${res.status})`);
+        setSending(false);
+        return;
+      }
+      if (data.delivered === false) {
+        setError(`Sent but delivery failed: ${data.deliveryError || "unknown"}`);
+        setSending(false);
+        return;
+      }
+      window.location.reload();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Network error");
+      setSending(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="glass-card max-w-lg w-full max-h-[80vh] flex flex-col p-5"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-semibold text-white">New direct message</h2>
+          <button onClick={onClose} className="text-gray-500 hover:text-white text-xs">Close</button>
+        </div>
+
+        {!recipient ? (
+          <>
+            <div className="flex gap-2 mb-3">
+              {(["following", "followers", "other"] as const).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setTab(t)}
+                  className={`px-3 py-1 text-[11px] uppercase tracking-wider rounded-lg border transition-colors ${
+                    tab === t
+                      ? "border-accent-400/30 bg-accent-400/10 text-accent-400"
+                      : "border-surface-700 text-gray-500 hover:text-gray-300"
+                  }`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+
+            {tab === "other" ? (
+              <div className="space-y-2">
+                <p className="text-xs text-gray-500">
+                  Send to anyone — fedi handle (user@domain.tld) or Bluesky handle (name.bsky.social).
+                </p>
+                <div className="flex gap-2">
+                  <select
+                    value={otherSource}
+                    onChange={(e) => setOtherSource(e.target.value as "fedi" | "bsky")}
+                    className="bg-surface-800 border border-surface-700 rounded-lg px-2 py-2 text-xs text-white"
+                  >
+                    <option value="fedi">Fedi</option>
+                    <option value="bsky">Bluesky</option>
+                  </select>
+                  <input
+                    type="text"
+                    value={otherHandle}
+                    onChange={(e) => setOtherHandle(e.target.value)}
+                    placeholder={otherSource === "fedi" ? "user@domain.tld" : "name.bsky.social"}
+                    className="flex-1 bg-surface-800 border border-surface-700 rounded-lg px-3 py-2 text-xs text-white placeholder-gray-600"
+                  />
+                  <button onClick={pickOther} className="btn-primary text-xs">Continue</button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search by name or handle..."
+                  className="w-full mb-3 bg-surface-800 border border-surface-700 rounded-lg px-3 py-2 text-xs text-white placeholder-gray-600"
+                />
+                <div className="overflow-y-auto flex-1 space-y-1">
+                  {filtered.length === 0 ? (
+                    <p className="text-xs text-gray-600 text-center py-6">No matches</p>
+                  ) : (
+                    filtered.map((p) => {
+                      const handle = p.source === "fedi" ? `@${p.username}@${p.domain}` : p.handle;
+                      return (
+                        <button
+                          key={`${p.source}-${p.id}`}
+                          onClick={() => pickFromList(p)}
+                          className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-surface-800 text-left"
+                        >
+                          {p.avatarUrl ? (
+                            <img src={p.avatarUrl} alt="" className="w-8 h-8 rounded-full flex-shrink-0" />
+                          ) : (
+                            <div className="w-8 h-8 rounded-full bg-surface-700 flex-shrink-0" />
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold text-white truncate">
+                              {p.displayName || handle}
+                            </p>
+                            <p className="text-[10px] text-gray-500 truncate">
+                              {handle}
+                              <span className={`ml-2 ${p.source === "bsky" ? "text-blue-400" : "text-accent-400"}`}>
+                                {p.source === "bsky" ? "bsky" : "fedi"}
+                              </span>
+                            </p>
+                          </div>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </>
+            )}
+          </>
+        ) : (
+          <>
+            <div className="flex items-center gap-3 mb-3 pb-3 border-b border-surface-700">
+              {recipient.avatar ? (
+                <img src={recipient.avatar} alt="" className="w-10 h-10 rounded-full" />
+              ) : (
+                <div className="w-10 h-10 rounded-full bg-surface-700" />
+              )}
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-white">
+                  {recipient.name || recipient.handle}
+                </p>
+                <p className="text-xs text-gray-500">
+                  {recipient.handle}
+                  <span className={`ml-2 ${recipient.source === "bsky" ? "text-blue-400" : "text-accent-400"}`}>
+                    via {recipient.source === "bsky" ? "Bluesky" : "Fediverse"}
+                  </span>
+                </p>
+              </div>
+              <button
+                onClick={() => setRecipient(null)}
+                className="text-[11px] text-gray-500 hover:text-accent-400"
+              >
+                Change
+              </button>
+            </div>
+            <textarea
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              placeholder="Write your message..."
+              rows={5}
+              className="w-full bg-surface-800 border border-surface-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:border-accent-400/30 focus:outline-none resize-none"
+            />
+            {error && (
+              <p className="mt-2 text-xs text-red-400">{error}</p>
+            )}
+            <div className="flex justify-end gap-2 mt-3">
+              <button onClick={onClose} className="text-xs text-gray-500 hover:text-white px-3 py-2">
+                Cancel
+              </button>
+              <button
+                onClick={send}
+                disabled={sending || !content.trim()}
+                className="btn-primary text-xs disabled:opacity-50"
+              >
+                {sending ? "Sending..." : "Send"}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
 }
 
-function MessagesTab({ directMessages }: { directMessages: DirectMessageItem[] }) {
+function MessagesTab({
+  directMessages,
+  readState,
+  onMarkRead,
+  onMarkAllRead,
+  following,
+  followers,
+}: {
+  directMessages: DirectMessageItem[];
+  readState: Record<string, string>;
+  onMarkRead: (key: string) => void;
+  onMarkAllRead: () => void;
+  following: FollowingItem[];
+  followers: FollowerItem[];
+}) {
   const [activeConvo, setActiveConvo] = useState<string | null>(null);
   const [replyContent, setReplyContent] = useState("");
   const [sending, setSending] = useState(false);
   const [pollingBsky, setPollingBsky] = useState(false);
-  const [readVersion, setReadVersion] = useState(0);
   const [popupConvoKey, setPopupConvoKey] = useState<string | null>(null);
   const [showThreadUserPopup, setShowThreadUserPopup] = useState(false);
+  const [showCompose, setShowCompose] = useState(false);
+  const [markingAll, setMarkingAll] = useState(false);
 
   // Auto-mark conversation as read when opened
   useEffect(() => {
     if (activeConvo) {
-      markConversationRead(activeConvo);
-      setReadVersion((v) => v + 1);
+      onMarkRead(activeConvo);
     }
+    // onMarkRead is stable enough for our purposes; including it would re-fire
+    // every parent render and double-mark. We only care about activeConvo changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeConvo]);
 
-  // Group messages into conversations
-  const conversations: Conversation[] = (() => {
-    const groups = new Map<string, DirectMessageItem[]>();
-    for (const msg of directMessages) {
-      const existing = groups.get(msg.conversationKey) || [];
-      existing.push(msg);
-      groups.set(msg.conversationKey, existing);
-    }
-
-    return Array.from(groups.entries())
-      .map(([key, messages]) => {
-        const sorted = messages.sort(
-          (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-        );
-        const lastMessage = sorted[sorted.length - 1];
-        // Find the other person's info (most recent non-outgoing message)
-        const lastIncoming = [...sorted].reverse().find((m) => !m.isOutgoing);
-        const lastOutgoing = [...sorted].reverse().find((m) => m.isOutgoing);
-        const readTimestamps = getReadTimestamps();
-        const lastReadAt = readTimestamps[key];
-        const hasUnread = lastIncoming
-          ? (() => {
-              const incomingDate = new Date(lastIncoming.createdAt);
-              const lastOutgoingDate = lastOutgoing ? new Date(lastOutgoing.createdAt) : null;
-              const lastReadDate = lastReadAt ? new Date(lastReadAt) : null;
-              const latestAck = [lastOutgoingDate, lastReadDate]
-                .filter((d): d is Date => d !== null)
-                .reduce<Date | null>((a, b) => (a && a > b ? a : b), null);
-              return !latestAck || incomingDate > latestAck;
-            })()
-          : false;
-
-        return {
-          key,
-          source: lastMessage.source,
-          handle: lastIncoming?.senderHandle || lastMessage.senderHandle,
-          name: lastIncoming?.senderName || lastMessage.senderName,
-          avatar: lastIncoming?.senderAvatar || lastMessage.senderAvatar,
-          senderUri: lastIncoming?.senderUri || lastMessage.senderUri,
-          bskyConvoId: lastMessage.bskyConvoId,
-          messages: sorted,
-          lastMessage,
-          hasUnread,
-        };
-      })
-      .sort(
-        (a, b) =>
-          new Date(b.lastMessage.createdAt).getTime() -
-          new Date(a.lastMessage.createdAt).getTime()
-      );
-  })();
+  const conversations: Conversation[] = buildConversations(directMessages, readState);
 
   const activeConversation = conversations.find((c) => c.key === activeConvo);
 
@@ -844,8 +1125,17 @@ function MessagesTab({ directMessages }: { directMessages: DirectMessageItem[] }
                 ) : (
                   <p className="text-sm text-gray-300">{msg.content}</p>
                 )}
-                <p className="text-[10px] text-gray-600 mt-1">
-                  {new Date(msg.createdAt).toLocaleString()}
+                <p className="text-[10px] text-gray-600 mt-1 flex items-center gap-1">
+                  <span>{new Date(msg.createdAt).toLocaleString()}</span>
+                  {msg.isOutgoing && (
+                    msg.deliveredAt ? (
+                      <span title={`Delivered ${new Date(msg.deliveredAt).toLocaleString()}`} className="text-green-500">✓</span>
+                    ) : msg.deliveryError ? (
+                      <span title={`Delivery failed: ${msg.deliveryError}`} className="text-red-400">✗</span>
+                    ) : (
+                      <span title="Delivery status unknown (sent before tracking added, or still pending)" className="text-gray-600">·</span>
+                    )
+                  )}
                 </p>
               </div>
             </div>
@@ -874,18 +1164,50 @@ function MessagesTab({ directMessages }: { directMessages: DirectMessageItem[] }
     );
   }
 
+  const anyUnread = conversations.some((c) => c.hasUnread);
+
+  const handleMarkAllRead = async () => {
+    if (markingAll || !anyUnread) return;
+    setMarkingAll(true);
+    await onMarkAllRead();
+    setMarkingAll(false);
+  };
+
   // Conversation list view
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
+      {showCompose && (
+        <NewMessageModal
+          following={following}
+          followers={followers}
+          onClose={() => setShowCompose(false)}
+        />
+      )}
+
+      <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
         <p className="text-xs text-gray-500">{conversations.length} conversations</p>
-        <button
-          onClick={handlePollBluesky}
-          disabled={pollingBsky}
-          className="text-xs text-blue-400 hover:text-blue-300 transition-colors disabled:opacity-50"
-        >
-          {pollingBsky ? "Checking..." : "Check Bluesky DMs"}
-        </button>
+        <div className="flex items-center gap-3 flex-wrap">
+          <button
+            onClick={() => setShowCompose(true)}
+            className="text-xs text-accent-400 hover:text-accent-300 transition-colors"
+          >
+            + New message
+          </button>
+          <button
+            onClick={handleMarkAllRead}
+            disabled={markingAll || !anyUnread}
+            className="text-xs text-gray-400 hover:text-accent-400 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            {markingAll ? "Marking..." : "Mark all read"}
+          </button>
+          <button
+            onClick={handlePollBluesky}
+            disabled={pollingBsky}
+            className="text-xs text-blue-400 hover:text-blue-300 transition-colors disabled:opacity-50"
+          >
+            {pollingBsky ? "Checking..." : "Check Bluesky DMs"}
+          </button>
+        </div>
       </div>
 
       {conversations.length === 0 ? (
@@ -925,8 +1247,7 @@ function MessagesTab({ directMessages }: { directMessages: DirectMessageItem[] }
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          markConversationRead(convo.key);
-                          setReadVersion((v) => v + 1);
+                          onMarkRead(convo.key);
                         }}
                         className="text-[10px] text-gray-500 hover:text-accent-400 transition-colors"
                       >
@@ -968,6 +1289,7 @@ export default function TimelineClient({
   followers,
   pendingComments,
   directMessages = [],
+  dmReadState: initialDmReadState = {},
   analyticsData,
   fediAddress,
 }: {
@@ -977,6 +1299,7 @@ export default function TimelineClient({
   following: FollowingItem[];
   pendingComments: PendingComment[];
   directMessages?: DirectMessageItem[];
+  dmReadState?: Record<string, string>;
   analyticsData?: AnalyticsData | null;
   fediAddress: string;
 }) {
@@ -991,6 +1314,45 @@ export default function TimelineClient({
   const [followHandle, setFollowHandle] = useState("");
   const [threadPosts, setThreadPosts] = useState<FediPostItem[] | null>(null);
   const [threadLoading, setThreadLoading] = useState(false);
+
+  // Server-backed DM read state. Initial values come from props (DmConversationRead
+  // table); we mutate optimistically and POST to /api/admin in the background.
+  const [dmReadState, setDmReadState] = useState<Record<string, string>>(initialDmReadState);
+
+  const handleMarkDmRead = useCallback(async (conversationKey: string) => {
+    const now = new Date().toISOString();
+    setDmReadState((prev) =>
+      prev[conversationKey] === now ? prev : { ...prev, [conversationKey]: now }
+    );
+    try {
+      await fetch("/api/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "mark_dm_read", conversationKey }),
+      });
+    } catch {
+      // Optimistic update already applied; transient failures are non-fatal.
+    }
+  }, []);
+
+  const handleMarkAllDmsRead = useCallback(async () => {
+    const now = new Date().toISOString();
+    const allKeys = Array.from(new Set(directMessages.map((m) => m.conversationKey)));
+    setDmReadState((prev) => {
+      const next = { ...prev };
+      for (const key of allKeys) next[key] = now;
+      return next;
+    });
+    try {
+      await fetch("/api/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "mark_all_dms_read" }),
+      });
+    } catch {
+      // see above
+    }
+  }, [directMessages]);
 
   // Filter feed based on toggles
   const feedPosts = posts.filter((p) => {
@@ -1099,28 +1461,9 @@ export default function TimelineClient({
               </span>
             )}
             {t === "messages" && (() => {
-              // Count conversations with unread messages
-              const groups = new Map<string, typeof directMessages>();
-              for (const msg of directMessages) {
-                const existing = groups.get(msg.conversationKey) || [];
-                existing.push(msg);
-                groups.set(msg.conversationKey, existing);
-              }
-              const readTs = getReadTimestamps();
-              let unreadCount = 0;
-              for (const [key, msgs] of groups) {
-                const sorted = msgs.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-                const lastIn = [...sorted].reverse().find((m) => !m.isOutgoing);
-                const lastOut = [...sorted].reverse().find((m) => m.isOutgoing);
-                if (lastIn) {
-                  const inDate = new Date(lastIn.createdAt);
-                  const outDate = lastOut ? new Date(lastOut.createdAt) : null;
-                  const readDate = readTs[key] ? new Date(readTs[key]) : null;
-                  const latestAck = [outDate, readDate].filter((d): d is Date => d !== null)
-                    .reduce<Date | null>((a, b) => (a && a > b ? a : b), null);
-                  if (!latestAck || inDate > latestAck) unreadCount++;
-                }
-              }
+              const unreadCount = buildConversations(directMessages, dmReadState).filter(
+                (c) => c.hasUnread
+              ).length;
               return unreadCount > 0 ? (
                 <span className="ml-1.5 bg-blue-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">
                   {unreadCount}
@@ -1216,7 +1559,14 @@ export default function TimelineClient({
 
       {/* Messages */}
       {tab === "messages" && (
-        <MessagesTab directMessages={directMessages} />
+        <MessagesTab
+          directMessages={directMessages}
+          readState={dmReadState}
+          onMarkRead={handleMarkDmRead}
+          onMarkAllRead={handleMarkAllDmsRead}
+          following={following}
+          followers={followers}
+        />
       )}
 
       {/* Moderation */}

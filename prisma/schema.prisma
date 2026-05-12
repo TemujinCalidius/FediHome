@@ -323,12 +323,26 @@ model DirectMessage {
   conversationKey String   // "fedi:{actorUri}" or "bsky:{did}"
   isOutgoing      Boolean  @default(false)
 
+  // Delivery audit for outgoing messages. Both null = not yet attempted.
+  // deliveredAt set = remote inbox accepted (2xx). deliveryError set = failed.
+  deliveredAt     DateTime?
+  deliveryError   String?
+
   createdAt       DateTime
   fetchedAt       DateTime @default(now())
 
   @@index([conversationKey])
   @@index([source])
   @@index([createdAt])
+}
+
+// Server-side read tracking for DM conversations. Replaces the previous
+// client-localStorage approach so unread state syncs across devices and
+// survives a storage clear.
+model DmConversationRead {
+  conversationKey String   @id
+  lastReadAt      DateTime
+  updatedAt       DateTime @updatedAt
 }
 
 // === ActivityPub Keys ===

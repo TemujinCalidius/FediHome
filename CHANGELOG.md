@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.1.15 (2026-05-12)
+
+### Added
+- **"+ New message" compose flow in the admin Timeline DMs tab.** A modal (`NewMessageModal` in `src/app/timeline/TimelineClient.tsx`) lets you start a brand-new conversation without first receiving an inbound DM. Three picker tabs: **Following** and **Followers** (both merged Fedi + Bluesky lists, searchable by name/handle/domain), and **Other** (free-text input — Fediverse `user@domain.tld` or Bluesky `name.bsky.social`). Selecting a contact opens a textarea; on send the modal POSTs to `/api/admin` and the page reloads to show the sent message in the conversation thread.
+- **"Mark all read" button** in the conversations list header. Disabled when nothing is unread; bulk-upserts a `lastReadAt = now` row for every conversation key currently in `DirectMessage`.
+- **Outgoing-DM delivery audit.** `DirectMessage` gains nullable `deliveredAt` (set when the remote inbox returned 2xx for Fedi, or when `chat.bsky.convo.sendMessage` returned success for Bluesky) and `deliveryError` (the HTTP status + truncated body, or the network error message). Thread view (`MessagesTab`) renders a green ✓ next to delivered outgoing messages with a tooltip showing the timestamp, a red ✗ for failures with the error in the tooltip, or a grey · for messages stored before this release.
+- **Two new admin actions for the new compose flow.** `dm_new_fedi` accepts `recipientUri` (already-known Fediverse actor) or `recipientHandle` (free-text — resolves via WebFinger). `bsky_dm_new` accepts `recipientDid` or `recipientHandle` and calls `chat.bsky.convo.getConvoForMembers` to start (or fetch) the conversation before posting the first message. Both share the same delivery-audit code path as the reply actions.
+- **Two new admin actions for read tracking.** `mark_dm_read` upserts a single `DmConversationRead` row; `mark_all_dms_read` runs a `prisma.$transaction` of upserts across every distinct `conversationKey` in `DirectMessage`.
+
+### Changed
+- **DM read state moved from browser localStorage to the database.** Previously `MessagesTab` tracked unread/read with a `dm-read-timestamps` localStorage key, which meant clearing site data or opening on a different device made already-read conversations look unread again. Read state now lives in a new `DmConversationRead` table (one row per `conversationKey`), loaded into `TimelineClient` via the new `dmReadState` prop on `src/app/timeline/page.tsx`. The unread-count badge on the **messages** tab reads from the same state, so it stays consistent. Mark-read is optimistic — the UI updates instantly and the POST happens in the background.
+- **Fediverse DM recipient inbox is now resolved properly.** The previous `dm_reply` handler fell back to `${recipientUri}/inbox` when no inbox was passed in — fine for Mastodon but unreliable elsewhere. Both `dm_reply` and `dm_new_fedi` now consult `FediFollower` / `FediFollowing` first (already-vetted inbox) and only fall back to a live actor fetch if the URI isn't cached.
+- **`deliverActivity()` (`src/lib/http-signatures.ts`) now returns `DeliveryResult` instead of `void`.** Previously it logged failures to console and returned nothing; callers had no way to surface delivery status to the user. The new `{ ok, status, error? }` return is what powers the new `deliveredAt` / `deliveryError` audit fields. Existing callers (boost / like / follow-accept / federate-comment / federate-reply / shared-inbox fan-out) still `await` and ignore the return — behaviour is unchanged for them.
+
+### Schema
+- New nullable columns `deliveredAt` (`DateTime?`) and `deliveryError` (`String?`) on `DirectMessage`. Existing rows get NULL, which the UI renders as the grey · "delivery status unknown" indicator.
+- New table `DmConversationRead { conversationKey @id, lastReadAt, updatedAt @updatedAt }`. Apply with `npx prisma db push`.
+
+### Files
+- New `src/lib/fedi-resolve.ts` — `resolveFediActorByHandle()` runs WebFinger then fetches the actor JSON; `resolveFediActorByUri()` skips WebFinger when the actor URI is already known. Both are SSRF-guarded via `assertPublicHost()` and 10s-timeouted. Returns `{ actorUri, inbox, sharedInbox, username, domain, displayName, avatarUrl }` or null.
+- `src/lib/http-signatures.ts` — `deliverActivity()` returns `DeliveryResult`; the success / error branches both go through the same return path so callers can capture status without try/catch.
+- `src/app/api/admin/route.ts` — two helpers (`resolveFediRecipient`, `sendFediDm`) shared by `dm_reply` and `dm_new_fedi`. The `bsky_dm_reply` and `bsky_dm_new` cases share a single switch arm; `bsky_dm_new` uses `getConvoForMembers` to bootstrap the convo before sending. `mark_dm_read` and `mark_all_dms_read` are thin upsert handlers.
+- `src/app/timeline/page.tsx` — loads `DmConversationRead` rows alongside `DirectMessage` and passes a `dmReadState: Record<conversationKey, ISO timestamp>` prop to `TimelineClient`.
+- `src/app/timeline/TimelineClient.tsx` — `MessagesTab` is now a controlled component (read state + handlers passed in). New `NewMessageModal` component holds the picker + compose UI. `DirectMessageItem` interface gains `deliveredAt` and `deliveryError`. The localStorage helpers (`READ_TIMESTAMPS_KEY`, `getReadTimestamps`, `markConversationRead`) are removed; the unread-count tab badge now uses the same `buildConversations()` helper as the tab body so the two can't drift.
+
+### Notes for upgraders
+- Run `npx prisma db push` before restarting the server, otherwise the timeline page will 500 on the new `DmConversationRead` query.
+- Existing localStorage read state is dropped — on first load after the upgrade, all conversations look unread until the user clicks into them or hits **Mark all read**. There is no migration of prior client-side state to the server (it would have been per-browser and incomplete).
+
 ## 0.1.14 (2026-05-12)
 
 ### Added

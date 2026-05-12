@@ -125,6 +125,14 @@ export default async function TimelinePage() {
     contentHtml: m.contentHtml ? sanitizeHtml(m.contentHtml) : null,
   }));
 
+  // Server-side read state — replaces the old localStorage approach so unread
+  // counts sync across browsers/devices.
+  const dmReadRows = await prisma.dmConversationRead.findMany();
+  const dmReadState: Record<string, string> = {};
+  for (const row of dmReadRows) {
+    dmReadState[row.conversationKey] = row.lastReadAt.toISOString();
+  }
+
   // Fetch analytics data (if Tinylytics is configured)
   const analyticsData = isTinylyticsConfigured()
     ? {
@@ -160,6 +168,7 @@ export default async function TimelinePage() {
         followers={JSON.parse(JSON.stringify(mergedFollowers))}
         pendingComments={JSON.parse(JSON.stringify(pendingComments))}
         directMessages={JSON.parse(JSON.stringify(directMessages))}
+        dmReadState={dmReadState}
         analyticsData={analyticsData ? JSON.parse(JSON.stringify(analyticsData)) : null}
         fediAddress={siteConfig.fediAddress}
       />

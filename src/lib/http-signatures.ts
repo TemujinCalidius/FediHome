@@ -58,23 +58,36 @@ export async function signedFetch(
   });
 }
 
+export interface DeliveryResult {
+  ok: boolean;
+  status: number;
+  error?: string;
+}
+
 /**
- * Deliver an ActivityPub activity to an inbox with proper HTTP signatures
+ * Deliver an ActivityPub activity to an inbox with proper HTTP signatures.
+ * Returns the result so callers (e.g. DM send) can surface delivery status
+ * to the user instead of silently failing.
  */
 export async function deliverActivity(
   inbox: string,
   activity: Record<string, unknown>
-): Promise<void> {
+): Promise<DeliveryResult> {
   const body = JSON.stringify(activity);
 
   try {
     const res = await signedFetch(inbox, body);
-    if (!res.ok && res.status !== 202) {
-      const errText = await res.text().catch(() => "");
-      console.error(`Delivery to ${inbox} failed: ${res.status} ${errText.slice(0, 200)}`);
+    if (res.ok || res.status === 202) {
+      return { ok: true, status: res.status };
     }
+    const errText = await res.text().catch(() => "");
+    const trimmed = errText.slice(0, 200);
+    console.error(`Delivery to ${inbox} failed: ${res.status} ${trimmed}`);
+    return { ok: false, status: res.status, error: `${res.status}: ${trimmed}` };
   } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
     console.error(`Delivery to ${inbox} error:`, err);
+    return { ok: false, status: 0, error: msg };
   }
 }
 
