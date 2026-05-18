@@ -199,8 +199,19 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "content and inReplyTo required" }, { status: 400 });
       }
 
+      // Strip a leading copy of the recipient handle so the server-side mention
+      // HTML prepend below doesn't duplicate it when the client prefilled the textarea.
+      let bodyText: string = replyContent;
+      if (mentionHandle && typeof bodyText === "string") {
+        const handle = String(mentionHandle).trim();
+        const trimmed = bodyText.trimStart();
+        if (handle && trimmed.startsWith(handle)) {
+          bodyText = trimmed.slice(handle.length).replace(/^\s+/, "");
+        }
+      }
+
       // Auto-link URLs in plain text content
-      const linkedContent = replyContent.replace(
+      const linkedContent = bodyText.replace(
         /(https?:\/\/[^\s<]+)/g,
         (url: string) => `<a href="${url}" rel="nofollow noopener noreferrer" target="_blank">${url}</a>`
       );
@@ -254,7 +265,7 @@ export async function POST(req: NextRequest) {
         create: {
           actorUri: `${siteUrl}/ap/actor`,
           apId: replyId,
-          content: replyContent,
+          content: bodyText,
           contentHtml,
           mediaUrls: [],
           mediaTypes: [],

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.18 (2026-05-19)
+
+### Changed
+- **Inline reply in the thread modal now prefills the recipient's `@user@domain` handle.** Previously, clicking **Reply** on a post inside the conversation modal opened an empty textbox, leaving you to wonder whether you needed to type the handle yourself. Now the input is pre-populated with the post author's handle followed by a space, so the cursor lands ready for the body of the reply. Replying to one of your own outgoing posts in the chain (`isOutgoing = true`) still opens empty — no point @-mentioning yourself.
+- **Server `reply` action de-duplicates the leading mention.** The handler already prepends a proper `<span class="h-card">…</span>` mention to `contentHtml` and includes the `Mention` tag on the federated `Create`/`Note`. With the new prefill, the plain `content` would otherwise also carry a literal `@user@domain ` at the start, and recipients would see the handle twice. `case "reply"` in `src/app/api/admin/route.ts` now strips a leading copy of `mentionHandle` from the incoming `content` (whitespace-tolerant) before building `linkedContent`, and stores the stripped `bodyText` on the locally-persisted `FediPost` row so the canonical mention HTML stays the single source of truth.
+
+### Files
+- `src/app/timeline/TimelineClient.tsx` — `FediPostItem` gains optional `isOutgoing?: boolean` (the field already comes back from `/api/conversation`, it just wasn't declared on the client). The Reply button's `onClick` in `ThreadView` switches from `setReplyContent("")` to a conditional prefill.
+- `src/app/api/admin/route.ts` — `case "reply"` adds an 8-line strip block before the URL auto-link regex; the `prisma.fediPost.upsert` `create` block now writes `content: bodyText` instead of `content: replyContent`.
+
+### Notes for upgraders
+- No schema changes, no env changes, no upgrade steps beyond `git pull && npm run build && pm2 restart fedihome` (or your usual process). Threading (`inReplyTo`), inbox delivery, and follower fan-out are unchanged — only the textbox UX and the dedup on the way out.
+
 ## 0.1.17 (2026-05-18)
 
 ### Added

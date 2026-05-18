@@ -49,6 +49,7 @@ interface FediPostItem {
   boostCount?: number | null;
   replyCount?: number | null;
   countsFetchedAt?: string | null;
+  isOutgoing?: boolean;
 }
 
 interface FediCountsState {
@@ -701,7 +702,10 @@ function ThreadView({
                       </div>
                     ) : (
                       <button
-                        onClick={() => { setReplyTo(post.apId); setReplyContent(""); }}
+                        onClick={() => {
+                          setReplyTo(post.apId);
+                          setReplyContent(post.isOutgoing ? "" : `@${post.username}@${post.domain} `);
+                        }}
                         className="text-xs text-gray-500 hover:text-accent-400 transition-colors"
                       >
                         Reply
