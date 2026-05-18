@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.1.17 (2026-05-18)
+
+### Added
+- **"Replies" tab in the admin Timeline.** A new top-level tab between **Feed** and **Messages** lists every reply you've sent to someone else's post — outgoing `FediPost` rows where `isOutgoing = true` and `inReplyTo` is set. Each row shows a quoted parent line (`@user@domain` plus a 160-char snippet from the parent's content if cached locally, or an italic "Replying to a post not cached locally — open the thread to fetch it." fallback), the body of your reply, and a **View thread** button that opens the existing conversation modal so you can see the full ancestor chain plus sibling replies. Paginated 25 at a time (`publishedAt` cursor). Reuses the existing `/api/conversation` thread walker — no new threading code.
+- **Like / repost / reply counts on others' posts in the feed.** A small `💬 / 🔁 / ❤` strip below each `PostCard` shows interaction counts pulled on demand from the remote ActivityPub object (the `replies`, `shares`, `likes` collections — Mastodon, Pleroma, and Misskey all expose these in some form). Until you tap, the strip shows "💬 🔁 ❤ Tap to load" so the feed scroll stays fast and we don't hammer remote servers. Clicking **View thread** auto-triggers the same fetch as a side effect. Counts are cached on the `FediPost` row for 5 minutes; re-tapping within that window returns the cached values without a network call. Each post inside the conversation modal also gets its own counts strip + Reply box, so you can jump into a chain at any depth.
+- **"View thread" now works on every post,** not just replies. The existing `/api/conversation` endpoint already walks both directions (ancestors via `inReplyTo`, descendants via reply lookup), so calling it for a top-level post returns the same shape — the modal handles either case naturally.
+
+### Schema
+- New nullable columns on `FediPost`: `likeCount Int?`, `boostCount Int?`, `replyCount Int?`, `countsFetchedAt DateTime?`. All NULL means "never fetched"; NULL after a fetch means the remote hides that collection (Mastodon's authenticated-fetch quirk). Apply with `npx prisma db push`.
+
+### Files
+- New `src/app/api/replies/route.ts` — `GET /api/replies?cursor=<ISO>` returns the admin's outgoing replies, latest first, with a `parent` summary attached per row when the parent post is in our local cache. Reuses the existing `@@index([inReplyTo])` and `verifyAdmin()` gate.
+- New `src/app/api/fedi-post-counts/route.ts` — `POST /api/fedi-post-counts { postId }` fetches the remote AP object, reads `totalItems` off each collection (handles both inline OrderedCollection and URL-referenced forms), persists `likeCount`/`boostCount`/`replyCount`/`countsFetchedAt`, and returns the result. SSRF-guarded via `assertPublicHost()` (`src/lib/url-guard.ts`), 8s per outbound fetch, 5-minute cache TTL on the row.
+- `src/app/timeline/TimelineClient.tsx` — adds `RepliesTab`, `ThreadCountsStrip`, and `fmtCount` components. `PostCard` and `ThreadView` gain `counts` + `onLoadCounts` props. New top-level state: `postCounts` (Map<postId, FediCountsState>), `replies`, `repliesCursor`, `repliesLoading`. `handleLoadCounts` does the optimistic-update + POST dance.
+
+### Notes for upgraders
+- Run `npx prisma db push` before restarting the server so the four new `FediPost` columns exist; otherwise `/api/replies` and `/api/fedi-post-counts` will 500.
+- Counts populate lazily — old posts in your feed will show "Tap to load" until you click. There is no backfill cron; that's intentional, both to stay polite to remote servers and so counts are fresh when you actually look.
+- Existing `PostCard` and `ThreadView` call sites in `TimelineClient` need the new `counts` + `onLoadCounts` props if you've forked the file.
+
 ## 0.1.15 (2026-05-12)
 
 ### Added

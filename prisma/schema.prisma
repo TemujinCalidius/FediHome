@@ -271,6 +271,14 @@ model FediPost {
   embedImage       String?  // local proxied path to og:image
   embedSiteName    String?
 
+  // Cached interaction counts fetched on-demand from the remote AP object.
+  // Null means "never fetched"; null after fetch means the remote hides that
+  // collection (Mastodon authenticated-fetch quirks).
+  likeCount       Int?
+  boostCount      Int?
+  replyCount      Int?
+  countsFetchedAt DateTime?
+
   @@index([publishedAt])
   @@index([conversationId])
   @@index([inReplyTo])

@@ -45,6 +45,30 @@ interface FediPostItem {
   embedSiteName: string | null;
   boostedBy: string | null;
   boostedByName: string | null;
+  likeCount?: number | null;
+  boostCount?: number | null;
+  replyCount?: number | null;
+  countsFetchedAt?: string | null;
+}
+
+interface FediCountsState {
+  likeCount: number | null;
+  boostCount: number | null;
+  replyCount: number | null;
+  countsFetchedAt: string | null;
+  loading?: boolean;
+}
+
+interface ReplyItem extends FediPostItem {
+  parent: {
+    apId: string;
+    username: string;
+    domain: string;
+    displayName: string | null;
+    avatarUrl: string | null;
+    snippet: string;
+    publishedAt: string;
+  } | null;
 }
 
 type FollowingItem =
@@ -236,6 +260,8 @@ function PostCard({
   setReplyContent,
   allPosts,
   onViewThread,
+  counts,
+  onLoadCounts,
 }: {
   post: FediPostItem;
   replyTo: { apId: string; inbox: string } | null;
@@ -244,6 +270,8 @@ function PostCard({
   setReplyContent: (v: string) => void;
   allPosts: FediPostItem[];
   onViewThread: (postId: string) => void;
+  counts: FediCountsState | undefined;
+  onLoadCounts: (postId: string) => void;
 }) {
   const [showUserPopup, setShowUserPopup] = useState(false);
   const [liked, setLiked] = useState(false);
@@ -253,6 +281,17 @@ function PostCard({
   const parentPost = post.inReplyTo
     ? allPosts.find((p) => p.apId === post.inReplyTo)
     : null;
+
+  // Counts may have been pre-loaded (DB cache via initial fetch) or are
+  // unfetched. Prefer the live state from a recent on-demand fetch.
+  const liveCounts: FediCountsState = counts ?? {
+    likeCount: post.likeCount ?? null,
+    boostCount: post.boostCount ?? null,
+    replyCount: post.replyCount ?? null,
+    countsFetchedAt: post.countsFetchedAt ?? null,
+  };
+  const countsLoaded = Boolean(liveCounts.countsFetchedAt);
+  const countsLoading = Boolean(liveCounts.loading);
 
   const actorUri = `https://${post.domain}/users/${post.username}`;
   const inbox = `https://${post.domain}/users/${post.username}/inbox`;
@@ -470,13 +509,36 @@ function PostCard({
           </button>
         )}
 
-        {/* View thread */}
-        {post.inReplyTo && (
+        {/* View thread (works for any post — endpoint walks ancestors + descendants) */}
+        <button
+          onClick={() => {
+            onViewThread(post.id);
+            if (!countsLoaded && !countsLoading) onLoadCounts(post.id);
+          }}
+          className="text-xs text-gray-500 hover:text-accent-400 transition-colors"
+        >
+          View thread
+        </button>
+      </div>
+
+      {/* Interaction counts strip — fetched on demand from the remote AP object */}
+      <div className="mt-2 flex items-center gap-3 text-xs">
+        {countsLoaded ? (
+          <span className="text-gray-500">
+            <span title="Replies">💬 {fmtCount(liveCounts.replyCount)}</span>
+            <span className="mx-2 text-gray-700">·</span>
+            <span title="Boosts">🔁 {fmtCount(liveCounts.boostCount)}</span>
+            <span className="mx-2 text-gray-700">·</span>
+            <span title="Likes">❤ {fmtCount(liveCounts.likeCount)}</span>
+          </span>
+        ) : (
           <button
-            onClick={() => onViewThread(post.id)}
-            className="text-xs text-gray-500 hover:text-accent-400 transition-colors"
+            onClick={() => onLoadCounts(post.id)}
+            disabled={countsLoading}
+            className="text-gray-600 hover:text-accent-400 transition-colors disabled:opacity-40"
+            title="Fetch interaction counts from the remote server"
           >
-            View thread
+            {countsLoading ? "Loading interactions…" : "💬 🔁 ❤  Tap to load"}
           </button>
         )}
       </div>
@@ -484,12 +546,21 @@ function PostCard({
   );
 }
 
+function fmtCount(n: number | null): string {
+  if (n === null || n === undefined) return "—";
+  return String(n);
+}
+
 function ThreadView({
   thread,
   onClose,
+  counts,
+  onLoadCounts,
 }: {
   thread: FediPostItem[];
   onClose: () => void;
+  counts: Map<string, FediCountsState>;
+  onLoadCounts: (postId: string) => void;
 }) {
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [replyContent, setReplyContent] = useState("");
@@ -601,10 +672,10 @@ function ThreadView({
                     </a>
                   )}
 
-                  {/* Reply action */}
-                  <div className="mt-2">
+                  {/* Reply action + interaction counts */}
+                  <div className="mt-2 flex items-center gap-3 flex-wrap">
                     {replyTo === post.apId ? (
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 flex-1 min-w-0">
                         <input
                           type="text"
                           value={replyContent}
@@ -636,6 +707,17 @@ function ThreadView({
                         Reply
                       </button>
                     )}
+                    <ThreadCountsStrip
+                      postId={post.id}
+                      fallback={{
+                        likeCount: post.likeCount ?? null,
+                        boostCount: post.boostCount ?? null,
+                        replyCount: post.replyCount ?? null,
+                        countsFetchedAt: post.countsFetchedAt ?? null,
+                      }}
+                      live={counts.get(post.id)}
+                      onLoad={() => onLoadCounts(post.id)}
+                    />
                   </div>
                 </div>
               </div>
@@ -643,6 +725,141 @@ function ThreadView({
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+function ThreadCountsStrip({
+  postId,
+  fallback,
+  live,
+  onLoad,
+}: {
+  postId: string;
+  fallback: FediCountsState;
+  live: FediCountsState | undefined;
+  onLoad: () => void;
+}) {
+  void postId;
+  const counts = live ?? fallback;
+  if (counts.countsFetchedAt) {
+    return (
+      <span className="text-xs text-gray-500">
+        💬 {fmtCount(counts.replyCount)}
+        <span className="mx-1.5 text-gray-700">·</span>
+        🔁 {fmtCount(counts.boostCount)}
+        <span className="mx-1.5 text-gray-700">·</span>
+        ❤ {fmtCount(counts.likeCount)}
+      </span>
+    );
+  }
+  return (
+    <button
+      onClick={onLoad}
+      disabled={Boolean(live?.loading)}
+      className="text-xs text-gray-600 hover:text-accent-400 transition-colors disabled:opacity-40"
+    >
+      {live?.loading ? "…" : "Load counts"}
+    </button>
+  );
+}
+
+function RepliesTab({
+  replies,
+  loading,
+  cursor,
+  onLoadMore,
+  onViewThread,
+}: {
+  replies: ReplyItem[] | null;
+  loading: boolean;
+  cursor: string | null;
+  onLoadMore: () => void;
+  onViewThread: (postId: string) => void;
+}) {
+  if (replies === null && loading) {
+    return <p className="text-center text-xs text-gray-500 py-8">Loading replies…</p>;
+  }
+  if (replies === null || replies.length === 0) {
+    return (
+      <div className="glass-card p-8 text-center">
+        <p className="text-gray-500">
+          No outgoing replies yet. When you reply to a post on the feed, it'll
+          show up here so you can jump back into the conversation.
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-4">
+      {replies.map((reply) => (
+        <div key={reply.id} className="glass-card p-5">
+          {/* Parent context line */}
+          <div className="flex items-start gap-2 mb-3 text-xs text-gray-500 border-l-2 border-surface-600 pl-3">
+            <svg className="w-3 h-3 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+            </svg>
+            <div className="min-w-0 flex-1">
+              {reply.parent ? (
+                <>
+                  <p className="text-accent-400">
+                    @{reply.parent.username}@{reply.parent.domain}
+                  </p>
+                  <p className="text-gray-600 mt-0.5 line-clamp-2">
+                    {reply.parent.snippet}
+                  </p>
+                </>
+              ) : (
+                <p className="text-gray-600 italic">
+                  Replying to a post not cached locally — open the thread to fetch it.
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* My reply body */}
+          <div
+            className="text-gray-300 text-sm leading-relaxed [&_a]:text-accent-400 [&_a]:hover:underline"
+            dangerouslySetInnerHTML={{
+              __html: reply.contentHtml || reply.content,
+            }}
+          />
+
+          {reply.mediaUrls.length > 0 && (
+            <PostMedia urls={reply.mediaUrls} types={reply.mediaTypes || []} maxH="max-h-60" />
+          )}
+
+          <div className="mt-3 pt-2 border-t border-surface-700 flex items-center gap-4 text-xs">
+            <span className="text-gray-600">
+              {new Date(reply.publishedAt).toLocaleString()}
+            </span>
+            <button
+              onClick={() => onViewThread(reply.id)}
+              className="text-gray-500 hover:text-accent-400 transition-colors"
+            >
+              View thread
+            </button>
+          </div>
+        </div>
+      ))}
+
+      {cursor && (
+        <div className="text-center pt-2">
+          <button
+            onClick={onLoadMore}
+            disabled={loading}
+            className="px-6 py-2 text-sm text-accent-400 border border-accent-400/30 rounded-lg hover:bg-accent-400/10 transition-colors disabled:opacity-50"
+          >
+            {loading ? "Loading…" : "Load more"}
+          </button>
+        </div>
+      )}
+
+      {!cursor && replies.length > 0 && (
+        <p className="text-center text-xs text-gray-600 pt-2">
+          You've reached the end
+        </p>
+      )}
     </div>
   );
 }
@@ -1303,7 +1520,7 @@ export default function TimelineClient({
   analyticsData?: AnalyticsData | null;
   fediAddress: string;
 }) {
-  const [tab, setTab] = useState<"feed" | "moderation" | "followers" | "following" | "messages" | "analytics">("feed");
+  const [tab, setTab] = useState<"feed" | "replies" | "moderation" | "followers" | "following" | "messages" | "analytics">("feed");
   const [showReplies, setShowReplies] = useState(false);
   const [showBoosts, setShowBoosts] = useState(false);
   const [posts, setPosts] = useState<FediPostItem[]>(initialPosts);
@@ -1314,6 +1531,77 @@ export default function TimelineClient({
   const [followHandle, setFollowHandle] = useState("");
   const [threadPosts, setThreadPosts] = useState<FediPostItem[] | null>(null);
   const [threadLoading, setThreadLoading] = useState(false);
+
+  // On-demand interaction counts cache (post.id → counts). Mirrors what's in
+  // the DB for the lifetime of the page and is updated optimistically.
+  const [postCounts, setPostCounts] = useState<Map<string, FediCountsState>>(new Map());
+
+  const handleLoadCounts = useCallback(async (postId: string) => {
+    setPostCounts((prev) => {
+      const existing = prev.get(postId);
+      if (existing?.loading) return prev;
+      const next = new Map(prev);
+      next.set(postId, {
+        likeCount: existing?.likeCount ?? null,
+        boostCount: existing?.boostCount ?? null,
+        replyCount: existing?.replyCount ?? null,
+        countsFetchedAt: existing?.countsFetchedAt ?? null,
+        loading: true,
+      });
+      return next;
+    });
+    try {
+      const res = await fetch("/api/fedi-post-counts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ postId }),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as Omit<FediCountsState, "loading">;
+        setPostCounts((prev) => {
+          const next = new Map(prev);
+          next.set(postId, { ...data, loading: false });
+          return next;
+        });
+      } else {
+        setPostCounts((prev) => {
+          const next = new Map(prev);
+          const existing = next.get(postId);
+          next.set(postId, { ...(existing ?? { likeCount: null, boostCount: null, replyCount: null, countsFetchedAt: null }), loading: false });
+          return next;
+        });
+      }
+    } catch {
+      setPostCounts((prev) => {
+        const next = new Map(prev);
+        const existing = next.get(postId);
+        next.set(postId, { ...(existing ?? { likeCount: null, boostCount: null, replyCount: null, countsFetchedAt: null }), loading: false });
+        return next;
+      });
+    }
+  }, []);
+
+  // Replies tab state
+  const [replies, setReplies] = useState<ReplyItem[] | null>(null);
+  const [repliesCursor, setRepliesCursor] = useState<string | null>(null);
+  const [repliesLoading, setRepliesLoading] = useState(false);
+
+  const loadReplies = useCallback(async (cursor?: string | null) => {
+    setRepliesLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (cursor) params.set("cursor", cursor);
+      const res = await fetch(`/api/replies?${params}`);
+      if (res.ok) {
+        const data = await res.json();
+        setReplies((prev) => (cursor && prev ? [...prev, ...data.replies] : data.replies));
+        setRepliesCursor(data.nextCursor);
+      }
+    } catch {
+      // silently fail
+    }
+    setRepliesLoading(false);
+  }, []);
 
   // Server-backed DM read state. Initial values come from props (DmConversationRead
   // table); we mutate optimistically and POST to /api/admin in the background.
@@ -1430,11 +1718,23 @@ export default function TimelineClient({
     setThreadLoading(false);
   };
 
+  // Lazy-load replies the first time the tab is opened.
+  useEffect(() => {
+    if (tab === "replies" && replies === null && !repliesLoading) {
+      loadReplies();
+    }
+  }, [tab, replies, repliesLoading, loadReplies]);
+
   return (
     <div>
       {/* Thread overlay */}
       {threadPosts && (
-        <ThreadView thread={threadPosts} onClose={() => setThreadPosts(null)} />
+        <ThreadView
+          thread={threadPosts}
+          onClose={() => setThreadPosts(null)}
+          counts={postCounts}
+          onLoadCounts={handleLoadCounts}
+        />
       )}
       {threadLoading && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center">
@@ -1444,7 +1744,7 @@ export default function TimelineClient({
 
       {/* Tabs */}
       <div className="flex gap-2 mb-6">
-        {(["feed", "messages", "moderation", "followers", "following", "analytics"] as const).map((t) => (
+        {(["feed", "replies", "messages", "moderation", "followers", "following", "analytics"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -1531,6 +1831,8 @@ export default function TimelineClient({
                   setReplyContent={setReplyContent}
                   allPosts={posts}
                   onViewThread={handleViewThread}
+                  counts={postCounts.get(post.id)}
+                  onLoadCounts={handleLoadCounts}
                 />
               ))
             )}
@@ -1555,6 +1857,22 @@ export default function TimelineClient({
             )}
           </div>
         </div>
+      )}
+
+      {/* Replies — outgoing replies I've made to other people's posts */}
+      {tab === "replies" && (
+        <RepliesTab
+          replies={replies}
+          loading={repliesLoading}
+          cursor={repliesCursor}
+          onLoadMore={() => loadReplies(repliesCursor)}
+          onViewThread={(postId) => {
+            handleViewThread(postId);
+            if (!postCounts.get(postId)?.countsFetchedAt) {
+              handleLoadCounts(postId);
+            }
+          }}
+        />
       )}
 
       {/* Messages */}
