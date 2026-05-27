@@ -6,6 +6,7 @@ import { assertPublicHost, isPrivateUrl } from "@/lib/url-guard";
 import { verifyAdmin, verifyOrigin } from "@/lib/auth";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { siteConfig } from "@/../site.config";
+import { parseMentions, linkMentions, buildApMentionTags, collectMentionInboxes } from "@/lib/mentions";
 import {
   syncBlueskyGraph,
   followBlueskyAccount,
@@ -194,7 +195,14 @@ export async function POST(req: NextRequest) {
 
     case "reply": {
       // Reply to a Fedi post/comment from the admin panel
-      const { content: replyContent, inReplyTo, targetInbox, actorUri: replyActorUri, mentionHandle } = body;
+      const {
+        content: replyContent,
+        inReplyTo,
+        targetInbox,
+        actorUri: replyActorUri,
+        mentionHandle,
+        crosspostBluesky: replyCrosspostBluesky,
+      } = body;
       if (!replyContent || !inReplyTo) {
         return NextResponse.json({ error: "content and inReplyTo required" }, { status: 400 });
       }
@@ -210,26 +218,36 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      // Parse @mentions from the user's text (fedi + bluesky)
+      const replyMentions = await parseMentions(bodyText);
+
       // Auto-link URLs in plain text content
       const linkedContent = bodyText.replace(
         /(https?:\/\/[^\s<]+)/g,
         (url: string) => `<a href="${url}" rel="nofollow noopener noreferrer" target="_blank">${url}</a>`
       );
+      const withMentions = linkMentions(linkedContent, replyMentions);
 
-      // Build mention HTML if we know who we're replying to
+      // Build mention HTML for the person we're replying to (h-card style — Mastodon-friendly)
       const mentionUsername = mentionHandle ? mentionHandle.split("@")[1] : null;
       const mentionHtml = replyActorUri && mentionUsername
         ? `<span class="h-card"><a href="${replyActorUri}" class="u-url mention">@<span>${mentionUsername}</span></a></span> `
         : "";
-      const contentHtml = `<p>${mentionHtml}${linkedContent}</p>`;
+      const contentHtml = `<p>${mentionHtml}${withMentions}</p>`;
 
       const replyId = `${siteUrl}/ap/reply/${Date.now()}`;
       const ccList = [`${siteUrl}/ap/followers`];
       if (replyActorUri) ccList.push(replyActorUri);
+      for (const m of replyMentions.fedi) {
+        if (m.actorUri && !ccList.includes(m.actorUri)) ccList.push(m.actorUri);
+      }
 
       const tags: { type: string; href: string; name: string }[] = [];
       if (replyActorUri && mentionHandle) {
         tags.push({ type: "Mention", href: replyActorUri, name: mentionHandle });
+      }
+      for (const t of buildApMentionTags(replyMentions)) {
+        if (!tags.some((existing) => existing.href === t.href)) tags.push(t);
       }
 
       const activity = {
@@ -256,6 +274,13 @@ export async function POST(req: NextRequest) {
         await deliverActivity(targetInbox, activity).catch(() => {});
       }
       await deliverToFollowers(activity).catch(() => {});
+      // Direct-deliver to mentioned actors' inboxes
+      for (const inbox of collectMentionInboxes(replyMentions)) {
+        if (inbox === targetInbox) continue;
+        deliverActivity(inbox, activity).catch((err) =>
+          console.error(`Failed to deliver mention to ${inbox}:`, err)
+        );
+      }
 
       // Store our outgoing reply so we can match incoming replies to it
       const fediHandle = siteConfig.fediHandle;
@@ -280,7 +305,105 @@ export async function POST(req: NextRequest) {
         update: {},
       });
 
+      // Optional Bluesky crosspost
+      if (replyCrosspostBluesky) {
+        try {
+          let anchorPost: { id: string; blueskyUri: string | null } | null = null;
+          let currentApId: string | null = inReplyTo;
+          for (let depth = 0; depth < 8 && currentApId; depth++) {
+            const localPost = await prisma.post.findUnique({
+              where: { apId: currentApId },
+              select: { id: true, blueskyUri: true },
+            });
+            if (localPost) { anchorPost = localPost; break; }
+            const fediMatch = await prisma.fediPost.findUnique({
+              where: { apId: currentApId },
+              select: { inReplyTo: true },
+            });
+            currentApId = fediMatch?.inReplyTo ?? null;
+          }
+          const { crosspostToBluesky, crosspostReplyToBluesky } = await import("@/lib/crosspost");
+          if (anchorPost?.blueskyUri) {
+            await crosspostReplyToBluesky(bodyText, anchorPost.blueskyUri).catch((err: unknown) =>
+              console.error("Bluesky reply crosspost failed:", err)
+            );
+          } else {
+            await crosspostToBluesky(bodyText).catch((err: unknown) =>
+              console.error("Bluesky standalone crosspost failed:", err)
+            );
+          }
+        } catch (err) {
+          console.error("Bluesky crosspost lookup failed:", err);
+        }
+      }
+
       return NextResponse.json({ success: true });
+    }
+
+    case "edit_reply": {
+      const { replyId: editReplyId, content: newContent } = body;
+      if (!editReplyId || !newContent?.trim()) {
+        return NextResponse.json({ error: "replyId and content required" }, { status: 400 });
+      }
+
+      const existingReply = await prisma.fediPost.findUnique({
+        where: { id: editReplyId },
+      });
+      if (!existingReply || !existingReply.isOutgoing) {
+        return NextResponse.json({ error: "Reply not found or not editable" }, { status: 404 });
+      }
+
+      const editMentions = await parseMentions(newContent);
+
+      const linkedContent = newContent.replace(
+        /(https?:\/\/[^\s<]+)/g,
+        (url: string) => `<a href="${url}" rel="nofollow noopener noreferrer" target="_blank">${url}</a>`
+      );
+      const newContentHtml = `<p>${linkMentions(linkedContent, editMentions)}</p>`;
+
+      await prisma.fediPost.update({
+        where: { id: editReplyId },
+        data: { content: newContent, contentHtml: newContentHtml },
+      });
+
+      const now = new Date();
+      const editMentionActors = editMentions.fedi
+        .filter((m) => !!m.actorUri)
+        .map((m) => m.actorUri!);
+      const ccList = [`${siteUrl}/ap/followers`, ...editMentionActors];
+      const editTags = buildApMentionTags(editMentions);
+      const updateActivity = {
+        "@context": "https://www.w3.org/ns/activitystreams",
+        id: `${siteUrl}/ap/update/reply-${existingReply.id}/${Date.now()}`,
+        type: "Update",
+        actor: `${siteUrl}/ap/actor`,
+        published: now.toISOString(),
+        to: ["https://www.w3.org/ns/activitystreams#Public"],
+        cc: ccList,
+        object: {
+          type: "Note",
+          id: existingReply.apId,
+          attributedTo: `${siteUrl}/ap/actor`,
+          inReplyTo: existingReply.inReplyTo,
+          content: newContentHtml,
+          published: existingReply.publishedAt.toISOString(),
+          updated: now.toISOString(),
+          to: ["https://www.w3.org/ns/activitystreams#Public"],
+          cc: ccList,
+          ...(editTags.length > 0 ? { tag: editTags } : {}),
+        },
+      };
+
+      deliverToFollowers(updateActivity).catch((err) =>
+        console.error("Failed to federate reply update:", err)
+      );
+      for (const inbox of collectMentionInboxes(editMentions)) {
+        deliverActivity(inbox, updateActivity).catch((err) =>
+          console.error(`Failed to deliver edit to mentioned ${inbox}:`, err)
+        );
+      }
+
+      return NextResponse.json({ success: true, contentHtml: newContentHtml });
     }
 
     case "dm_reply":
@@ -436,7 +559,7 @@ export async function POST(req: NextRequest) {
     }
 
     case "bsky_reply": {
-      const { content: bskyReplyContent, blueskyUri: parentUri } = body;
+      const { content: bskyReplyContent, blueskyUri: parentUri, crosspostFedi } = body;
       if (!bskyReplyContent || !parentUri) {
         return NextResponse.json({ error: "content and blueskyUri required" }, { status: 400 });
       }
@@ -462,6 +585,66 @@ export async function POST(req: NextRequest) {
           text: bskyReplyContent,
           reply: { root: rootRef, parent: { uri: parentUri, cid: parentCid } },
         });
+
+        // Optional Fediverse crosspost — federates as a fedi Note
+        if (crosspostFedi) {
+          try {
+            const localPostFromBsky = await prisma.post.findFirst({
+              where: { blueskyUri: parentUri },
+              select: { apId: true },
+            });
+            const linkedContent = bskyReplyContent.replace(
+              /(https?:\/\/[^\s<]+)/g,
+              (url: string) => `<a href="${url}" rel="nofollow noopener noreferrer" target="_blank">${url}</a>`
+            );
+            const fediHtml = `<p>${linkedContent}</p>`;
+            const fediReplyId = `${siteUrl}/ap/reply/${Date.now()}`;
+            const fediActivity = {
+              "@context": "https://www.w3.org/ns/activitystreams",
+              id: `${siteUrl}/ap/create/bsky-reply-${Date.now()}`,
+              type: "Create",
+              actor: `${siteUrl}/ap/actor`,
+              published: new Date().toISOString(),
+              object: {
+                type: "Note",
+                id: fediReplyId,
+                attributedTo: `${siteUrl}/ap/actor`,
+                content: fediHtml,
+                published: new Date().toISOString(),
+                to: ["https://www.w3.org/ns/activitystreams#Public"],
+                cc: [`${siteUrl}/ap/followers`],
+                ...(localPostFromBsky?.apId ? { inReplyTo: localPostFromBsky.apId } : {}),
+              },
+            };
+            deliverToFollowers(fediActivity).catch((err) =>
+              console.error("Fedi crosspost from bsky_reply failed:", err)
+            );
+            const fediHandle = siteConfig.fediHandle;
+            const siteDomain = new URL(siteUrl).hostname;
+            await prisma.fediPost.upsert({
+              where: { apId: fediReplyId },
+              create: {
+                actorUri: `${siteUrl}/ap/actor`,
+                apId: fediReplyId,
+                content: bskyReplyContent,
+                contentHtml: fediHtml,
+                mediaUrls: [],
+                mediaTypes: [],
+                username: fediHandle,
+                domain: siteDomain,
+                displayName: siteConfig.authorName,
+                avatarUrl: siteConfig.avatarPath,
+                inReplyTo: localPostFromBsky?.apId ?? null,
+                isOutgoing: true,
+                publishedAt: new Date(),
+              },
+              update: {},
+            });
+          } catch (err) {
+            console.error("Fedi crosspost from bsky_reply prep failed:", err);
+          }
+        }
+
         return NextResponse.json({ success: true });
       } catch (err) {
         console.error("Bluesky reply failed:", err);

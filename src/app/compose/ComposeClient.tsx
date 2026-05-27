@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback } from "react";
+import { useMentionAutocomplete } from "@/components/ui/MentionAutocomplete";
 
 interface PhotoAttachment {
   url: string;
@@ -26,13 +27,47 @@ interface AudioAttachment {
   fileSize: number | null;
 }
 
-export default function ComposeClient() {
-  const [title, setTitle] = useState("");
-  const [content, setContent] = useState("");
-  const [description, setDescription] = useState("");
-  const [photos, setPhotos] = useState<PhotoAttachment[]>([]);
-  const [videos, setVideos] = useState<VideoAttachment[]>([]);
-  const [audios, setAudios] = useState<AudioAttachment[]>([]);
+export interface InitialValues {
+  title: string;
+  content: string;
+  description: string;
+  photos: { url: string; alt: string }[];
+  videos: { url: string; title: string; thumbnailUrl: string | null }[];
+  audios: { url: string; title: string; coverImage: string | null }[];
+}
+
+interface ComposeClientProps {
+  editingPostId?: string | null;
+  initialValues?: InitialValues | null;
+}
+
+export default function ComposeClient({ editingPostId = null, initialValues = null }: ComposeClientProps) {
+  const isEditing = !!editingPostId;
+  const [title, setTitle] = useState(initialValues?.title ?? "");
+  const [content, setContent] = useState(initialValues?.content ?? "");
+  const [description, setDescription] = useState(initialValues?.description ?? "");
+  const [photos, setPhotos] = useState<PhotoAttachment[]>(
+    (initialValues?.photos ?? []).map((p) => ({ url: p.url, alt: p.alt, preview: p.url }))
+  );
+  const [videos, setVideos] = useState<VideoAttachment[]>(
+    (initialValues?.videos ?? []).map((v) => ({
+      url: v.url,
+      title: v.title,
+      embedHost: "",
+      embedId: "",
+      iframeSrc: "",
+      thumbnailUrl: v.thumbnailUrl,
+      duration: null,
+    }))
+  );
+  const [audios, setAudios] = useState<AudioAttachment[]>(
+    (initialValues?.audios ?? []).map((a) => ({
+      url: a.url,
+      title: a.title,
+      durationSec: null,
+      fileSize: null,
+    }))
+  );
   const [crosspostBluesky, setCrosspostBluesky] = useState(true);
   const [crosspostThreads, setCrosspostThreads] = useState(true);
   const [crosspostDayOne, setCrosspostDayOne] = useState(true);
@@ -65,6 +100,13 @@ export default function ComposeClient() {
       textareaRef.current.style.height = textareaRef.current.scrollHeight + "px";
     }
   };
+
+  // @mention autocomplete wired to the main textarea
+  const { dropdownNode: mentionDropdown } = useMentionAutocomplete(
+    textareaRef,
+    content,
+    handleContentChange,
+  );
 
   // Upload photo to /api/media
   const uploadPhoto = useCallback(async (file: File): Promise<string | null> => {
@@ -239,13 +281,19 @@ export default function ComposeClient() {
           videoCategory: addToVideos ? videoCategory : undefined,
           addToAudio: audios.length > 0 && addToAudio,
           audioCategory: addToAudio ? audioCategory : undefined,
+          editingPostId: editingPostId || undefined,
         }),
       });
 
       const data = await res.json();
       if (data.success) {
+        if (isEditing && data.post?.url) {
+          // Edit: navigate back to the post
+          window.location.href = data.post.url;
+          return;
+        }
         setResult({ success: true, url: data.post.url });
-        // Reset form
+        // Reset form (create only)
         setTitle("");
         setContent("");
         setDescription("");
@@ -283,6 +331,14 @@ export default function ComposeClient() {
           ) : (
             result.error
           )}
+        </div>
+      )}
+
+      {/* Edit-mode banner */}
+      {isEditing && (
+        <div className="p-3 rounded-lg text-xs bg-accent-400/10 border border-accent-400/30 text-accent-300">
+          <span className="font-semibold">Editing existing post.</span>{" "}
+          The Fediverse will see an Update activity (Mastodon shows &ldquo;edited X ago&rdquo;). Bluesky/Threads/DayOne crossposts are NOT re-sent. Auto-created Photo/Video/Audio records aren&apos;t modified — manage those from their respective admin tabs.
         </div>
       )}
 
@@ -339,6 +395,7 @@ export default function ComposeClient() {
             </span>
           </div>
         )}
+        {mentionDropdown}
       </div>
 
       {/* Description field — only for articles */}
@@ -724,16 +781,18 @@ export default function ComposeClient() {
       {/* Post button */}
       <div className="flex items-center justify-between">
         <p className="text-xs text-gray-600">
-          {isArticle
-            ? `Article will be published on your site.${crosspostBluesky || crosspostThreads || crosspostDayOne ? " Crossposts get the description." : ""}`
-            : `Note will be sent to ${["Fediverse", crosspostBluesky && "Bluesky", crosspostThreads && "Threads", crosspostDayOne && "DayOne"].filter(Boolean).join(", ")}.`}
+          {isEditing
+            ? "Saving sends an AP Update to the Fediverse. Bluesky/Threads/DayOne crossposts are NOT re-sent."
+            : isArticle
+              ? `Article will be published on your site.${crosspostBluesky || crosspostThreads || crosspostDayOne ? " Crossposts get the description." : ""}`
+              : `Note will be sent to ${["Fediverse", crosspostBluesky && "Bluesky", crosspostThreads && "Threads", crosspostDayOne && "DayOne"].filter(Boolean).join(", ")}.`}
         </p>
         <button
           onClick={handleSubmit}
           disabled={!content.trim() || posting}
           className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {posting ? "Posting..." : "Publish"}
+          {posting ? (isEditing ? "Saving…" : "Posting…") : isEditing ? "Save changes" : "Publish"}
         </button>
       </div>
     </div>

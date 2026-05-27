@@ -12,6 +12,7 @@ import { getPathHits, getKudosForPath } from "@/lib/tinylytics";
 import GuestCommentForm from "@/components/fedi/GuestCommentForm";
 import FediInteractions from "@/components/fedi/FediInteractions";
 import ReplyToComment from "@/components/fedi/ReplyToComment";
+import EditReplyForm from "@/components/fedi/EditReplyForm";
 import AuthorFollowUpForm from "@/components/fedi/AuthorFollowUpForm";
 import KudosButton from "@/components/ui/KudosButton";
 import { siteConfig } from "@/../site.config";
@@ -114,6 +115,7 @@ export default async function PostPage({
       username: r.username,
       domain: r.domain,
       content: r.content || "",
+      rawContent: null as string | null,
       actorUri: r.actorUri,
       createdAt: r.createdAt,
     })),
@@ -125,6 +127,7 @@ export default async function PostPage({
       username: r.username,
       domain: r.domain,
       content: r.contentHtml || r.content,
+      rawContent: r.content,
       actorUri: r.actorUri,
       createdAt: r.publishedAt,
     })),
@@ -173,6 +176,14 @@ export default async function PostPage({
           <span className="text-xs text-gray-600 uppercase tracking-wider">
             {post.category}
           </span>
+          {isAdmin && (
+            <Link
+              href={`/compose?edit=${post.id}`}
+              className="ml-auto text-xs text-gray-500 hover:text-accent-400 transition-colors"
+            >
+              Edit post
+            </Link>
+          )}
         </div>
 
         {post.title && (
@@ -392,6 +403,11 @@ export default async function PostPage({
                       username={reply.username}
                       domain={reply.domain}
                     />
+                  </div>
+                )}
+                {isAdmin && reply.isOwn && reply.rawContent !== null && (
+                  <div className="mt-2">
+                    <EditReplyForm replyId={reply.id} initialContent={reply.rawContent} />
                   </div>
                 )}
               </div>

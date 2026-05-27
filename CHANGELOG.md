@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.1.19 (2026-05-10)
+
+### Added
+- **Edit existing posts** via the compose page (`?edit=<id>`). Admin Edit link on every post page jumps back into the compose form pre-filled with the original title, content, photos, video URLs, and audio attachments. Saving federates an ActivityPub `Update` activity so Mastodon shows &ldquo;edited X ago&rdquo;. Slug and AP id are preserved.
+- **Edit existing fedi replies** inline. Outgoing fedi replies show an Edit affordance in timeline / post pages. Saving federates AP `Update`.
+- **Symmetric reply crossposting** &mdash; inline fedi-comment replies can now also post to Bluesky (threaded under the local post&apos;s Bluesky version if it exists, standalone otherwise). Inline Bluesky-comment replies can now also federate to the Fediverse. Per-reply checkbox; auto-enabled when a cross-network mention is detected.
+- **`@mention` autocomplete** in every compose / reply / edit textarea, drawing from `FediFollower` + `FediFollowing` AND `BlueskyFollower` + `BlueskyFollowing`. New endpoint `GET /api/mentions/search?q=...`. Auto-detected fedi mentions build AP `Mention` tags and direct-deliver to the mentioned actor&apos;s inbox.
+
+### Known limitations
+- Bluesky/Threads/DayOne crossposts are NOT re-published on edit (AT Protocol has no edit primitive).
+- Auto-created Photo / Video / Audio records from &ldquo;Add to&hellip;&rdquo; toggles are not retroactively modified by editing &mdash; manage from their respective admin tabs.
+- Editing Bluesky replies is hidden in v1 (delete + repost would lose existing likes/replies on Bluesky).
+
+### Critical files
+- `src/lib/mentions.ts` &mdash; new shared parser + AP tag/inbox helpers
+- `src/app/api/mentions/search/route.ts` &mdash; new admin-only search endpoint
+- `src/components/ui/MentionAutocomplete.tsx` &mdash; new hook + dropdown
+- `src/components/fedi/EditReplyForm.tsx` &mdash; new inline-edit widget
+
 ## 0.1.18 (2026-05-19)
 
 ### Changed

@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { verifyAdmin, verifyOrigin } from "@/lib/auth";
-import { deliverToFollowers } from "@/lib/http-signatures";
+import { deliverActivity, deliverToFollowers } from "@/lib/http-signatures";
 import { crosspostToBluesky, crosspostReplyToBluesky, crosspostToThreads, crosspostToDayOne } from "@/lib/crosspost";
 import { sanitizeHtml } from "@/lib/sanitize";
+import { parseMentions, linkMentions, buildApMentionTags, collectMentionInboxes } from "@/lib/mentions";
 import path from "path";
 
 const siteUrl = process.env.SITE_URL || "http://localhost:3000";
@@ -112,7 +113,7 @@ function renderMarkdown(md: string): string {
 }
 
 export async function POST(req: NextRequest) {
-  if (!verifyAdmin(req)) {
+  if (!(await verifyAdmin(req))) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   if (!verifyOrigin(req)) {
@@ -149,6 +150,7 @@ async function composeHandler(req: NextRequest) {
     addToAudio,
     audioCategory,
     inReplyToPostId,
+    editingPostId,
   } = body as {
     title?: string;
     content: string;
@@ -180,10 +182,23 @@ async function composeHandler(req: NextRequest) {
     addToAudio?: boolean;
     audioCategory?: string;
     inReplyToPostId?: string;
+    editingPostId?: string;
   };
 
   if (!content?.trim()) {
     return NextResponse.json({ error: "Content is required" }, { status: 400 });
+  }
+
+  // Edit branch: update existing post and federate AP Update
+  if (editingPostId) {
+    return await updatePostHandler(editingPostId, {
+      title,
+      content,
+      description,
+      photos,
+      videos,
+      audios,
+    });
   }
 
   let parentPost: { id: string; apId: string | null; blueskyUri: string | null } | null = null;
@@ -219,10 +234,13 @@ async function composeHandler(req: NextRequest) {
     slug = `${slugBase}-${Date.now().toString(36)}`;
   }
 
+  // Parse @mentions (fedi + bluesky) so we can render anchors and build AP tags
+  const mentions = await parseMentions(content);
+
   // Render content HTML
   let contentHtml: string;
   if (isArticle) {
-    contentHtml = sanitizeHtml(renderMarkdown(content));
+    contentHtml = sanitizeHtml(linkMentions(renderMarkdown(content), mentions));
   } else {
     // Note: plain text with hashtag links, auto-linked URLs, and line breaks
     const escaped = content
@@ -233,7 +251,8 @@ async function composeHandler(req: NextRequest) {
       /(https?:\/\/[^\s<&]+)/g,
       (url) => `<a href="${url}" rel="nofollow noopener noreferrer" target="_blank">${url}</a>`
     );
-    contentHtml = `<p>${linkHashtags(withLinks).replace(/\n/g, "<br>")}</p>`;
+    const withMentions = linkMentions(withLinks, mentions);
+    contentHtml = `<p>${linkHashtags(withMentions).replace(/\n/g, "<br>")}</p>`;
   }
 
   // Create post
@@ -380,20 +399,32 @@ async function composeHandler(req: NextRequest) {
 
   const apAttachments = [...apImageAttachments, ...apAudioAttachments];
 
-  // Build AP tag array for hashtags
-  const apTags = tags.map((tag) => ({
-    type: "Hashtag",
-    href: `https://mastodon.social/tags/${tag}`,
-    name: `#${tag}`,
-  }));
+  // Build AP tag array for hashtags + Mention tags for fedi mentions
+  const apTags: { type: string; href: string; name: string }[] = [
+    ...tags.map((tag) => ({
+      type: "Hashtag",
+      href: `https://mastodon.social/tags/${tag}`,
+      name: `#${tag}`,
+    })),
+    ...buildApMentionTags(mentions),
+  ];
+
+  // Extend CC list + direct-deliver inboxes for any mentioned fedi actors
+  const mentionInboxes = collectMentionInboxes(mentions);
+  const mentionActorUris = mentions.fedi
+    .filter((m) => !!m.actorUri)
+    .map((m) => m.actorUri!);
 
   // Federation
+  const ccList = [`${siteUrl}/ap/followers`, ...mentionActorUris];
   const activity = {
     "@context": "https://www.w3.org/ns/activitystreams",
     id: `${siteUrl}/ap/create/${post.id}`,
     type: "Create",
     actor: `${siteUrl}/ap/actor`,
     published: post.publishedAt.toISOString(),
+    to: ["https://www.w3.org/ns/activitystreams#Public"],
+    cc: ccList,
     object: {
       type: isArticle ? "Article" : "Note",
       id: post.apId,
@@ -403,7 +434,7 @@ async function composeHandler(req: NextRequest) {
       url: `${siteUrl}/post/${slug}`,
       published: post.publishedAt.toISOString(),
       to: ["https://www.w3.org/ns/activitystreams#Public"],
-      cc: [`${siteUrl}/ap/followers`],
+      cc: ccList,
       ...(parentPost?.apId ? { inReplyTo: parentPost.apId } : {}),
       ...(apAttachments.length > 0 ? { attachment: apAttachments } : {}),
       ...(apTags.length > 0 ? { tag: apTags } : {}),
@@ -413,6 +444,13 @@ async function composeHandler(req: NextRequest) {
   deliverToFollowers(activity).catch((err) =>
     console.error("Failed to federate post:", err)
   );
+
+  // Direct-deliver to mentioned actors' inboxes so they get the notification
+  for (const inbox of mentionInboxes) {
+    deliverActivity(inbox, activity).catch((err) =>
+      console.error(`Failed to deliver mention to ${inbox}:`, err)
+    );
+  }
 
   // Crossposting
   const postUrl = `${siteUrl}/post/${slug}`;
@@ -494,5 +532,171 @@ async function composeHandler(req: NextRequest) {
   return NextResponse.json({
     success: true,
     post: { id: post.id, slug: post.slug, url: postUrl },
+  });
+}
+
+interface EditInput {
+  title?: string;
+  content: string;
+  description?: string;
+  photos?: { url: string; alt: string }[];
+  videos?: {
+    url: string;
+    title: string;
+    embedHost: string;
+    embedId: string;
+    iframeSrc: string;
+    thumbnailUrl?: string | null;
+    duration?: number | null;
+  }[];
+  audios?: {
+    url: string;
+    title: string;
+    durationSec?: number | null;
+    fileSize?: number | null;
+    coverImage?: string | null;
+  }[];
+}
+
+async function updatePostHandler(postId: string, input: EditInput) {
+  const existing = await prisma.post.findUnique({ where: { id: postId } });
+  if (!existing) {
+    return NextResponse.json({ error: "Post not found" }, { status: 404 });
+  }
+
+  const isArticle = !!input.title?.trim();
+  const tags = extractHashtags(input.content);
+  const photoUrls = (input.photos || []).map((p) => p.url);
+  const photoCaptions = (input.photos || []).map((p) => p.alt || "");
+  const videoUrls = (input.videos || []).map((v) => v.url);
+  const videoTitles = (input.videos || []).map((v) => v.title || "");
+  const videoThumbnails = (input.videos || []).map((v) => v.thumbnailUrl || "");
+  const audioPaths = (input.audios || []).map((a) => a.url);
+  const audioTitles = (input.audios || []).map((a) => a.title || "");
+  const audioCovers = (input.audios || []).map((a) => a.coverImage || "");
+
+  // Parse @mentions for the new content
+  const mentions = await parseMentions(input.content);
+
+  // Render content HTML (same logic as create)
+  let contentHtml: string;
+  if (isArticle) {
+    contentHtml = sanitizeHtml(linkMentions(renderMarkdown(input.content), mentions));
+  } else {
+    const escaped = input.content
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+    const withLinks = escaped.replace(
+      /(https?:\/\/[^\s<&]+)/g,
+      (url) => `<a href="${url}" rel="nofollow noopener noreferrer" target="_blank">${url}</a>`
+    );
+    const withMentions = linkMentions(withLinks, mentions);
+    contentHtml = `<p>${linkHashtags(withMentions).replace(/\n/g, "<br>")}</p>`;
+  }
+
+  // Update (do NOT change slug or apId — they're identity-preserving)
+  const updated = await prisma.post.update({
+    where: { id: postId },
+    data: {
+      title: isArticle ? input.title!.trim() : null,
+      content: input.content,
+      contentHtml,
+      excerpt: input.description?.trim() || null,
+      category: isArticle ? "article" : existing.category,
+      tags,
+      photos: photoUrls,
+      photoCaptions,
+      videos: videoUrls,
+      videoTitles,
+      videoThumbnails,
+      audioPaths,
+      audioTitles,
+      audioCovers,
+    },
+  });
+
+  // Build AP Update activity
+  let apContent: string;
+  if (isArticle) {
+    const desc = input.description?.trim() || stripMarkdown(input.content).slice(0, 300);
+    apContent = `<p>${desc.replace(/\n/g, "<br>")}</p>`;
+  } else {
+    apContent = contentHtml;
+  }
+  if (input.videos && input.videos.length > 0) {
+    const videoLinks = input.videos
+      .map((v) => `<p><a href="${v.url}" rel="nofollow noopener noreferrer">${v.url}</a></p>`)
+      .join("\n");
+    apContent = `${apContent}\n${videoLinks}`;
+  }
+
+  const apImageAttachments = (input.photos || []).map((p) => {
+    const url = p.url.startsWith("http") ? p.url : `${siteUrl}${p.url}`;
+    const ext = url.split(".").pop()?.toLowerCase() || "jpg";
+    const mimeMap: Record<string, string> = {
+      jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png",
+      webp: "image/webp", gif: "image/gif",
+    };
+    return { type: "Image", mediaType: mimeMap[ext] || "image/jpeg", url, name: p.alt || "" };
+  });
+  const apAudioAttachments = (input.audios || []).map((a) => {
+    const url = a.url.startsWith("http") ? a.url : `${siteUrl}${a.url}`;
+    return { type: "Document", mediaType: "audio/mpeg", url, name: a.title || "" };
+  });
+  const apAttachments = [...apImageAttachments, ...apAudioAttachments];
+
+  const apTags: { type: string; href: string; name: string }[] = [
+    ...tags.map((tag) => ({
+      type: "Hashtag",
+      href: `https://mastodon.social/tags/${tag}`,
+      name: `#${tag}`,
+    })),
+    ...buildApMentionTags(mentions),
+  ];
+  const mentionInboxes = collectMentionInboxes(mentions);
+  const mentionActorUris = mentions.fedi
+    .filter((m) => !!m.actorUri)
+    .map((m) => m.actorUri!);
+
+  const now = new Date();
+  const ccList = [`${siteUrl}/ap/followers`, ...mentionActorUris];
+  const activity = {
+    "@context": "https://www.w3.org/ns/activitystreams",
+    id: `${siteUrl}/ap/update/${updated.id}/${Date.now()}`,
+    type: "Update",
+    actor: `${siteUrl}/ap/actor`,
+    published: now.toISOString(),
+    to: ["https://www.w3.org/ns/activitystreams#Public"],
+    cc: ccList,
+    object: {
+      type: isArticle ? "Article" : "Note",
+      id: updated.apId,
+      attributedTo: `${siteUrl}/ap/actor`,
+      ...(isArticle ? { name: input.title!.trim() } : {}),
+      content: apContent,
+      url: `${siteUrl}/post/${updated.slug}`,
+      published: updated.publishedAt.toISOString(),
+      updated: now.toISOString(),
+      to: ["https://www.w3.org/ns/activitystreams#Public"],
+      cc: ccList,
+      ...(apAttachments.length > 0 ? { attachment: apAttachments } : {}),
+      ...(apTags.length > 0 ? { tag: apTags } : {}),
+    },
+  };
+
+  deliverToFollowers(activity).catch((err) =>
+    console.error("Failed to federate post update:", err)
+  );
+  for (const inbox of mentionInboxes) {
+    deliverActivity(inbox, activity).catch((err) =>
+      console.error(`Failed to deliver update to mentioned ${inbox}:`, err)
+    );
+  }
+
+  return NextResponse.json({
+    success: true,
+    post: { id: updated.id, slug: updated.slug, url: `${siteUrl}/post/${updated.slug}` },
+    edited: true,
   });
 }

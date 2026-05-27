@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { LightboxGallery } from "@/components/ui/Lightbox";
+import EditReplyForm from "@/components/fedi/EditReplyForm";
 
 function PostMedia({ urls, types, maxH }: { urls: string[]; types: string[]; maxH: string }) {
   const images = urls.map((url, i) => ({ url, type: types[i], i })).filter((m) => m.type !== "video");
@@ -470,6 +471,8 @@ function PostCard({
             <button
               onClick={async () => {
                 if (!replyContent.trim()) return;
+                const fediStripped = replyContent.replace(/@[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]+/g, "");
+                const hasBskyMention = /@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+/.test(fediStripped);
                 await fetch("/api/admin", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
@@ -480,6 +483,7 @@ function PostCard({
                     targetInbox: `https://${post.domain}/users/${post.username}/inbox`,
                     actorUri: `https://${post.domain}/users/${post.username}`,
                     mentionHandle: `@${post.username}@${post.domain}`,
+                    crosspostBluesky: hasBskyMention,
                   }),
                 });
                 setReplyContent("");
@@ -520,6 +524,11 @@ function PostCard({
         >
           View thread
         </button>
+
+        {/* Edit (outgoing posts only) */}
+        {post.isOutgoing && (
+          <EditReplyForm replyId={post.id} initialContent={post.content} />
+        )}
       </div>
 
       {/* Interaction counts strip — fetched on demand from the remote AP object */}
