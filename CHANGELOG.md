@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.20 (2026-06-06)
+
+### Added
+- **Back-to-top button** — a floating rounded button appears bottom-right once you scroll past ~400px on any page; clicking smooth-scrolls to the top. Respects `prefers-reduced-motion`. Mounted once in the root layout so it covers the whole site. (`src/components/ui/ScrollToTop.tsx`)
+
 ## 0.1.19 (2026-05-10)
 
 ### Added
