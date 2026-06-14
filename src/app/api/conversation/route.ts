@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { processAttachments, fetchLinkEmbed } from "@/lib/fedi-media";
 import { verifyAdmin } from "@/lib/auth";
+import { signedGet } from "@/lib/http-signatures";
+import { sanitizeHtml } from "@/lib/sanitize";
+import { assertPublicHost } from "@/lib/url-guard";
 
 const MAX_DEPTH = 20;
 
@@ -90,10 +93,10 @@ export async function GET(req: NextRequest) {
  */
 async function fetchRemoteNote(apId: string) {
   try {
-    const res = await fetch(apId, {
-      headers: { Accept: "application/activity+json" },
-      signal: AbortSignal.timeout(5000),
-    });
+    // Signed GET — most servers run authorized-fetch and 401 unsigned requests,
+    // which is why "View thread" on a reply to someone else loaded no ancestors.
+    if (!(await assertPublicHost(apId))) return null;
+    const res = await signedGet(apId, 6000);
     if (!res.ok) return null;
 
     const note = await res.json();
@@ -101,12 +104,9 @@ async function fetchRemoteNote(apId: string) {
 
     // Fetch actor info
     const actorUri = note.attributedTo as string;
-    if (!actorUri) return null;
+    if (!actorUri || !(await assertPublicHost(actorUri))) return null;
 
-    const actorRes = await fetch(actorUri, {
-      headers: { Accept: "application/activity+json" },
-      signal: AbortSignal.timeout(5000),
-    });
+    const actorRes = await signedGet(actorUri, 6000);
     if (!actorRes.ok) return null;
     const actor = await actorRes.json();
     const domain = new URL(actorUri).hostname;
@@ -119,6 +119,7 @@ async function fetchRemoteNote(apId: string) {
     const inReplyTo = (note.inReplyTo as string) || null;
     const conversationId =
       note.conversation || note.context || inReplyTo || note.id || null;
+    const safeHtml = sanitizeHtml(note.content || "");
 
     return prisma.fediPost.upsert({
       where: { apId: note.id },
@@ -126,7 +127,7 @@ async function fetchRemoteNote(apId: string) {
         actorUri,
         apId: note.id,
         content: note.content || "",
-        contentHtml: note.content || "",
+        contentHtml: safeHtml,
         mediaUrls,
         mediaTypes,
         inReplyTo,

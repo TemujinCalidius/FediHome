@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.0 (2026-06-15)
+
+### Fixed
+- **Interaction counts ("Tap to load") were almost always blank, and "View thread" on a reply to someone else loaded no context.** Both were caused by **unsigned** ActivityPub GETs, which servers running Mastodon "authorized fetch" (secure mode — now the default) reject with 401. Added a signed-GET helper (`signedGet`, HTTP Signatures with the site actor key) and used it everywhere we read remote objects:
+  - **Counts:** now read from the Mastodon REST API (`/api/v1/statuses/:id`, which publicly exposes favourites/reblogs/replies for the bulk of the fediverse — Mastodon/Pixelfed/GoToSocial/Pleroma), falling back to the **signed** AP object's collection totals. Mastodon doesn't expose like/boost totals over AP at all, which is why the old AP-only path came back empty. (`src/app/api/fedi-post-counts/route.ts`)
+  - **View thread:** ancestor posts that aren't stored locally are now fetched with a **signed** GET, so the full reply chain above a "RE:" loads. Remote note content is also sanitised before storage (it's rendered as HTML). (`src/app/api/conversation/route.ts`)
+  - (`src/lib/http-signatures.ts` — new `signedGet`.)
+
 ## 0.5.0 (2026-06-14)
 
 ### Fixed

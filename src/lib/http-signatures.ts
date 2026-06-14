@@ -58,6 +58,50 @@ export async function signedFetch(
   });
 }
 
+/**
+ * Signed GET for fetching remote AP objects. Many servers run Mastodon's
+ * "authorized fetch" (secure mode) and reject UNSIGNED GETs with 401 — which
+ * silently breaks reading remote notes, thread ancestors, and interaction
+ * collections. Signs `(request-target) host date` with the site actor key.
+ */
+export async function signedGet(url: string, timeoutMs = 10000): Promise<Response> {
+  const keys = await prisma.actorKeys.findUnique({ where: { id: "main" } });
+  if (!keys) throw new Error("Actor keys not found");
+
+  const keyId = `${SITE_URL}/ap/actor#main-key`;
+  const parsedUrl = new URL(url);
+  const date = new Date().toUTCString();
+  const target = `${parsedUrl.pathname}${parsedUrl.search}`;
+
+  const signingString = [
+    `(request-target): get ${target}`,
+    `host: ${parsedUrl.host}`,
+    `date: ${date}`,
+  ].join("\n");
+
+  const signer = crypto.createSign("sha256");
+  signer.update(signingString);
+  const signature = signer.sign(keys.privateKey, "base64");
+
+  const signatureHeader = [
+    `keyId="${keyId}"`,
+    `algorithm="rsa-sha256"`,
+    `headers="(request-target) host date"`,
+    `signature="${signature}"`,
+  ].join(",");
+
+  return fetch(url, {
+    method: "GET",
+    headers: {
+      Accept: "application/activity+json, application/ld+json",
+      Date: date,
+      Signature: signatureHeader,
+      Host: parsedUrl.host,
+    },
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+}
+
 export interface DeliveryResult {
   ok: boolean;
   status: number;
