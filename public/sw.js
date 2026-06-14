@@ -2,7 +2,7 @@
  * Push-only (no offline caching); the site works online as normal.
  * iOS requires a service worker with a 'push' listener for home-screen PWA push. */
 
-const SW_VERSION = "v2";
+const SW_VERSION = "v3";
 
 self.addEventListener("install", () => {
   self.skipWaiting();
@@ -76,10 +76,13 @@ self.addEventListener("push", (event) => {
   event.waitUntil(
     (async () => {
       await self.registration.showNotification(title, options);
-      // Bump the app-icon badge. If the server sent an authoritative count use it,
-      // otherwise increment what we have (the open app corrects it on next sync).
-      const next = typeof data.count === "number" ? data.count : (await getBadgeCount()) + 1;
-      await applyBadge(next);
+      // Bump the app-icon badge — but NOT for a connectivity "test" push (it
+      // isn't a real unread notification). If the server sent an authoritative
+      // count use it, otherwise increment (the open app corrects it on sync).
+      if (data.type !== "test") {
+        const next = typeof data.count === "number" ? data.count : (await getBadgeCount()) + 1;
+        await applyBadge(next);
+      }
     })()
   );
 });

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.3 (2026-06-14)
+
+### Fixed
+- **Test push no longer bumps the app-icon badge.** The "Send test" push was counting as 1 unread on the Dock/home-screen badge with no real notification to clear it against. The service worker now skips the badge for `type: "test"` pushes. (Existing stuck badges clear themselves the next time the app opens and re-syncs to the true unread count.) (`public/sw.js`)
+
 ## 0.2.2 (2026-06-14)
 
 ### Added
