@@ -882,6 +882,9 @@ export async function POST(req: NextRequest) {
       }
       await deliverToFollowers(likeActivity).catch(() => {});
 
+      // Remember we liked it so the button stays lit after a reload.
+      await prisma.fediPost.updateMany({ where: { apId: postApId }, data: { likedByMe: true } });
+
       return NextResponse.json({ success: true });
     }
 
@@ -907,6 +910,9 @@ export async function POST(req: NextRequest) {
         await deliverActivity(boostInbox, announceActivity).catch(() => {});
       }
       await deliverToFollowers(announceActivity).catch(() => {});
+
+      // Remember we boosted it so the button stays lit after a reload.
+      await prisma.fediPost.updateMany({ where: { apId: boostApId }, data: { boostedByMe: true } });
 
       return NextResponse.json({ success: true });
     }

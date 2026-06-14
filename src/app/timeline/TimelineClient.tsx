@@ -52,6 +52,8 @@ interface FediPostItem {
   replyCount?: number | null;
   countsFetchedAt?: string | null;
   isOutgoing?: boolean;
+  likedByMe?: boolean;
+  boostedByMe?: boolean;
 }
 
 interface FediCountsState {
@@ -277,8 +279,8 @@ function PostCard({
   onLoadCounts: (postId: string) => void;
 }) {
   const [showUserPopup, setShowUserPopup] = useState(false);
-  const [liked, setLiked] = useState(false);
-  const [boosted, setBoosted] = useState(false);
+  const [liked, setLiked] = useState(post.likedByMe ?? false);
+  const [boosted, setBoosted] = useState(post.boostedByMe ?? false);
 
   // Find parent post info for reply context
   const parentPost = post.inReplyTo

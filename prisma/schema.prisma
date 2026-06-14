@@ -279,6 +279,11 @@ model FediPost {
   replyCount      Int?
   countsFetchedAt DateTime?
 
+  // Whether the site owner has liked / boosted this post — drives the feed's
+  // like/boost button state so it survives a reload.
+  likedByMe   Boolean @default(false)
+  boostedByMe Boolean @default(false)
+
   @@index([publishedAt])
   @@index([conversationId])
   @@index([inReplyTo])

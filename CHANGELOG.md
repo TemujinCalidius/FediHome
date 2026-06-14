@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.0 (2026-06-15)
+
+### Fixed
+- **Like/boost no longer reset after a page reload.** The feed's like and boost buttons were driven by component state that always started "off" and was never persisted, so reloading lost the activated look. We now record the owner's like/boost on the post (`FediPost.likedByMe` / `boostedByMe`, set when the Like/Announce is sent) and initialise the buttons from it. (`prisma/schema.prisma`, `src/app/api/admin/route.ts`, `src/app/timeline/TimelineClient.tsx`)
+
+### Schema
+- `FediPost.likedByMe` / `FediPost.boostedByMe` booleans. Apply with `npx prisma db push` (or `prisma/manual-migrations/2026-06-15-fedipost-reactions.sql`).
+
 ## 0.6.0 (2026-06-15)
 
 ### Fixed
