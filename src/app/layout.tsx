@@ -3,6 +3,7 @@ import "./globals.css";
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
 import ScrollToTop from "@/components/ui/ScrollToTop";
+import PullToRefresh from "@/components/ui/PullToRefresh";
 import { siteConfig } from "@/../site.config";
 
 export const metadata: Metadata = {
@@ -65,6 +66,7 @@ export default function RootLayout({
         <link rel="EditURI" type="application/rsd+xml" href={`${siteConfig.url}/rsd.xml`} />
       </head>
       <body className="bg-surface-950 text-gray-200 min-h-screen flex flex-col font-body">
+        <PullToRefresh />
         <Navbar />
         <main className="flex-1">{children}</main>
         <Footer />

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.1 (2026-06-14)
+
+### Added
+- **Pull-to-refresh in the installed PWA.** Home-screen apps run in standalone mode, which disables the browser's native pull-to-refresh — this adds a custom one. Pull down from the top of any page and release to reload. Only active in standalone (a normal browser tab keeps its built-in gesture). (`src/components/ui/PullToRefresh.tsx`, mounted in the root layout.)
+
+### Fixed
+- **More mobile horizontal-drift fixes.** The `@mention` autocomplete dropdown is `position: fixed` (so it escapes the page's `overflow-x: clip`) and was positioned with stale scroll offsets + no right-edge clamp, letting it spill past the viewport and drift the page. It's now viewport-clamped (`max-w-[calc(100vw-1rem)]` + clamped `left`, no scroll offset). Added `overscroll-behavior-x: none` to `html, body` as an iOS belt-and-suspenders against horizontal rubber-band, and `break-words` to the compose result banner. (`src/components/ui/MentionAutocomplete.tsx`, `src/app/globals.css`, `src/app/compose/ComposeClient.tsx`)
+
 ## 0.2.0 (2026-06-14)
 
 ### Added

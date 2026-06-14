@@ -315,7 +315,7 @@ export default function ComposeClient({ editingPostId = null, initialValues = nu
       {/* Result banner */}
       {result && (
         <div
-          className={`p-4 rounded-lg text-sm ${
+          className={`p-4 rounded-lg text-sm break-words ${
             result.success
               ? "bg-moss-600/20 border border-moss-400/30 text-moss-400"
               : "bg-red-900/20 border border-red-500/30 text-red-400"

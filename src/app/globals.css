@@ -66,6 +66,9 @@ body {
 html,
 body {
   overflow-x: clip;
+  /* Belt-and-suspenders for iOS: kill horizontal rubber-band/overscroll so the
+     page can't drift sideways even if a fixed/overlay element briefly overflows. */
+  overscroll-behavior-x: none;
 }
 
 img,

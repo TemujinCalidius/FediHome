@@ -91,7 +91,14 @@ export function useMentionAutocomplete(
     const el = inputRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
-    setAnchor({ top: rect.bottom + window.scrollY + 4, left: rect.left + window.scrollX });
+    // The dropdown is position:fixed (viewport-relative), so do NOT add scroll
+    // offsets. Clamp left so the 288px (w-72) panel never spills past the right
+    // edge — a fixed element that overflows escapes the page's overflow-x clip
+    // and causes horizontal drift on mobile.
+    const DROPDOWN_W = 288;
+    const margin = 8;
+    const maxLeft = Math.max(margin, (window.innerWidth || 360) - DROPDOWN_W - margin);
+    setAnchor({ top: rect.bottom + 4, left: Math.min(Math.max(margin, rect.left), maxLeft) });
   }, [open, inputRef]);
 
   const insertResult = useCallback(
@@ -161,7 +168,7 @@ export function useMentionAutocomplete(
     open && anchor && results.length > 0 ? (
       <div
         ref={containerRef}
-        className="fixed z-50 w-72 max-h-72 overflow-y-auto bg-surface-900 border border-surface-600 rounded-lg shadow-xl"
+        className="fixed z-50 w-72 max-w-[calc(100vw-1rem)] max-h-72 overflow-y-auto bg-surface-900 border border-surface-600 rounded-lg shadow-xl"
         style={{ top: anchor.top, left: anchor.left }}
         role="listbox"
       >
