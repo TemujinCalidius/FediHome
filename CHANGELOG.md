@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.0 (2026-06-14)
+
+### Added
+- **Share a post / copy its source link.** Each feed post card now has a share icon at its far bottom-right. On macOS/iOS (and Android) it opens the native share sheet via the Web Share API; elsewhere it copies the link with a brief "Copied!" confirmation. The shared URL is the post's **originating source** on its home server (a boost resolves to the original post's URL, not the local timeline). Posts with no canonical URL hide the icon. (`src/components/fedi/ShareButton.tsx`, `src/app/timeline/TimelineClient.tsx`)
+
 ## 0.3.0 (2026-06-14)
 
 ### Added

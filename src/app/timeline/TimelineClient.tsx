@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { LightboxGallery } from "@/components/ui/Lightbox";
 import EditReplyForm from "@/components/fedi/EditReplyForm";
+import ShareButton from "@/components/fedi/ShareButton";
 
 function PostMedia({ urls, types, maxH }: { urls: string[]; types: string[]; maxH: string }) {
   const images = urls.map((url, i) => ({ url, type: types[i], i })).filter((m) => m.type !== "video");
@@ -551,9 +552,28 @@ function PostCard({
             {countsLoading ? "Loading interactions…" : "💬 🔁 ❤  Tap to load"}
           </button>
         )}
+        {/* Share / copy link to the original post — far bottom-right */}
+        <ShareButton
+          url={postSourceUrl(post)}
+          title={post.displayName || `@${post.username}@${post.domain}`}
+          className="ml-auto"
+        />
       </div>
     </div>
   );
+}
+
+// The shareable source URL for a post. Normal posts: apId is the canonical URL.
+// Boosts have a synthetic "boost:<actorUri>:<originalApId>" id — pull the
+// original post URL back out of it. Returns null when there's no real URL.
+function postSourceUrl(post: { apId: string }): string | null {
+  const id = post.apId || "";
+  if (id.startsWith("http")) return id;
+  if (id.startsWith("boost:")) {
+    const m = id.match(/^boost:.*:(https?:\/\/.*)$/);
+    return m ? m[1] : null;
+  }
+  return null;
 }
 
 function fmtCount(n: number | null): string {
