@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import PushSetup from "./PushSetup";
 
 interface NotificationItem {
   id: string;
@@ -364,6 +365,9 @@ export default function NotificationBell() {
               View all in Timeline
             </a>
           )}
+
+          {/* Web Push enrollment (PWA phone notifications) */}
+          <PushSetup />
         </div>
       )}
     </div>

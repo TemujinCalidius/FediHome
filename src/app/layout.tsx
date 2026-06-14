@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
@@ -28,10 +28,27 @@ export const metadata: Metadata = {
     },
   },
   robots: { index: true, follow: true },
+  // PWA: installable to the iOS/Android home screen. Push (incl. iOS 16.4+) is
+  // wired up via /sw.js + the NotificationBell "Enable phone notifications"
+  // (dormant until VAPID keys are set in .env.local).
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    title: siteConfig.name,
+    statusBarStyle: "black-translucent",
+  },
+  icons: {
+    icon: "/favicon.png",
+    apple: "/icons/apple-touch-icon.png",
+  },
   other: {
     "micropub": `${siteConfig.url}/api/micropub`,
     "media-endpoint": `${siteConfig.url}/api/media`,
   },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#0a0a0f",
 };
 
 export default function RootLayout({

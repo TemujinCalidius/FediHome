@@ -361,6 +361,21 @@ model ActorKeys {
   privateKey String
 }
 
+// === Web Push (PWA notifications) ===
+// One row per browser/device push endpoint the owner has enabled. Single-user
+// site, so every subscription belongs to the admin. Dead endpoints (410/404 on
+// send) are pruned automatically by the push dispatcher.
+model PushSubscription {
+  id         String   @id @default(cuid())
+  endpoint   String   @unique
+  p256dh     String   // client public key (base64url) for payload encryption
+  auth       String   // client auth secret (base64url)
+  userAgent  String?  // best-effort, to tell devices apart in the UI
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime @default(now())
+  failures   Int      @default(0)
+}
+
 // === Site Settings (created by setup wizard) ===
 
 model SiteSettings {

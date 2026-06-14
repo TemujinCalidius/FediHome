@@ -385,7 +385,7 @@ function PostCard({
 
       {/* Content */}
       <div
-        className="text-gray-400 text-sm leading-relaxed [&_a]:text-accent-400 [&_a]:hover:underline"
+        className="text-gray-400 text-sm leading-relaxed break-words [&_a]:text-accent-400 [&_a]:hover:underline"
         dangerouslySetInnerHTML={{
           __html: post.contentHtml || "",
         }}
@@ -646,7 +646,7 @@ function ThreadView({
                     </p>
                   </div>
                   <div
-                    className="text-gray-400 text-sm leading-relaxed mt-1 [&_a]:text-accent-400 [&_a]:hover:underline"
+                    className="text-gray-400 text-sm leading-relaxed mt-1 break-words [&_a]:text-accent-400 [&_a]:hover:underline"
                     dangerouslySetInnerHTML={{
                       __html: post.contentHtml || "",
                     }}
@@ -832,7 +832,7 @@ function RepliesTab({
 
           {/* My reply body */}
           <div
-            className="text-gray-300 text-sm leading-relaxed [&_a]:text-accent-400 [&_a]:hover:underline"
+            className="text-gray-300 text-sm leading-relaxed break-words [&_a]:text-accent-400 [&_a]:hover:underline"
             dangerouslySetInnerHTML={{
               __html: reply.contentHtml || reply.content,
             }}
@@ -1349,7 +1349,7 @@ function MessagesTab({
               >
                 {msg.contentHtml && !msg.isOutgoing ? (
                   <div
-                    className="text-sm text-gray-300 [&_a]:text-accent-400 [&_a]:hover:underline"
+                    className="text-sm text-gray-300 break-words [&_a]:text-accent-400 [&_a]:hover:underline"
                     dangerouslySetInnerHTML={{ __html: msg.contentHtml }}
                   />
                 ) : (

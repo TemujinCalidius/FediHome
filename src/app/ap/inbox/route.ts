@@ -4,9 +4,25 @@ import { deliverActivity, verifyIncomingSignature, actorMatchesSigner } from "@/
 import { processAttachments, fetchLinkEmbed } from "@/lib/fedi-media";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { assertPublicHost } from "@/lib/url-guard";
+import { sendPushToOwner } from "@/lib/push";
 
 const siteUrl = process.env.SITE_URL || "http://localhost:3000";
 const ACTOR_FETCH_TIMEOUT_MS = 8000;
+
+/** Friendly display label for a fedi actor, e.g. "Ada" or "@ada@mastodon.social". */
+function actorLabel(info: { displayName?: string | null; username: string; domain: string }): string {
+  return info.displayName || `@${info.username}@${info.domain}`;
+}
+
+/** Push body for a reply: "<actor>: <plain-text snippet>". */
+function replyPushBody(
+  info: { displayName?: string | null; username: string; domain: string },
+  html: string
+): string {
+  const text = html.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
+  const snippet = text.length > 120 ? text.slice(0, 117) + "…" : text;
+  return snippet ? `${actorLabel(info)}: ${snippet}` : `${actorLabel(info)} replied to you`;
+}
 
 export async function POST(req: NextRequest) {
   // Read body as text first so we can validate Digest against the actual bytes
@@ -113,6 +129,9 @@ async function handleFollow(actorUri: string, activity: Record<string, unknown>)
   const info = await fetchActorInfo(actorUri);
   if (!info) return;
 
+  // Only a genuinely new follow should buzz the phone (Follow can be redelivered).
+  const alreadyFollowing = await prisma.fediFollower.findUnique({ where: { actorUri } });
+
   // Store follower
   await prisma.fediFollower.upsert({
     where: { actorUri },
@@ -130,6 +149,16 @@ async function handleFollow(actorUri: string, activity: Record<string, unknown>)
       avatarUrl: info.avatarUrl,
     },
   });
+
+  if (!alreadyFollowing) {
+    void sendPushToOwner({
+      title: "New follower",
+      body: `${actorLabel(info)} followed you`,
+      url: "/timeline",
+      type: "follow",
+      icon: info.avatarUrl || undefined,
+    }).catch(() => {});
+  }
 
   // Auto-accept: send signed Accept activity back
   try {
@@ -180,6 +209,14 @@ async function handleLike(actorUri: string, activity: Record<string, unknown>) {
     where: { apId: targetApId },
     data: { likeCount: { increment: 1 } },
   });
+
+  void sendPushToOwner({
+    title: "New like",
+    body: `${actorLabel(info)} liked your post`,
+    url: "/timeline",
+    type: "like",
+    icon: info.avatarUrl || undefined,
+  }).catch(() => {});
 }
 
 async function handleUndoLike(actorUri: string, likeActivity: Record<string, unknown>) {
@@ -236,6 +273,14 @@ async function handleBoost(actorUri: string, activity: Record<string, unknown>) 
     where: { apId: targetApId },
     data: { boostCount: { increment: 1 } },
   });
+
+  void sendPushToOwner({
+    title: "New boost",
+    body: `${actorLabel(info)} boosted your post`,
+    url: "/timeline",
+    type: "boost",
+    icon: info.avatarUrl || undefined,
+  }).catch(() => {});
 
   // If the booster is someone we follow, store the boosted post for our feed
   const isFollowed = await prisma.fediFollowing.findUnique({ where: { actorUri } });
@@ -309,8 +354,10 @@ async function handleNote(actorUri: string, note: Record<string, unknown>) {
 
   if (isDirectToUs) {
     // Store as a direct message
+    const dmApId = (note.id as string) || `dm-${Date.now()}`;
+    const dmExisted = await prisma.directMessage.findUnique({ where: { apId: dmApId } });
     await prisma.directMessage.upsert({
-      where: { apId: (note.id as string) || `dm-${Date.now()}` },
+      where: { apId: dmApId },
       create: {
         source: "fedi",
         senderUri: actorUri,
@@ -326,6 +373,15 @@ async function handleNote(actorUri: string, note: Record<string, unknown>) {
       update: {},
     });
     console.log(`AP inbox: DM from ${info.username}@${info.domain}`);
+    if (!dmExisted) {
+      void sendPushToOwner({
+        title: "New message",
+        body: `${actorLabel(info)} sent you a message`,
+        url: "/timeline",
+        type: "dm",
+        icon: info.avatarUrl || undefined,
+      }).catch(() => {});
+    }
     return;
   }
 
@@ -396,6 +452,13 @@ async function handleNote(actorUri: string, note: Record<string, unknown>) {
             avatarUrl: info.avatarUrl,
           },
         });
+        void sendPushToOwner({
+          title: "New reply",
+          body: replyPushBody(info, content),
+          url: "/timeline",
+          type: "reply",
+          icon: info.avatarUrl || undefined,
+        }).catch(() => {});
       }
     }
   } else if (inReplyTo) {
@@ -405,17 +468,25 @@ async function handleNote(actorUri: string, note: Record<string, unknown>) {
       (await prisma.photo.findFirst({ where: { apId: inReplyTo } })) ||
       (await prisma.fediPost.findFirst({ where: { apId: inReplyTo, isOutgoing: true } }));
     if (!isOurContent) return;
+    const replyHtml = sanitizeHtml((note.content as string) || "");
     await prisma.fediInteraction.create({
       data: {
         type: "reply",
         actorUri,
         targetApId: inReplyTo,
-        content: sanitizeHtml((note.content as string) || ""),
+        content: replyHtml,
         username: info.username,
         domain: info.domain,
         displayName: info.displayName,
         avatarUrl: info.avatarUrl,
       },
     });
+    void sendPushToOwner({
+      title: "New reply",
+      body: replyPushBody(info, replyHtml),
+      url: "/timeline",
+      type: "reply",
+      icon: info.avatarUrl || undefined,
+    }).catch(() => {});
   }
 }

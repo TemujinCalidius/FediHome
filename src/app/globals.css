@@ -57,6 +57,23 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Prevent the page from drifting left/right while scrolling vertically on mobile.
+   `overflow-x: clip` on BOTH html and body clamps any incidental horizontal
+   overflow (clip on html alone doesn't lock the viewport in Chrome/WebKit).
+   Unlike `overflow: hidden`, `clip` does NOT create a scroll container, so the
+   sticky navbar keeps working. Media is also capped so it can't force the page
+   wider than the viewport. (Long links/text wrap via `break-words` on content.) */
+html,
+body {
+  overflow-x: clip;
+}
+
+img,
+video,
+iframe {
+  max-width: 100%;
+}
+
 /* === Component Utilities === */
 
 .glass-card {

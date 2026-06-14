@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import crypto from "crypto";
 import { verifyOrigin } from "@/lib/auth";
+import { sendPushToOwner } from "@/lib/push";
 
 export async function POST(req: NextRequest) {
   if (!verifyOrigin(req)) {
@@ -71,6 +72,13 @@ export async function POST(req: NextRequest) {
       photoId: photoId || null,
     },
   });
+
+  void sendPushToOwner({
+    title: "New comment",
+    body: `${guestName.trim()} left a comment (awaiting approval)`,
+    url: "/timeline",
+    type: "comment",
+  }).catch(() => {});
 
   return NextResponse.json({ success: true });
 }

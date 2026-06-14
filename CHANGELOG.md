@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.0 (2026-06-14)
+
+### Added
+- **Web Push / PWA notifications.** FediHome is now an installable home-screen app that delivers native push notifications for fediverse activity — **likes, boosts, replies, follows, DMs** — plus guest **comments**, even when the app is closed. Push is emitted from the AP inbox (`src/app/ap/inbox/route.ts`) and `src/app/api/comments/route.ts`, fanned out to every enrolled device via `sendPushToOwner` (`src/lib/push.ts`, web-push + VAPID). Dead endpoints are auto-pruned on 404/410. The feature is **dormant until you set VAPID keys** — generate them with `npx web-push generate-vapid-keys` and add `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_SUBJECT` to `.env.local` (see `.env.example`).
+- **Enrolment UI** in the admin-only notification bell (`src/components/layout/PushSetup.tsx`): "Enable phone notifications", a Test button, Turn-off, and iOS "Add to Home Screen" guidance (iOS 16.4+ only delivers push to a standalone home-screen install). Endpoints: `GET/POST/DELETE /api/push` (admin + CSRF) and `POST /api/push/test`.
+- **PWA shell** — web manifest (`src/app/manifest.ts`, `display: standalone`, built from `siteConfig`), service worker (`public/sw.js`, push + tap-to-open), apple-touch-icon + `appleWebApp` + theme-color metadata in the root layout, and app icons generated from the site avatar (`public/icons/`).
+
+### Fixed
+- **Mobile: feed no longer drifts left/right while scrolling vertically.** Fedi post/reply/DM bodies render sanitised HTML that could contain long unbroken URLs or `@handle@domain` strings, pushing cards past the viewport. Added `break-words` to all four content containers (`src/app/timeline/TimelineClient.tsx`) and a document-level `overflow-x: clip` on both `html` and `body` plus `max-width: 100%` on media (`src/app/globals.css`). `clip` (not `hidden`) keeps the sticky navbar working.
+
+### Schema
+- New Prisma model **`PushSubscription`** (one row per enrolled browser/device). Apply with `npx prisma db push` (or `prisma/manual-migrations/2026-06-14-push-subscriptions.sql`).
+
 ## 0.1.20 (2026-06-06)
 
 ### Added
