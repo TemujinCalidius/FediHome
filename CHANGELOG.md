@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.0 (2026-06-14)
+
+### Fixed
+- **RSS feed (`/feed.xml`) no longer looks broken for short notes, and now carries media.** Previously a titleless note repeated its (truncated, raw) text as both the `<title>` and `<description>`, and the feed included no photos/video/audio. Now:
+  - Titleless notes get a **date + time title** (e.g. "14 June 2026, 3:23 pm") instead of duplicating the body.
+  - The `<description>` carries the **full rendered HTML** (not a 280-char raw-markdown slice).
+  - **Photos, video thumbnails/links, and audio links are embedded** (absolute URLs), plus a lead-image `<enclosure>` for thumbnail-style readers. (`src/app/feed.xml/route.ts`)
+
 ## 0.4.0 (2026-06-14)
 
 ### Added
