@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0 (2026-06-14)
+
+### Added
+- **Live in-app updates (feed + notifications).** The timeline feed and the notification bell now refresh themselves instead of needing a manual reload — important for an always-open Dock/home-screen PWA:
+  - **Push as the realtime signal** — when a Web Push arrives, the service worker pings any open window, which refreshes the feed and the bell **instantly** (no SSE/WebSocket, so it's proxy-safe).
+  - **Focus + light polling backstop** — both also refresh the moment the app regains focus and poll every 30s while visible (paused while hidden).
+  - **Non-disruptive feed updates** — at the top, new posts merge in seamlessly (prepend-only, never replacing loaded pages or rewinding the cursor); scrolled down, they're buffered behind a "↑ N new posts" pill so the reading position isn't yanked. Suppressed while composing an inline reply. (`src/app/timeline/TimelineClient.tsx`, `src/components/layout/NotificationBell.tsx`, `public/sw.js`)
+
 ## 0.2.3 (2026-06-14)
 
 ### Fixed

@@ -153,8 +153,27 @@ export default function NotificationBell() {
 
   useEffect(() => {
     fetchNotifications();
-    const interval = setInterval(fetchNotifications, 60000);
-    return () => clearInterval(interval);
+    // Live: poll while visible and refresh instantly when the app regains focus
+    // (the common case for an always-open Dock/home-screen PWA). Paused while
+    // hidden to save resources — Web Push handles alerts then.
+    const tick = () => {
+      if (typeof document !== "undefined" && !document.hidden) fetchNotifications();
+    };
+    const interval = setInterval(tick, 30000);
+    document.addEventListener("visibilitychange", tick);
+    window.addEventListener("focus", tick);
+    // Instant: the service worker pings us the moment a push arrives.
+    const onSwMsg = (e: MessageEvent) => {
+      if (e.data?.type === "push") fetchNotifications();
+    };
+    navigator.serviceWorker?.addEventListener("message", onSwMsg);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", tick);
+      window.removeEventListener("focus", tick);
+      navigator.serviceWorker?.removeEventListener("message", onSwMsg);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {

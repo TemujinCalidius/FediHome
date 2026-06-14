@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { LightboxGallery } from "@/components/ui/Lightbox";
 import EditReplyForm from "@/components/fedi/EditReplyForm";
 
@@ -1539,6 +1539,15 @@ export default function TimelineClient({
   const [posts, setPosts] = useState<FediPostItem[]>(initialPosts);
   const [cursor, setCursor] = useState<string | null>(initialCursor);
   const [loadingMore, setLoadingMore] = useState(false);
+  // Live feed refresh: when scrolled away from the top, newly-arrived posts are
+  // buffered and surfaced as a "N new posts" pill instead of yanking the scroll.
+  const [pendingCount, setPendingCount] = useState(0);
+  const pendingFreshRef = useRef<{ posts: FediPostItem[]; cursor: string | null } | null>(null);
+  const liveBusyRef = useRef(false);
+  const loadingMoreRef = useRef(false); // stable mirror of loadingMore for the live refresh guard
+  // Always-current posts, so the live refresh can dedup without re-subscribing.
+  const postsRef = useRef(posts);
+  postsRef.current = posts;
   const [replyTo, setReplyTo] = useState<{ apId: string; inbox: string } | null>(null);
   const [replyContent, setReplyContent] = useState("");
   const [followHandle, setFollowHandle] = useState("");
@@ -1672,6 +1681,7 @@ export default function TimelineClient({
   const handleLoadMore = async () => {
     if (!cursor || loadingMore) return;
     setLoadingMore(true);
+    loadingMoreRef.current = true;
     try {
       const params = buildFeedParams({ cursor });
       const res = await fetch(`/api/feed?${params}`);
@@ -1684,11 +1694,16 @@ export default function TimelineClient({
       // silently fail
     }
     setLoadingMore(false);
+    loadingMoreRef.current = false;
   };
 
   // Reset pagination when toggling filters
   const refetchFeed = async (replies: boolean, boosts: boolean) => {
     setLoadingMore(true);
+    loadingMoreRef.current = true;
+    // Filters changed — any buffered "new posts" were for the old filter set.
+    pendingFreshRef.current = null;
+    setPendingCount(0);
     try {
       const params = new URLSearchParams();
       if (replies) params.set("replies", "1");
@@ -1703,6 +1718,55 @@ export default function TimelineClient({
       // silently fail
     }
     setLoadingMore(false);
+    loadingMoreRef.current = false;
+  };
+
+  // Silently pull the latest feed (no spinner). Prepend-only at the top; buffer
+  // behind a pill when scrolled down. Suppressed while composing an inline reply.
+  const silentRefreshFeed = useCallback(async () => {
+    if (typeof document !== "undefined" && document.hidden) return;
+    if (replyTo) return;
+    if (liveBusyRef.current || loadingMoreRef.current) return;
+    liveBusyRef.current = true;
+    try {
+      const params = new URLSearchParams();
+      if (showReplies) params.set("replies", "1");
+      if (showBoosts) params.set("boosts", "1");
+      const res = await fetch(`/api/feed?${params}`);
+      if (res.ok) {
+        const data = await res.json();
+        const fresh = (data.posts || []) as FediPostItem[];
+        const key = (p: FediPostItem) => `${p.id}:${p.boostedBy ?? ""}`;
+        const seen = new Set(postsRef.current.map(key));
+        const added = fresh.filter((p) => !seen.has(key(p)));
+        const atTop = (window.scrollY || 0) < 300;
+        if (atTop) {
+          if (added.length > 0) setPosts((current) => [...added, ...current]);
+          pendingFreshRef.current = null;
+          setPendingCount(0);
+        } else if (added.length > 0) {
+          pendingFreshRef.current = { posts: added, cursor: data.nextCursor };
+          setPendingCount(added.length);
+        }
+      }
+    } catch {
+      // silently fail
+    } finally {
+      liveBusyRef.current = false;
+    }
+  }, [showReplies, showBoosts, replyTo]);
+
+  const applyPendingPosts = () => {
+    const fresh = pendingFreshRef.current;
+    if (fresh) {
+      const key = (p: FediPostItem) => `${p.id}:${p.boostedBy ?? ""}`;
+      const seen = new Set(postsRef.current.map(key));
+      const added = fresh.posts.filter((p) => !seen.has(key(p)));
+      if (added.length > 0) setPosts((current) => [...added, ...current]);
+      pendingFreshRef.current = null;
+    }
+    setPendingCount(0);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const handleToggleReplies = () => {
@@ -1737,6 +1801,29 @@ export default function TimelineClient({
       loadReplies();
     }
   }, [tab, replies, repliesLoading, loadReplies]);
+
+  // Live feed: refresh on focus + light polling while visible (paused while
+  // hidden). The service worker also pings us instantly when a push arrives.
+  useEffect(() => {
+    if (tab !== "feed") return;
+    const tick = () => {
+      if (typeof document === "undefined" || document.hidden) return;
+      silentRefreshFeed();
+    };
+    const interval = setInterval(tick, 30000);
+    document.addEventListener("visibilitychange", tick);
+    window.addEventListener("focus", tick);
+    const onSwMsg = (e: MessageEvent) => {
+      if (e.data?.type === "push") tick();
+    };
+    navigator.serviceWorker?.addEventListener("message", onSwMsg);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", tick);
+      window.removeEventListener("focus", tick);
+      navigator.serviceWorker?.removeEventListener("message", onSwMsg);
+    };
+  }, [tab, silentRefreshFeed]);
 
   return (
     <div>
@@ -1823,6 +1910,18 @@ export default function TimelineClient({
               <span className="text-xs text-gray-500">Show boosts</span>
             </label>
           </div>
+
+          {/* Live "new posts" pill — only when scrolled down (at top it merges silently) */}
+          {pendingCount > 0 && (
+            <div className="sticky top-16 z-20 flex justify-center mb-3">
+              <button
+                onClick={applyPendingPosts}
+                className="px-4 py-1.5 rounded-full bg-accent-400 text-surface-950 text-xs font-semibold shadow-lg shadow-black/30 hover:bg-accent-300 transition-colors"
+              >
+                ↑ {pendingCount} new post{pendingCount > 1 ? "s" : ""}
+              </button>
+            </div>
+          )}
 
           <div className="space-y-4">
             {feedPosts.length === 0 ? (

@@ -83,6 +83,10 @@ self.addEventListener("push", (event) => {
         const next = typeof data.count === "number" ? data.count : (await getBadgeCount()) + 1;
         await applyBadge(next);
       }
+      // Nudge any open window to refresh instantly (live in-app updates without
+      // waiting for the poll) — uses the push itself as the realtime signal.
+      const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      for (const w of wins) w.postMessage({ type: "push", category: data.type || null });
     })()
   );
 });
