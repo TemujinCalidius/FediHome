@@ -3,6 +3,32 @@
 import { useState, useEffect, useRef } from "react";
 import PushSetup from "./PushSetup";
 
+/**
+ * Mirror the unread count onto the installed app's icon badge (Dock on macOS /
+ * home screen elsewhere) and keep the service worker's persisted counter in sync
+ * so the badge is right even when a push arrives while the app is closed.
+ * No-ops in browsers/contexts without the Badging API.
+ */
+function syncAppBadge(count: number) {
+  const nav = navigator as Navigator & {
+    setAppBadge?: (n?: number) => Promise<void>;
+    clearAppBadge?: () => Promise<void>;
+  };
+  try {
+    if (count > 0) nav.setAppBadge?.(count).catch(() => {});
+    else nav.clearAppBadge?.().catch(() => {});
+  } catch {
+    /* ignore */
+  }
+  try {
+    navigator.serviceWorker?.ready
+      .then((reg) => reg.active?.postMessage({ type: "setBadge", count }))
+      .catch(() => {});
+  } catch {
+    /* ignore */
+  }
+}
+
 interface NotificationItem {
   id: string;
   type: "like" | "boost" | "reply" | "follow" | "comment" | "dm" | "update";
@@ -115,6 +141,7 @@ export default function NotificationBell() {
       if (res.ok) {
         const data = await res.json();
         setCount(data.count || 0);
+        syncAppBadge(data.count || 0);
         if (data.items) setItems(data.items);
         if (data.categoryCounts) setCategoryCounts(data.categoryCounts);
         setLoaded(true);
@@ -158,6 +185,7 @@ export default function NotificationBell() {
       await fetch("/api/notifications", { method: "POST" });
       setCount(0);
       setCategoryCounts({});
+      syncAppBadge(0);
     } catch {
       // silently fail
     }

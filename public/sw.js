@@ -2,7 +2,7 @@
  * Push-only (no offline caching); the site works online as normal.
  * iOS requires a service worker with a 'push' listener for home-screen PWA push. */
 
-const SW_VERSION = "v1";
+const SW_VERSION = "v2";
 
 self.addEventListener("install", () => {
   self.skipWaiting();
@@ -11,6 +11,49 @@ self.addEventListener("install", () => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(self.clients.claim());
 });
+
+// --- App icon badge counter (Dock on macOS / home screen elsewhere) ---
+// Persisted in IndexedDB so it survives the service worker being torn down
+// between push events. The open app re-syncs this to the true unread count.
+function badgeDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open("badge", 1);
+    req.onupgradeneeded = () => req.result.createObjectStore("kv");
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function getBadgeCount() {
+  try {
+    const db = await badgeDb();
+    return await new Promise((resolve) => {
+      const r = db.transaction("kv").objectStore("kv").get("count");
+      r.onsuccess = () => resolve(typeof r.result === "number" ? r.result : 0);
+      r.onerror = () => resolve(0);
+    });
+  } catch {
+    return 0;
+  }
+}
+async function setBadgeCount(n) {
+  try {
+    const db = await badgeDb();
+    db.transaction("kv", "readwrite").objectStore("kv").put(n, "count");
+  } catch {
+    /* ignore */
+  }
+}
+async function applyBadge(n) {
+  await setBadgeCount(n);
+  if (self.navigator && "setAppBadge" in self.navigator) {
+    try {
+      if (n > 0) await self.navigator.setAppBadge(n);
+      else await self.navigator.clearAppBadge();
+    } catch {
+      /* unsupported / not installed — ignore */
+    }
+  }
+}
 
 self.addEventListener("push", (event) => {
   let data = {};
@@ -30,7 +73,23 @@ self.addEventListener("push", (event) => {
     data: { url: data.url || "/timeline", type: data.type || null },
   };
 
-  event.waitUntil(self.registration.showNotification(title, options));
+  event.waitUntil(
+    (async () => {
+      await self.registration.showNotification(title, options);
+      // Bump the app-icon badge. If the server sent an authoritative count use it,
+      // otherwise increment what we have (the open app corrects it on next sync).
+      const next = typeof data.count === "number" ? data.count : (await getBadgeCount()) + 1;
+      await applyBadge(next);
+    })()
+  );
+});
+
+// The open app posts the true unread count here so the Dock badge stays accurate.
+self.addEventListener("message", (event) => {
+  const msg = event.data;
+  if (msg && msg.type === "setBadge") {
+    event.waitUntil(applyBadge(Math.max(0, msg.count | 0)));
+  }
 });
 
 self.addEventListener("notificationclick", (event) => {

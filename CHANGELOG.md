@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.2 (2026-06-14)
+
+### Added
+- **App-icon notification badge.** The installed app (macOS Dock, or home screen elsewhere) now shows a number badge for unread notifications via the Web Badging API. The service worker sets/increments it when a push arrives — even while the app is closed (persisted in IndexedDB so it survives the worker being torn down) — and the open app keeps it synced to the true unread count, clearing it on "Mark all read". No-ops where the Badging API isn't supported. (`public/sw.js`, `src/components/layout/NotificationBell.tsx`)
+
 ## 0.2.1 (2026-06-14)
 
 ### Added
