@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.0 (2026-06-15)
+
+### Added
+- **One-click translate on each post.** A translate icon (next to share, bottom-right of each feed card) opens **Kagi Translate** with the post's text already filled in (target English, source auto-detected) — no more selecting text and right-clicking. Long posts translate the original page instead so nothing is truncated. (Kagi Translate is a paid Kagi feature; non-subscribers will hit Kagi's sign-in gate.) (`src/components/fedi/TranslateButton.tsx`, `src/app/timeline/TimelineClient.tsx`)
+
 ## 0.7.0 (2026-06-15)
 
 ### Fixed

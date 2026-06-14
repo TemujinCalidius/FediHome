@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { LightboxGallery } from "@/components/ui/Lightbox";
 import EditReplyForm from "@/components/fedi/EditReplyForm";
 import ShareButton from "@/components/fedi/ShareButton";
+import TranslateButton from "@/components/fedi/TranslateButton";
 
 function PostMedia({ urls, types, maxH }: { urls: string[]; types: string[]; maxH: string }) {
   const images = urls.map((url, i) => ({ url, type: types[i], i })).filter((m) => m.type !== "video");
@@ -554,11 +555,15 @@ function PostCard({
             {countsLoading ? "Loading interactions…" : "💬 🔁 ❤  Tap to load"}
           </button>
         )}
-        {/* Share / copy link to the original post — far bottom-right */}
+        {/* Translate + Share — far bottom-right */}
+        <TranslateButton
+          html={post.contentHtml || post.content}
+          sourceUrl={postSourceUrl(post)}
+          className="ml-auto"
+        />
         <ShareButton
           url={postSourceUrl(post)}
           title={post.displayName || `@${post.username}@${post.domain}`}
-          className="ml-auto"
         />
       </div>
     </div>
