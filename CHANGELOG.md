@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.1 (2026-06-15)
+
+### Added
+- **"Read article / Read more →" cue on post cards.** Article cards showed only the excerpt with no sign there was more to read. Cards now show a "Read article →" link for articles (and "Read more →" for posts with an excerpt or truncated body), so it's clear the whole card opens the full post. (`src/components/blog/PostCard.tsx`)
+
 ## 0.8.0 (2026-06-15)
 
 ### Added

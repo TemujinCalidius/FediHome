@@ -58,6 +58,10 @@ export default function PostCard({
   const displayText = excerpt || plainText.slice(0, 280);
   const hasImage = coverImage || (photos && photos.length > 0);
   const imageUrl = coverImage || photos?.[0];
+  // Show a "read more" cue when the card only shows part of the post — always for
+  // articles (the card shows their summary), or when a note was truncated.
+  const isArticle = category === "article";
+  const hasMore = isArticle || !!excerpt || plainText.length > 280;
 
   return (
     <Link href={`/post/${slug}`} className="block">
@@ -98,6 +102,15 @@ export default function PostCard({
             __html: linkHashtagsHtml(displayText) + (content.length > 280 && !excerpt ? "..." : ""),
           }}
         />
+
+        {/* Read-more cue — the whole card is already a link; this just signals
+            there's more behind the summary (esp. for articles). */}
+        {hasMore && (
+          <span className="inline-flex items-center gap-1 mt-3 text-sm font-medium text-accent-400 group-hover:gap-2 transition-all">
+            {isArticle ? "Read article" : "Read more"}
+            <span aria-hidden="true">→</span>
+          </span>
+        )}
 
         {/* Fedi interactions */}
         {(totalLikes > 0 || totalBoosts > 0) && (
