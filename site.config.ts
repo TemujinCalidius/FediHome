@@ -28,6 +28,18 @@ export const siteConfig = {
   fediAddress: `@${fediHandle}@${fediDomain}`,
   actorSummary: process.env.ACTOR_SUMMARY || "A personal blog on the Fediverse, powered by FediHome.",
 
+  // Public landing / showcase mode.
+  // When LANDING_MODE=true, the homepage becomes a project-style landing page
+  // (hero + feature highlights + CTAs) instead of the personal blog intro.
+  // Off by default, so existing personal sites are completely unaffected.
+  landingMode: process.env.LANDING_MODE === "true",
+  landingHeadline:
+    process.env.LANDING_HEADLINE || "Your home on the open social web",
+  landingSubhead:
+    process.env.LANDING_SUBHEAD ||
+    "FediHome is a self-hosted personal site that speaks ActivityPub — your blog, photos, videos and a live Fediverse feed, all owned by you and federated with Mastodon and the wider network.",
+  repoUrl: process.env.REPO_URL || "https://github.com/TemujinCalidius/fedihome",
+
   // Assets
   avatarPath: "/images/avatar.png",
   bannerPath: "/images/banner.webp",
