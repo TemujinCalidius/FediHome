@@ -9,6 +9,34 @@ import { siteConfig } from "@/../site.config";
 
 const POSTS_PER_PAGE = 10;
 
+// Feature highlights shown on the landing page (LANDING_MODE=true).
+const LANDING_FEATURES = [
+  {
+    title: "Own your content",
+    body: "Your posts, photos, videos and audio live on your own domain — not on a platform that can change the rules.",
+  },
+  {
+    title: "Federated by default",
+    body: "FediHome speaks ActivityPub, so anyone on Mastodon and the wider Fediverse can follow, reply and boost.",
+  },
+  {
+    title: "A real feed",
+    body: "Follow people across the Fediverse and read them in a timeline that lives on your own site.",
+  },
+  {
+    title: "Blog + media built in",
+    body: "Articles, journal notes, a photography gallery, and video and audio sections — all first-class.",
+  },
+  {
+    title: "Self-hosted & open source",
+    body: "MIT-licensed and made to run on your own box. Updates are a single command and never touch your data.",
+  },
+  {
+    title: "IndieWeb friendly",
+    body: "Micropub publishing, RSS, WebFinger and PWA support work out of the box.",
+  },
+];
+
 export default async function HomePage({
   searchParams,
 }: {
@@ -48,8 +76,53 @@ export default async function HomePage({
       )}
 
       <div className="max-w-3xl mx-auto px-6 py-12 md:py-16">
-      {/* Intro — only on page 1 */}
-      {page === 1 && (
+      {/* Intro — only on page 1.
+          LANDING_MODE swaps the personal intro for a project-style landing
+          (hero + feature highlights + CTAs). Off by default. */}
+      {page === 1 && siteConfig.landingMode && (
+        <section className="mb-16">
+          <h1 className="font-display text-4xl md:text-5xl font-bold text-white leading-tight">
+            {siteConfig.landingHeadline}
+          </h1>
+          <p className="text-lg text-gray-400 leading-relaxed max-w-2xl mt-4">
+            {siteConfig.landingSubhead}
+          </p>
+          <div className="flex flex-wrap gap-3 mt-6">
+            <a
+              href={siteConfig.repoUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-outlined text-xs"
+            >
+              View on GitHub
+            </a>
+            <Link href="/about" className="btn-outlined text-xs">
+              About FediHome
+            </Link>
+          </div>
+          <p className="text-gray-500 mt-4 text-sm">
+            Follow{" "}
+            <span className="text-accent-400">{siteConfig.fediAddress}</span> on
+            the Fediverse.
+          </p>
+
+          <div className="grid gap-4 sm:grid-cols-2 mt-12">
+            {LANDING_FEATURES.map((feature) => (
+              <div key={feature.title} className="glass-card p-5">
+                <h3 className="font-display text-base font-semibold text-white">
+                  {feature.title}
+                </h3>
+                <p className="text-sm text-gray-400 leading-relaxed mt-2">
+                  {feature.body}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Personal intro — the default homepage when LANDING_MODE is off */}
+      {page === 1 && !siteConfig.landingMode && (
         <section className="mb-16">
           <div className="flex items-center gap-4 mb-4">
             <Image
