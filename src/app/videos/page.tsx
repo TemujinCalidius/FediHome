@@ -4,10 +4,11 @@ import Link from "next/link";
 import Image from "next/image";
 import { prisma } from "@/lib/db";
 import HeroSlider, { type HeroSlide } from "@/components/ui/HeroSlider";
+import { siteConfig } from "@/../site.config";
 
 export const metadata = {
   title: "Videos",
-  description: "Videos by Samuel Lison — photo walks, lore, tutorials.",
+  description: `Videos by ${siteConfig.authorName} — photo walks, lore, tutorials.`,
 };
 
 export default async function VideosPage() {

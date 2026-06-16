@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { siteConfig } from "@/../site.config";
 
 export const dynamic = "force-dynamic";
 
@@ -21,8 +22,9 @@ function formatDuration(sec: number | null): string {
 
 export async function GET() {
   const siteUrl = process.env.SITE_URL || "http://localhost:3000";
-  const podcastTitle = process.env.PODCAST_TITLE || "Samuel Lison — Audio";
-  const podcastAuthor = process.env.PODCAST_AUTHOR || "Samuel Lison";
+  const podcastTitle =
+    process.env.PODCAST_TITLE || `${siteConfig.authorName} — Audio`;
+  const podcastAuthor = process.env.PODCAST_AUTHOR || siteConfig.authorName;
   const podcastDescription = process.env.PODCAST_DESCRIPTION || "Audio recordings and field notes.";
   const podcastEmail = process.env.PODCAST_EMAIL || process.env.CONTACT_EMAIL || "noreply@example.com";
   const podcastImage = process.env.PODCAST_IMAGE || `${siteUrl}/icon.png`;

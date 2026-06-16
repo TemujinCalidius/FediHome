@@ -1,8 +1,12 @@
-import Image from "next/image";
 import { getSiteStats } from "@/lib/tinylytics";
+import { siteConfig } from "@/../site.config";
 
 export default async function Footer() {
   const stats = await getSiteStats();
+  const { webringUrl, webringLabel, badgeSrc, badgeHref, badgeAlt } =
+    siteConfig.footer;
+  const hasExtras = Boolean(badgeSrc || webringUrl);
+
   return (
     <footer className="mt-auto">
       <div className="divider" />
@@ -10,7 +14,7 @@ export default async function Footer() {
         <div className="flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="text-center md:text-left">
             <p className="text-sm text-gray-500">
-              &copy; {new Date().getFullYear()} Samuel Lison
+              &copy; {new Date().getFullYear()} {siteConfig.authorName}
             </p>
             <p className="text-xs text-gray-600 mt-1">
               Self-owned. Self-hosted. Fediverse-native.
@@ -23,27 +27,45 @@ export default async function Footer() {
             )}
           </div>
 
-          {/* Center: Small Web badge + Webring */}
-          <div className="flex items-center gap-4">
-            <img
-              src="https://camo.githubusercontent.com/05046a28621d58344a06ba01b0c99bd44538f39c5a01e4e3b769f57de2f3f61c/68747470733a2f2f6b616769666565646261636b2e6f72672f6173736574732f66696c65732f323032352d31312d32372f313736343235303937332d3730383336392d38387833312d322e676966"
-              alt="Small Web"
-              width={100}
-              height={32}
-              className="opacity-70 hover:opacity-100 transition-opacity"
-            />
-            <a
-              href="https://links.babylondreams.de"
-              className="text-sm text-gray-400 hover:text-accent-400 transition-colors"
-            >
-              Webring: &#128760;&#128141;
-            </a>
-          </div>
+          {/* Center: optional badge + webring — only when configured */}
+          {hasExtras && (
+            <div className="flex items-center gap-4">
+              {badgeSrc &&
+                (badgeHref ? (
+                  <a
+                    href={badgeHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="opacity-70 hover:opacity-100 transition-opacity"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={badgeSrc} alt={badgeAlt} width={100} height={32} />
+                  </a>
+                ) : (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={badgeSrc}
+                    alt={badgeAlt}
+                    width={100}
+                    height={32}
+                    className="opacity-70"
+                  />
+                ))}
+              {webringUrl && (
+                <a
+                  href={webringUrl}
+                  className="text-sm text-gray-400 hover:text-accent-400 transition-colors"
+                >
+                  {webringLabel}
+                </a>
+              )}
+            </div>
+          )}
 
-          {/* Right: Links */}
+          {/* Right: handle + links */}
           <div className="flex items-center gap-5 text-gray-500">
             <span className="text-xs text-gray-600 font-mono">
-              @samuel@samuellison.com
+              {siteConfig.fediAddress}
             </span>
 
             <a
@@ -56,15 +78,17 @@ export default async function Footer() {
               </svg>
             </a>
 
-            <a
-              href="mailto:samuel@samuellison.com"
-              className="hover:text-accent-400 transition-colors"
-              title="Email"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
-              </svg>
-            </a>
+            {siteConfig.contactEmail && (
+              <a
+                href={`mailto:${siteConfig.contactEmail}`}
+                className="hover:text-accent-400 transition-colors"
+                title="Email"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+                </svg>
+              </a>
+            )}
           </div>
         </div>
       </div>

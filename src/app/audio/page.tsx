@@ -3,10 +3,11 @@ export const dynamic = "force-dynamic";
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import HeroSlider, { type HeroSlide } from "@/components/ui/HeroSlider";
+import { siteConfig } from "@/../site.config";
 
 export const metadata = {
   title: "Audio",
-  description: "Audio recordings by Samuel Lison.",
+  description: `Audio recordings by ${siteConfig.authorName}.`,
 };
 
 function formatDuration(sec: number | null): string {

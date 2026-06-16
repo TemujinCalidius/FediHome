@@ -56,6 +56,17 @@ export const siteConfig = {
     showAudio: process.env.NAV_SHOW_AUDIO !== "false",
     showAbout: process.env.NAV_SHOW_ABOUT !== "false",
   },
+
+  // Footer extras — all optional. The webring link and badge only render when
+  // configured, so the default footer carries no personal links. Copyright,
+  // handle and email come from authorName / fediAddress / contactEmail above.
+  footer: {
+    webringUrl: process.env.WEBRING_URL || "",
+    webringLabel: process.env.WEBRING_LABEL || "Webring",
+    badgeSrc: process.env.FOOTER_BADGE_SRC || "",
+    badgeHref: process.env.FOOTER_BADGE_HREF || "",
+    badgeAlt: process.env.FOOTER_BADGE_ALT || "Badge",
+  },
 } as const;
 
 export type SiteConfig = typeof siteConfig;
