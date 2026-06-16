@@ -747,6 +747,7 @@ function ThreadView({
                         Reply
                       </button>
                     )}
+                    <ThreadActions post={post} />
                     <ThreadCountsStrip
                       postId={post.id}
                       fallback={{
@@ -801,6 +802,47 @@ function ThreadCountsStrip({
     >
       {live?.loading ? "…" : "Load counts"}
     </button>
+  );
+}
+
+// Like / boost a single post within the thread view. State is seeded from the
+// post (likedByMe/boostedByMe) so it survives reopening the thread.
+function ThreadActions({ post }: { post: FediPostItem }) {
+  const [liked, setLiked] = useState(post.likedByMe ?? false);
+  const [boosted, setBoosted] = useState(post.boostedByMe ?? false);
+  const inbox = `https://${post.domain}/users/${post.username}/inbox`;
+
+  const react = (action: "like" | "boost") => {
+    fetch("/api/admin", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, postApId: post.apId, targetInbox: inbox }),
+    }).catch(() => {});
+  };
+
+  return (
+    <div className="flex items-center gap-3">
+      <button
+        onClick={() => { if (!liked) { setLiked(true); react("like"); } }}
+        title="Like"
+        aria-label="Like"
+        className={`transition-colors ${liked ? "text-red-400" : "text-gray-500 hover:text-red-400"}`}
+      >
+        <svg className="w-4 h-4" fill={liked ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" />
+        </svg>
+      </button>
+      <button
+        onClick={() => { if (!boosted) { setBoosted(true); react("boost"); } }}
+        title="Boost"
+        aria-label="Boost"
+        className={`transition-colors ${boosted ? "text-green-400" : "text-gray-500 hover:text-green-400"}`}
+      >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 12c0-1.232-.046-2.453-.138-3.662a4.006 4.006 0 00-3.7-3.7 48.678 48.678 0 00-7.324 0 4.006 4.006 0 00-3.7 3.7c-.017.22-.032.441-.046.662M19.5 12l3-3m-3 3l-3-3m-12 3c0 1.232.046 2.453.138 3.662a4.006 4.006 0 003.7 3.7 48.656 48.656 0 007.324 0 4.006 4.006 0 003.7-3.7c.017-.22.032-.441.046-.662M4.5 12l3 3m-3-3l-3 3" />
+        </svg>
+      </button>
+    </div>
   );
 }
 

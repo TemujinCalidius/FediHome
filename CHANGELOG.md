@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.0 (2026-06-16)
+
+### Added
+- **"View thread" now loads everyone's replies, not just ones you'd already seen.** It pulls the full conversation from the origin instance's Mastodon-API context endpoint (`/api/v1/statuses/:id/context` → ancestors + descendants), ingesting each reply locally (sanitised) so the whole thread renders — even replies from accounts you don't follow. Falls back to the signed-AP ancestor walk + local replies for non-Mastodon servers. Capped at 200 posts per view. (`src/app/api/conversation/route.ts`)
+- **Like / boost a reply from within the thread view.** Each post in the conversation now has like and boost buttons (state seeded from the post so it persists). (`src/app/timeline/TimelineClient.tsx`)
+
 ## 0.8.1 (2026-06-15)
 
 ### Added

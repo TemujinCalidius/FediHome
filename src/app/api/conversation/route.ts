@@ -7,6 +7,10 @@ import { sanitizeHtml } from "@/lib/sanitize";
 import { assertPublicHost } from "@/lib/url-guard";
 
 const MAX_DEPTH = 20;
+const MAX_CONTEXT = 200; // cap on remote thread posts ingested per view
+const FETCH_TIMEOUT_MS = 8000;
+
+type FediPostRow = Awaited<ReturnType<typeof prisma.fediPost.findUnique>>;
 
 export async function GET(req: NextRequest) {
   // Admin-only
@@ -24,62 +28,49 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "post not found" }, { status: 404 });
   }
 
-  // Walk up the reply chain to find the root
-  const ancestors: typeof startPost[] = [];
-  let currentApId = startPost.inReplyTo;
-  let depth = 0;
+  // Boost rows carry a synthetic id — thread the ORIGINAL post.
+  const sourceApId = startPost.apId.startsWith("boost:")
+    ? startPost.apId.match(/^boost:.*:(https?:\/\/.*)$/)?.[1] || startPost.apId
+    : startPost.apId;
 
-  while (currentApId && depth < MAX_DEPTH) {
-    // Check local DB first
-    let parent = await prisma.fediPost.findUnique({
-      where: { apId: currentApId },
+  // PREFERRED: pull the whole conversation (everyone's replies) from the origin
+  // instance's Mastodon-API context endpoint, ingesting each post locally.
+  const ctx = await fetchThreadViaMastodon(sourceApId);
+
+  let ordered: NonNullable<FediPostRow>[];
+  if (ctx) {
+    ordered = dedupe([...ctx.ancestors, startPost, ...ctx.descendants]);
+  } else {
+    // FALLBACK (non-Mastodon servers): signed-AP ancestor walk + local replies.
+    const ancestors: NonNullable<FediPostRow>[] = [];
+    let currentApId = startPost.inReplyTo;
+    let depth = 0;
+    while (currentApId && depth < MAX_DEPTH) {
+      let parent: FediPostRow = await prisma.fediPost.findUnique({ where: { apId: currentApId } });
+      if (!parent) parent = await fetchRemoteNote(currentApId);
+      if (!parent) break;
+      ancestors.unshift(parent);
+      currentApId = parent.inReplyTo;
+      depth++;
+    }
+
+    const threadApIds = [...ancestors.map((p) => p.apId), startPost.apId];
+    const replies = await prisma.fediPost.findMany({
+      where: { inReplyTo: { in: threadApIds } },
+      orderBy: { publishedAt: "asc" },
     });
-
-    if (!parent) {
-      // Try fetching from remote
-      parent = await fetchRemoteNote(currentApId);
-    }
-
-    if (!parent) break;
-
-    ancestors.unshift(parent); // prepend — oldest first
-    currentApId = parent.inReplyTo;
-    depth++;
+    const replyApIds = replies.map((r) => r.apId);
+    const deepReplies =
+      replyApIds.length > 0
+        ? await prisma.fediPost.findMany({
+            where: { inReplyTo: { in: replyApIds } },
+            orderBy: { publishedAt: "asc" },
+          })
+        : [];
+    ordered = dedupe([...ancestors, startPost, ...replies, ...deepReplies]);
   }
 
-  // Find all local replies to posts in this thread
-  const threadApIds = [
-    ...ancestors.map((p) => p.apId),
-    startPost.apId,
-  ];
-
-  const replies = await prisma.fediPost.findMany({
-    where: { inReplyTo: { in: threadApIds } },
-    orderBy: { publishedAt: "asc" },
-  });
-
-  // Also find replies to those replies (one more level)
-  const replyApIds = replies.map((r) => r.apId);
-  const deepReplies = replyApIds.length > 0
-    ? await prisma.fediPost.findMany({
-        where: { inReplyTo: { in: replyApIds } },
-        orderBy: { publishedAt: "asc" },
-      })
-    : [];
-
-  // Build ordered thread: ancestors → startPost → replies → deepReplies
-  // Deduplicate by apId
-  const seen = new Set<string>();
-  const thread = [];
-  for (const post of [...ancestors, startPost, ...replies, ...deepReplies]) {
-    if (!seen.has(post.apId)) {
-      seen.add(post.apId);
-      thread.push(post);
-    }
-  }
-
-  // Serialize dates
-  const serialized = thread.map((p) => ({
+  const serialized = ordered.map((p) => ({
     ...p,
     publishedAt: p.publishedAt.toISOString(),
     createdAt: p.createdAt.toISOString(),
@@ -88,8 +79,121 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ thread: serialized });
 }
 
+function dedupe(posts: NonNullable<FediPostRow>[]): NonNullable<FediPostRow>[] {
+  const seen = new Set<string>();
+  const out: NonNullable<FediPostRow>[] = [];
+  for (const p of posts) {
+    if (p && !seen.has(p.apId)) {
+      seen.add(p.apId);
+      out.push(p);
+    }
+  }
+  return out;
+}
+
 /**
- * Fetch a remote AP object and store it locally as a FediPost.
+ * Fetch a full conversation from the origin instance's Mastodon-API context
+ * endpoint (`/api/v1/statuses/:id/context` → { ancestors, descendants }) and
+ * ingest every post as a FediPost so the thread shows EVERYONE's replies, not
+ * just ones we already had locally. Public endpoint (no auth). Returns null when
+ * it isn't a Mastodon-API server / status, so the caller can fall back.
+ */
+async function fetchThreadViaMastodon(
+  apId: string
+): Promise<{ ancestors: NonNullable<FediPostRow>[]; descendants: NonNullable<FediPostRow>[] } | null> {
+  let u: URL;
+  try {
+    u = new URL(apId);
+  } catch {
+    return null;
+  }
+  const id = u.pathname.split("/").filter(Boolean).pop();
+  if (!id) return null;
+  const ctxUrl = `${u.origin}/api/v1/statuses/${encodeURIComponent(id)}/context`;
+  if (!(await assertPublicHost(ctxUrl))) return null;
+
+  let ctx: { ancestors?: unknown; descendants?: unknown };
+  try {
+    const res = await fetch(ctxUrl, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    if (!res.ok) return null;
+    ctx = await res.json();
+  } catch {
+    return null;
+  }
+  const anc = Array.isArray(ctx.ancestors) ? (ctx.ancestors as MastoStatus[]) : null;
+  const desc = Array.isArray(ctx.descendants) ? (ctx.descendants as MastoStatus[]) : null;
+  if (!anc && !desc) return null;
+
+  // Map each status's local id → AP uri so we can thread replies correctly.
+  const all = [...(anc || []), ...(desc || [])].slice(0, MAX_CONTEXT);
+  const idToUri = new Map<string, string>();
+  for (const s of all) if (s?.id && s?.uri) idToUri.set(String(s.id), s.uri);
+  // The queried status isn't in its own context — map it so direct replies link.
+  idToUri.set(String(id), apId);
+
+  const ingest = async (s: MastoStatus): Promise<NonNullable<FediPostRow> | null> => {
+    if (!s?.uri || !s.account?.uri) return null;
+    const safe = sanitizeHtml(s.content || "");
+    const media = (s.media_attachments || []).filter((m) => m?.url);
+    const mediaUrls = media.map((m) => m.url!);
+    const mediaTypes = media.map((m) => (m.type === "image" ? "image" : "video"));
+    const inReplyTo = s.in_reply_to_id ? idToUri.get(String(s.in_reply_to_id)) || null : null;
+    let domain = "";
+    try {
+      domain = new URL(s.account.uri).hostname;
+    } catch {
+      domain = s.account.acct?.split("@")[1] || "";
+    }
+    try {
+      return await prisma.fediPost.upsert({
+        where: { apId: s.uri },
+        create: {
+          actorUri: s.account.uri,
+          apId: s.uri,
+          content: s.content || "",
+          contentHtml: safe,
+          mediaUrls,
+          mediaTypes,
+          inReplyTo,
+          conversationId: null,
+          username: s.account.username || "unknown",
+          domain,
+          displayName: s.account.display_name || null,
+          avatarUrl: s.account.avatar || null,
+          publishedAt: s.created_at ? new Date(s.created_at) : new Date(),
+        },
+        update: { contentHtml: safe, inReplyTo, avatarUrl: s.account.avatar || null },
+      });
+    } catch {
+      return null;
+    }
+  };
+
+  const ancestors = (await Promise.all((anc || []).slice(0, MAX_CONTEXT).map(ingest))).filter(
+    (p): p is NonNullable<FediPostRow> => !!p
+  );
+  const descendants = (await Promise.all((desc || []).slice(0, MAX_CONTEXT).map(ingest))).filter(
+    (p): p is NonNullable<FediPostRow> => !!p
+  );
+  return { ancestors, descendants };
+}
+
+interface MastoStatus {
+  id?: string;
+  uri?: string;
+  content?: string;
+  created_at?: string;
+  in_reply_to_id?: string | null;
+  media_attachments?: { type?: string; url?: string }[];
+  account?: { uri?: string; acct?: string; username?: string; display_name?: string; avatar?: string };
+}
+
+/**
+ * Fetch a single remote AP note (signed) and store it locally. Used for the
+ * non-Mastodon ancestor-walk fallback.
  */
 async function fetchRemoteNote(apId: string) {
   try {
