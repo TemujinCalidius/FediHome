@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
   const filePath = path.join(uploadDir, filename);
   await writeFile(filePath, buffer);
 
-  const siteUrl = process.env.SITE_URL || "https://samuellison.com";
+  const siteUrl = process.env.SITE_URL || "http://localhost:3000";
   const url = `${siteUrl}/uploads/${year}/${month}/${filename}`;
 
   return NextResponse.json({ url }, {
@@ -136,7 +136,7 @@ async function handleAudioUpload(file: File): Promise<NextResponse> {
   const filePath = path.join(audioDir, filename);
   await writeFile(filePath, buffer);
 
-  const siteUrl = process.env.SITE_URL || "https://samuellison.com";
+  const siteUrl = process.env.SITE_URL || "http://localhost:3000";
   const url = `${siteUrl}/uploads/audio/${year}/${month}/${filename}`;
 
   return NextResponse.json(

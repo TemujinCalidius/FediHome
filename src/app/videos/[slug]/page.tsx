@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { prisma } from "@/lib/db";
+import { siteConfig } from "@/../site.config";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +10,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const video = await prisma.video.findUnique({ where: { slug } });
   return {
     title: video?.title || "Video",
-    description: video?.description || "Video by Samuel Lison",
+    description: video?.description || `Video by ${siteConfig.authorName}`,
   };
 }
 

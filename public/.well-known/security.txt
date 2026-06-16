@@ -1,4 +1,6 @@
-Contact: mailto:samuel@familylison.com
-Expires: 2027-05-10T00:00:00.000Z
+# FediHome — security contact.
+# Operators: replace this with your own contact + canonical URL for your
+# deployment. By default it points to the FediHome project's advisories.
+Contact: https://github.com/TemujinCalidius/fedihome/security/advisories/new
+Expires: 2027-12-31T00:00:00.000Z
 Preferred-Languages: en
-Canonical: https://samuellison.com/.well-known/security.txt
