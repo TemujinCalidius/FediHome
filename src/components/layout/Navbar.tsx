@@ -50,7 +50,7 @@ export default async function Navbar() {
               <path d="M6.18 15.64a2.18 2.18 0 010 4.36 2.18 2.18 0 010-4.36M4 4.44A15.56 15.56 0 0119.56 20h-2.83A12.73 12.73 0 004 7.27V4.44m0 5.66a9.9 9.9 0 019.9 9.9h-2.83A7.07 7.07 0 004 12.93V10.1z" />
             </svg>
           </a>
-          <MobileMenu isAdmin={isAdmin} />
+          <MobileMenu isAdmin={isAdmin} links={navLinks} />
         </div>
       </div>
     </nav>
