@@ -45,12 +45,16 @@ export const siteConfig = {
   bannerPath: "/images/banner.webp",
   ogImagePath: "/images/og-image.webp",
 
-  // Navigation
+  // Navigation visibility. Each section shows unless its env var is "false",
+  // so existing sites keep every link. Lets a deployment hide sections it
+  // doesn't use (e.g. the demo) without editing code.
   nav: {
-    showJournal: true,
-    showArticles: true,
-    showPhotography: true,
-    showAbout: true,
+    showJournal: process.env.NAV_SHOW_JOURNAL !== "false",
+    showArticles: process.env.NAV_SHOW_ARTICLES !== "false",
+    showPhotography: process.env.NAV_SHOW_PHOTOGRAPHY !== "false",
+    showVideos: process.env.NAV_SHOW_VIDEOS !== "false",
+    showAudio: process.env.NAV_SHOW_AUDIO !== "false",
+    showAbout: process.env.NAV_SHOW_ABOUT !== "false",
   },
 } as const;
 

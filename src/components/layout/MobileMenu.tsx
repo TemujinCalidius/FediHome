@@ -3,9 +3,15 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { navLinks } from "@/lib/nav";
+import type { NavLink } from "@/lib/nav";
 
-export default function MobileMenu({ isAdmin }: { isAdmin: boolean }) {
+export default function MobileMenu({
+  isAdmin,
+  links,
+}: {
+  isAdmin: boolean;
+  links: NavLink[];
+}) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
 
@@ -39,7 +45,7 @@ export default function MobileMenu({ isAdmin }: { isAdmin: boolean }) {
           style={{ backgroundColor: "#0a0a0f" }}
         >
           <nav className="flex flex-col px-6 py-4 space-y-1">
-            {navLinks.map((link) => (
+            {links.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
