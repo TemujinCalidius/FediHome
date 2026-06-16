@@ -4,6 +4,22 @@ import { verifyOrigin } from "@/lib/auth";
 
 // Rate limit: 1 kudos per IP per path per hour
 const kudosLog = new Map<string, number>();
+const KUDOS_TTL = 3600_000; // 1 hour
+const KUDOS_MAX = 5_000;
+
+function evictKudosLog() {
+  const now = Date.now();
+  for (const [key, ts] of kudosLog) {
+    if (now - ts > KUDOS_TTL) kudosLog.delete(key);
+  }
+  // If still over cap after TTL eviction, drop oldest entries
+  if (kudosLog.size > KUDOS_MAX) {
+    const sorted = [...kudosLog.entries()].sort((a, b) => a[1] - b[1]);
+    for (const [key] of sorted.slice(0, kudosLog.size - KUDOS_MAX)) {
+      kudosLog.delete(key);
+    }
+  }
+}
 
 export async function GET(req: NextRequest) {
   const path = req.nextUrl.searchParams.get("path");
@@ -27,12 +43,13 @@ export async function POST(req: NextRequest) {
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
   const key = `${ip}:${path}`;
   const lastKudos = kudosLog.get(key);
-  if (lastKudos && Date.now() - lastKudos < 3600000) {
+  if (lastKudos && Date.now() - lastKudos < KUDOS_TTL) {
     return NextResponse.json({ error: "already sent" }, { status: 429 });
   }
 
   const success = await createKudos(path);
   if (success) {
+    evictKudosLog();
     kudosLog.set(key, Date.now());
     return NextResponse.json({ success: true });
   }
