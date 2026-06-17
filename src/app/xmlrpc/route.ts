@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { hashToken } from "@/lib/auth";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { marked } from "marked";
+import { extractParam, extractStruct, between } from "@/lib/xmlrpc";
 
 /**
  * XML-RPC endpoint (MetaWeblog API) for compatibility with micro.blog app
@@ -18,6 +19,9 @@ import { marked } from "marked";
 
 const RATE_MAX_ATTEMPTS = 10;
 const RATE_WINDOW_MS = 60_000;
+// XML-RPC requests are small (text posts at most — no media upload is wired up).
+// Cap the body so parsing work is bounded regardless of input.
+const MAX_REQUEST_CHARS = 1_000_000;
 const rateBuckets = new Map<string, { count: number; resetAt: number }>();
 
 function getRateLimitKey(req: NextRequest): string {
@@ -74,30 +78,6 @@ function fault(code: number, message: string): string {
 </struct></value></fault></methodResponse>`;
 }
 
-function extractParam(xml: string, index: number): string {
-  const params = xml.match(/<param>\s*<value>([\s\S]*?)<\/value>\s*<\/param>/g) || [];
-  if (!params[index]) return "";
-  const val = params[index];
-  const str = val.match(/<string>([\s\S]*?)<\/string>/);
-  if (str) return str[1];
-  const int = val.match(/<int>(\d+)<\/int>/);
-  if (int) return int[1];
-  return val.replace(/<[^>]+>/g, "").trim();
-}
-
-function extractStruct(xml: string): Record<string, string> {
-  const result: Record<string, string> = {};
-  const members = xml.match(/<member>([\s\S]*?)<\/member>/g) || [];
-  for (const member of members) {
-    const name = member.match(/<name>([\s\S]*?)<\/name>/)?.[1];
-    const value = member.match(/<string>([\s\S]*?)<\/string>/)?.[1] ||
-                  member.match(/<int>(\d+)<\/int>/)?.[1] ||
-                  member.match(/<boolean>(\d)<\/boolean>/)?.[1] || "";
-    if (name) result[name] = value;
-  }
-  return result;
-}
-
 async function verifyAuth(password: string): Promise<boolean> {
   if (!password) return false;
   const hash = hashToken(password);
@@ -115,8 +95,10 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.text();
-  const methodMatch = body.match(/<methodName>([\s\S]*?)<\/methodName>/);
-  const method = methodMatch?.[1]?.trim() || "";
+  if (body.length > MAX_REQUEST_CHARS) {
+    return xmlResponse(fault(400, "request too large"), 413);
+  }
+  const method = (between(body, "methodName") ?? "").trim();
 
   if (!["system.listMethods", "mt.supportedMethods"].includes(method)) {
     const password = extractParam(body, 2);

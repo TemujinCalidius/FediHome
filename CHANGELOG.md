@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Security
+- **Hardened the XML-RPC (MetaWeblog) endpoint against ReDoS.** The hand-rolled regex value extraction backtracked polynomially on hostile input; it's been rewritten as a linear `indexOf` scan in a new, unit-tested `src/lib/xmlrpc.ts` module, and the endpoint now rejects oversized request bodies. Behaviour for real blogging clients is unchanged. Resolves the CodeQL `js/polynomial-redos` findings and the `js/incomplete-multi-character-sanitization` tag-strip in that file.
+
 ### Fixed
 - **The Docker image now builds and runs under Prisma 7.** Enabled Next.js `output: "standalone"` (the Dockerfile expected it but it was never configured, so `docker build` failed at the standalone copy); bundled the Prisma CLI's runtime deps (`@prisma/engines`, `@prisma/config`) into the runner so the startup `prisma db push` resolves them; and added a `.dockerignore` so host binaries can't leak into the Linux image. The `next start` / pm2 path is unaffected. (#40)
 
