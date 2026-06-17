@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Security
+- **Robust plain-text snippets + an HTML-entity decode fix.** Notification and reply-preview snippets are now built by a shared `htmlToText` helper (`src/lib/html-text.ts`) that strips tags in a single linear pass, instead of one-shot regexes that nested or malformed tags could slip through; and `decodeHtmlEntities` (link-preview metadata) now decodes `&amp;` last, so a literal like `&amp;lt;` is no longer doubly-unescaped. These are plain-text sinks (so not XSS), but the old patterns were incorrect. Resolves the CodeQL `js/incomplete-multi-character-sanitization` and `js/double-escaping` findings in those paths.
+
 ### Fixed
 - **The Docker image now builds and runs under Prisma 7.** Enabled Next.js `output: "standalone"` (the Dockerfile expected it but it was never configured, so `docker build` failed at the standalone copy); bundled the Prisma CLI's runtime deps (`@prisma/engines`, `@prisma/config`) into the runner so the startup `prisma db push` resolves them; and added a `.dockerignore` so host binaries can't leak into the Linux image. The `next start` / pm2 path is unaffected. (#40)
 

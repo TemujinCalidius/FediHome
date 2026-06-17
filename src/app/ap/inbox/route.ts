@@ -5,6 +5,7 @@ import { processAttachments, fetchLinkEmbed } from "@/lib/fedi-media";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { assertPublicHost } from "@/lib/url-guard";
 import { sendPushToOwner } from "@/lib/push";
+import { htmlToText } from "@/lib/html-text";
 
 const siteUrl = process.env.SITE_URL || "http://localhost:3000";
 const ACTOR_FETCH_TIMEOUT_MS = 8000;
@@ -24,8 +25,7 @@ function replyPushBody(
   info: { displayName?: string | null; username: string; domain: string },
   html: string
 ): string {
-  const text = html.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
-  const snippet = text.length > 120 ? text.slice(0, 117) + "…" : text;
+  const snippet = htmlToText(html, 120);
   return snippet ? `${actorLabel(info)}: ${snippet}` : `${actorLabel(info)} replied to you`;
 }
 
