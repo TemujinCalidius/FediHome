@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- **Inbound federation now ingests `Create(Article)`, not just `Note`.** Titled posts (e.g. federated blog posts) from followed accounts were silently dropped on receipt and never reached the feed; the Article's title is now preserved as a heading. (#43)
+- **`/ap/actor` now content-negotiates.** Browsers are redirected to the profile instead of receiving raw ActivityPub JSON; ActivityPub clients still get the actor JSON. (#44)
+
 ## 1.0.0 (2026-06-17)
 
 **First stable release.** FediHome is a self-hosted, single-user Fediverse home — blog, photos, video, audio, and a live following feed, all on your own domain via ActivityPub. 1.0 marks the project production-ready: a test suite + CI gate every change, the security-audit findings are resolved, the dependency stack is current (Prisma 7, Next 16, Fedify 2), and a public demo runs the exact code at [fedihome.social](https://fedihome.social).

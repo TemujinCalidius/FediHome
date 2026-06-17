@@ -83,6 +83,8 @@ Thanks for your interest in contributing to FediHome! This guide will help you g
    - How to test it
    - Screenshots if there are UI changes
 
+**Changelog (required).** Every pull request must add an entry to [`CHANGELOG.md`](CHANGELOG.md) under the `## Unreleased` heading (create it if it's missing), grouped under `### Added` / `### Changed` / `### Fixed` / `### Security`. CI enforces this on pull requests. If a change genuinely warrants no entry (e.g. a CI-config tweak or a typo fix), a maintainer can apply the `skip-changelog` label to bypass the check. At release time, `## Unreleased` is renamed to the new version.
+
 ## Issue Templates
 
 ### Bug Report
