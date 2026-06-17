@@ -57,23 +57,38 @@ Thanks for your interest in contributing to FediHome! This guide will help you g
 - Prefer named exports for components and utility functions.
 - Keep files focused: one component per file, one API route per file.
 
+## Branching model
+
+FediHome uses two long-lived branches:
+
+- **`dev`** — the active development / integration branch. **All code changes land here.**
+- **`main`** — the stable, released branch. It only moves when maintainers cut a release (by merging `dev` → `main`) or for **documentation-only** changes.
+
+**In short: code → `dev`, docs → `main`.**
+
+- **Code work** (anything under `src/`, `prisma/`, `scripts/`, build config, dependencies): fork, branch from **`dev`**, and open your PR against **`dev`**.
+- **Documentation only** (README, `docs/`, `CONTRIBUTING.md`, code comments, typos): you may branch from **`main`** and PR against **`main`** — apply the `skip-changelog` label.
+
+A code PR opened against `main` will be asked to retarget to `dev`. Releases are cut by maintainers: `dev` is merged into `main` (a **merge commit**, not a squash, so the branches stay in sync), `## Unreleased` is promoted to the new version, and `main` is tagged + a GitHub Release is published.
+
 ## Making a Pull Request
 
 1. **Fork** the repository on GitHub.
-2. **Create a branch** from `main`:
+2. **Create a branch from the right base** — `dev` for code, `main` for docs-only:
    ```bash
-   git checkout -b my-feature
+   git checkout -b my-feature dev      # code work
+   # git checkout -b my-docs-fix main  # documentation only
    ```
 3. **Implement your change.** Write clear, typed code. Add comments where the "why" is not obvious.
-4. **Test locally.** Make sure the dev server starts, the feature works, and existing functionality is not broken. Run the linter:
+4. **Test locally.** Make sure the dev server starts and existing functionality isn't broken, then run the same checks CI does:
    ```bash
-   npm run lint
+   npx tsc --noEmit && npm test && npm run build
    ```
 5. **Commit** with a clear message describing what the change does and why:
    ```bash
    git commit -m "Add photo category filtering to gallery page"
    ```
-6. **Push** and open a pull request against `main`:
+6. **Push** and open a pull request against **`dev`** (or `main` for documentation-only changes):
    ```bash
    git push origin my-feature
    ```
@@ -83,7 +98,7 @@ Thanks for your interest in contributing to FediHome! This guide will help you g
    - How to test it
    - Screenshots if there are UI changes
 
-**Changelog (required).** Every pull request must add an entry to [`CHANGELOG.md`](CHANGELOG.md) under the `## Unreleased` heading (create it if it's missing), grouped under `### Added` / `### Changed` / `### Fixed` / `### Security`. CI enforces this on pull requests. If a change genuinely warrants no entry (e.g. a CI-config tweak or a typo fix), a maintainer can apply the `skip-changelog` label to bypass the check. At release time, `## Unreleased` is renamed to the new version.
+**Changelog (required).** Every pull request must add an entry to [`CHANGELOG.md`](CHANGELOG.md) under the `## Unreleased` heading (create it if it's missing), grouped under `### Added` / `### Changed` / `### Fixed` / `### Security`. CI enforces this on pull requests. If a change genuinely warrants no entry (e.g. a documentation-only PR, a CI-config tweak, or a typo fix), apply the `skip-changelog` label to bypass the check. At release time, `## Unreleased` is renamed to the new version.
 
 ## Issue Templates
 
