@@ -1,3 +1,4 @@
+// @ts-nocheck — one-off maintenance script (run via tsx, not type-checked)
 /**
  * Fix broken FediFollowing records:
  * 1. Remove duplicates (keep the one with avatar, or the newer one)
@@ -8,10 +9,13 @@
  *
  * Usage: DATABASE_URL="..." node scripts/fix-follows.js
  */
-const { PrismaClient } = require("@prisma/client");
-const crypto = require("crypto");
+import { PrismaClient } from "../src/generated/prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
+import * as crypto from "node:crypto";
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({
+  adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
+});
 const SITE_URL = process.env.SITE_URL || "http://localhost:3000";
 
 async function signedFetch(url, method, body) {

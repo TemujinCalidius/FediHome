@@ -34,3 +34,6 @@ yarn-error.log*
 
 # Prisma
 prisma/migrations/*/migration_lock.toml
+
+# Prisma 7 generated client (TypeScript source — regenerated on install via postinstall)
+src/generated/

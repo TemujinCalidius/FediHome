@@ -1,6 +1,11 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
+# Prisma 7's postinstall runs `prisma generate`, which needs the schema + config,
+# so copy those before `npm ci`. The client is generated into src/generated and
+# bundled into the standalone build.
 COPY package*.json ./
+COPY prisma ./prisma
+COPY prisma.config.ts ./
 RUN npm ci
 COPY . .
 RUN npx prisma generate
@@ -13,9 +18,11 @@ COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/prisma ./prisma
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-# The Prisma CLI is needed at runtime to run `db push` against the live DB on
-# first boot and after schema changes. Keep production deps only.
+# Prisma 7: the generated client is bundled into .next/standalone (there is no
+# node_modules/.prisma anymore). Runtime `db push` needs the schema, the CLI,
+# the config file, and dotenv (which prisma.config.ts imports).
+COPY --from=builder /app/prisma.config.ts ./
+COPY --from=builder /app/node_modules/dotenv ./node_modules/dotenv
 COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
 COPY --from=builder /app/node_modules/.bin/prisma ./node_modules/.bin/prisma
 EXPOSE 3000

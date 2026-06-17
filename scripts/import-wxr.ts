@@ -1,6 +1,11 @@
-const fs = require('fs');
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+// @ts-nocheck — one-off maintenance script (run via tsx, not type-checked)
+import * as fs from "node:fs";
+import { PrismaClient } from "../src/generated/prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
+
+const prisma = new PrismaClient({
+  adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
+});
 const SITE_URL = process.env.SITE_URL || 'http://localhost:3000';
 
 const xml = fs.readFileSync('export.xml', 'utf-8');
