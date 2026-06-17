@@ -40,6 +40,12 @@ export const siteConfig = {
     "FediHome is a self-hosted personal site that speaks ActivityPub — your blog, photos, videos and a live Fediverse feed, all owned by you and federated with Mastodon and the wider network.",
   repoUrl: process.env.REPO_URL || "https://github.com/TemujinCalidius/fedihome",
 
+  // Public read-only Fediverse feed. When PUBLIC_FEED=true, /fediverse shows a
+  // login-free, read-only window into the accounts this site follows — no admin
+  // access and no like/boost/reply. Off by default.
+  publicFeed: process.env.PUBLIC_FEED === "true",
+  publicFeedTitle: process.env.PUBLIC_FEED_TITLE || "The Fediverse feed",
+
   // Assets
   avatarPath: "/images/avatar.png",
   bannerPath: "/images/banner.webp",
