@@ -1,12 +1,16 @@
+// @ts-nocheck — one-off maintenance script (run via tsx, not type-checked)
 /**
  * Fix remaining follows that need signed GET requests.
  * Some servers (social.lol, defcon.social, tech.lgbt, etc.) require
  * HTTP signatures even on GET requests to fetch actor profiles.
  */
-const { PrismaClient } = require("@prisma/client");
-const crypto = require("crypto");
+import { PrismaClient } from "../src/generated/prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
+import * as crypto from "node:crypto";
 
-const prisma = new PrismaClient();
+const prisma = new PrismaClient({
+  adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
+});
 const SITE_URL = process.env.SITE_URL || "http://localhost:3000";
 
 let _keys = null;
