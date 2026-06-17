@@ -1,0 +1,16 @@
+# Keep the build context clean + reproducible. Everything below is recreated
+# inside the image (npm ci → node_modules, prisma generate → src/generated,
+# next build → .next), so shipping the host copies would only bloat the context
+# and risk overwriting the container's Linux deps with host (macOS) binaries.
+node_modules
+.next
+out
+.git
+src/generated
+.env
+.env.local
+.env.*.local
+*.log
+.DS_Store
+.claude
+coverage
