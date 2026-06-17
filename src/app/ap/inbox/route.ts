@@ -9,6 +9,11 @@ import { sendPushToOwner } from "@/lib/push";
 const siteUrl = process.env.SITE_URL || "http://localhost:3000";
 const ACTOR_FETCH_TIMEOUT_MS = 8000;
 
+/** Escape plain text for safe inclusion in HTML (Article `name` is plain text). */
+function escapeText(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 /** Friendly display label for a fedi actor, e.g. "Ada" or "@ada@mastodon.social". */
 function actorLabel(info: { displayName?: string | null; username: string; domain: string }): string {
   return info.displayName || `@${info.username}@${info.domain}`;
@@ -83,7 +88,12 @@ export async function POST(req: NextRequest) {
       break;
 
     case "Create":
-      if (activity.object?.type === "Note") {
+      // Accept Article too — fedihome federates titled posts as Article, and a
+      // Note-only gate silently drops them on the receiving instance.
+      if (
+        activity.object?.type === "Note" ||
+        activity.object?.type === "Article"
+      ) {
         await handleNote(actorUri, activity.object);
       }
       break;
@@ -300,14 +310,18 @@ async function handleBoost(actorUri: string, activity: Record<string, unknown>) 
     });
     if (!res.ok) return;
     const note = await res.json();
-    if (note.type !== "Note") return;
+    if (note.type !== "Note" && note.type !== "Article") return;
 
     const originalActorUri = typeof note.attributedTo === "string"
       ? note.attributedTo
       : note.attributedTo?.id;
     const originalInfo = originalActorUri ? await fetchActorInfo(originalActorUri) : null;
 
-    const content = sanitizeHtml((note.content as string) || "");
+    const boostTitle = typeof note.name === "string" ? note.name.trim() : "";
+    const boostBody = (note.content as string) || "";
+    const content = sanitizeHtml(
+      boostTitle ? `<h2>${escapeText(boostTitle)}</h2>${boostBody}` : boostBody
+    );
     const { urls: mediaUrls, types: mediaTypes } = await processAttachments(
       note.attachment as unknown[] | undefined
     );
@@ -396,7 +410,14 @@ async function handleNote(actorUri: string, note: Record<string, unknown>) {
       note.attachment as unknown[] | undefined
     );
 
-    const rawContent = (note.content as string) || "";
+    // Titled posts arrive as Articles; the FediPost schema has no title column,
+    // so preserve the title as a heading. `name` is plain text — HTML-escape it
+    // before wrapping, and sanitizeHtml re-validates the result.
+    const articleTitle = typeof note.name === "string" ? note.name.trim() : "";
+    const body = (note.content as string) || "";
+    const rawContent = articleTitle
+      ? `<h2>${escapeText(articleTitle)}</h2>${body}`
+      : body;
     const content = sanitizeHtml(rawContent);
     const embed = await fetchLinkEmbed(rawContent);
     const conversationId =
