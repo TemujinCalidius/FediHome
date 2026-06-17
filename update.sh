@@ -132,10 +132,14 @@ ok "Dependencies in sync"
 header "Step 4 of 5 — Applying database changes"
 # Prisma db push refuses by default if a change would drop data — that's the
 # right safety stance. If it fails, we bail and tell the user.
-if ! npx prisma db push --skip-generate; then
-  fail "Database update failed."
-  echo "  This is usually because a schema change would drop data."
-  echo "  Run with --accept-data-loss if you're sure, or check CHANGELOG.md."
+if ! npx prisma db push; then
+  fail "Database update failed (Step 4)."
+  echo "  Common causes:"
+  echo "    • DATABASE_URL is missing or wrong — check .env / .env.local"
+  echo "    • the database server is unreachable (connection refused / timeout)"
+  echo "    • a schema change would drop data — Prisma refuses by default."
+  echo "      If you're sure, re-run: npx prisma db push --accept-data-loss"
+  echo "  See the error above and CHANGELOG.md for details."
   exit 1
 fi
 npx prisma generate >/dev/null 2>&1 || npx prisma generate

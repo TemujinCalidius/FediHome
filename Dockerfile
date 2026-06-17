@@ -20,7 +20,9 @@ COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/prisma ./prisma
 # Prisma 7: the generated client is bundled into .next/standalone (there is no
 # node_modules/.prisma anymore). Runtime `db push` needs the schema, the CLI,
-# the config file, and dotenv (which prisma.config.ts imports).
+# the config file, and dotenv. NOTE: this copy set is INCOMPLETE — v7's CLI also
+# needs @prisma/engines + @prisma/config (+ transitive deps + a TS loader) for
+# the startup db push. Tracked + to be docker-build-verified in issue #40.
 COPY --from=builder /app/prisma.config.ts ./
 COPY --from=builder /app/node_modules/dotenv ./node_modules/dotenv
 COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
@@ -30,4 +32,4 @@ EXPOSE 3000
 # track migration files; `db push` is the install/upgrade path. Refuses by
 # default if a change would drop data, which is the right safety stance for
 # automatic startup runs.
-CMD ["sh", "-c", "npx prisma db push --skip-generate && node server.js"]
+CMD ["sh", "-c", "npx prisma db push && node server.js"]
