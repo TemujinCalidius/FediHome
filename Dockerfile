@@ -18,15 +18,13 @@ COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/prisma ./prisma
-# Prisma 7: the generated client is bundled into .next/standalone (there is no
-# node_modules/.prisma anymore). Runtime `db push` needs the schema, the CLI,
-# the config file, and dotenv. NOTE: this copy set is INCOMPLETE — v7's CLI also
-# needs @prisma/engines + @prisma/config (+ transitive deps + a TS loader) for
-# the startup db push. Tracked + to be docker-build-verified in issue #40.
 COPY --from=builder /app/prisma.config.ts ./
-COPY --from=builder /app/node_modules/dotenv ./node_modules/dotenv
-COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
-COPY --from=builder /app/node_modules/.bin/prisma ./node_modules/.bin/prisma
+# Prisma 7's startup `db push` (the CMD below) needs the CLI + @prisma/engines
+# (the schema engine) + @prisma/config (to load prisma.config.ts) + a TS loader.
+# Copying the builder's node_modules guarantees they're all present. (The app
+# itself serves from the traced .next/standalone deps; this is only for the
+# one-shot db push at startup.)
+COPY --from=builder /app/node_modules ./node_modules
 EXPOSE 3000
 # Sync the schema to the database before starting the server. FediHome doesn't
 # track migration files; `db push` is the install/upgrade path. Refuses by

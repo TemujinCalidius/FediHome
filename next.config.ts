@@ -14,6 +14,10 @@ const PEERTUBE_HOSTS = [
 ];
 
 const nextConfig: NextConfig = {
+  // Emit a self-contained server in .next/standalone for the Docker image.
+  // The non-Docker path (`next start`, used by pm2 / the demo) is unaffected —
+  // standalone is just additional build output.
+  output: "standalone",
   images: {
     // Add your own domain(s) here, e.g.:
     // remotePatterns: [{ protocol: "https", hostname: "yourdomain.com" }, ...]
