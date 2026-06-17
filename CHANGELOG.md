@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.0.0 (2026-06-17)
+
+**First stable release.** FediHome is a self-hosted, single-user Fediverse home — blog, photos, video, audio, and a live following feed, all on your own domain via ActivityPub. 1.0 marks the project production-ready: a test suite + CI gate every change, the security-audit findings are resolved, the dependency stack is current (Prisma 7, Next 16, Fedify 2), and a public demo runs the exact code at [fedihome.social](https://fedihome.social).
+
+### Changed
+- **Upgraded to Prisma 7** — driver adapter (`@prisma/adapter-pg`) + the new `prisma-client` generator (client generated to `src/generated/` on install via `postinstall`). A connection/codegen change only; your data and schema are untouched. (#19)
+- **`update.sh` / `install.sh` no longer pass the removed `--skip-generate` flag** to `prisma db push`, and `update.sh`'s Step-4 failure message no longer misattributes every error to data loss. (#39)
+
+### Added
+- **Continuous integration** — every PR and push to `main` runs typecheck + the Vitest suite (`.github/workflows/ci.yml`).
+- **Config-gated public landing/showcase homepage** (`LANDING_MODE`) and a **read-only public Fediverse feed** (`PUBLIC_FEED`) — opt-in, off by default. (`src/components/home/LandingShowcase.tsx`, `src/app/fediverse/page.tsx`)
+- **Configurable navigation visibility** (`NAV_SHOW_*`) and a **config-driven footer** (copyright / handle / email / webring all from config).
+- **Vitest test suite** (sanitize, url-guard, auth) — the project's first automated tests.
+
+### Security
+- [P0] **Dependency CVE fixes** — `@fedify/fedify` → 2.2.5 (LD-Signature bypass), `tsx` → 4.22.4 (esbuild file-read), `nodemailer` → 8.0.11 (CRLF injection).
+- [P1] **HTML sanitizer rewritten on `sanitize-html`** (tree-based parser) — closes known mXSS bypass vectors.
+- [P1] **kudosLog memory leak** — TTL + hard-cap eviction on the in-memory rate-limit map.
+- **Removed hardcoded personal data** from the public repo (footer, `security.txt`, media/audio/video metadata) — all now config-driven.
+
+### Notes for upgraders
+- **Prisma 7:** `npm run update` handles the upgrade, but `@prisma/adapter-pg` uses node-postgres, which reads `sslmode` differently from the old engine. If the DB won't connect after upgrading, append `?sslmode=disable` (SSL off) or `?sslmode=no-verify` (self-signed cert) to `DATABASE_URL`.
+- The Prisma CLI now reads `.env.local` (via `prisma.config.ts`) — the old `.env` symlink workaround is no longer needed.
+- **Docker:** a runner-stage dependency fix for Prisma 7 is pending (#40) — verify with `docker build` before deploying via container.
+
+### Versioning
+- First tagged release / GitHub Release; `package.json` is now `1.0.0`. Prior 0.x history is below.
+
 ## 0.9.0 (2026-06-16)
 
 ### Added
