@@ -84,7 +84,7 @@ Open your browser and go to:
 http://localhost:3000/setup
 ```
 
-(Or port 3001 if using `npm run dev`.)
+(The same port applies when using `npm run dev`.)
 
 The setup wizard asks for:
 

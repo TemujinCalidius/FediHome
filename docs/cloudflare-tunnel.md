@@ -236,7 +236,7 @@ If this returns a JSON response with your actor URL, federation is working. If i
 
 ### "Connection refused" in cloudflared logs
 
-The tunnel cannot reach `localhost:3000`. Either FediHome is not running or it's on a different port. Check your `package.json` — the default dev port is 3001, the production port is 3000.
+The tunnel cannot reach `localhost:3000`. Either FediHome is not running or it's on a different port. Check your `package.json` — the default dev and production ports are both 3000.
 
 ### SSL certificate errors between cloudflared and your app
 

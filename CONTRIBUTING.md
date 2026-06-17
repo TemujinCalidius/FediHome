@@ -30,7 +30,7 @@ Thanks for your interest in contributing to FediHome! This guide will help you g
    ```
    DATABASE_URL=postgresql://user:password@localhost:5432/fedihome
    ADMIN_SECRET=any-secret-string-for-dev
-   SITE_URL=http://localhost:3001
+   SITE_URL=http://localhost:3000
    FEDI_HANDLE=me
    FEDI_DOMAIN=localhost
    ```
@@ -44,7 +44,7 @@ Thanks for your interest in contributing to FediHome! This guide will help you g
    ```bash
    npm run dev
    ```
-   The app runs on `http://localhost:3001` by default.
+   The app runs on `http://localhost:3000` by default.
 
 7. **Visit `/setup`** to run the setup wizard on first launch.
 
