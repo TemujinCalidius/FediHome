@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.1 (2026-06-17)
 
 ### Fixed
 - **Inbound federation now ingests `Create(Article)`, not just `Note`.** Titled posts (e.g. federated blog posts) from followed accounts were silently dropped on receipt and never reached the feed; the Article's title is now preserved as a heading. (#43)
