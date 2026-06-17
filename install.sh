@@ -385,7 +385,7 @@ node -e '
 ok ".env.local written"
 
 say "Creating database tables..."
-npx prisma db push --skip-generate
+npx prisma db push
 ok "Schema applied"
 
 say "Generating Prisma client..."
