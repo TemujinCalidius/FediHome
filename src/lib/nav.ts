@@ -19,5 +19,6 @@ export const navLinks: NavLink[] = [
     : []),
   ...(siteConfig.nav.showVideos ? [{ label: "Videos", href: "/videos" }] : []),
   ...(siteConfig.nav.showAudio ? [{ label: "Audio", href: "/audio" }] : []),
+  ...(siteConfig.publicFeed ? [{ label: "Fediverse", href: "/fediverse" }] : []),
   ...(siteConfig.nav.showAbout ? [{ label: "About", href: "/about" }] : []),
 ];
