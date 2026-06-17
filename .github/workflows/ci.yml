@@ -34,3 +34,13 @@ jobs:
 
       - name: Test
         run: npm test
+
+      # A production build catches Next-specific breakage that tsc misses
+      # (server/client boundaries, route config) and that `npm run update`
+      # would otherwise hit on deploy. Most routes are force-dynamic, so a
+      # placeholder DATABASE_URL is enough — the build doesn't connect.
+      - name: Build
+        run: npm run build
+        env:
+          DATABASE_URL: postgresql://user:pass@localhost:5432/fedihome
+          SITE_URL: http://localhost:3000
