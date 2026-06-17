@@ -100,6 +100,8 @@ A code PR opened against `main` will be asked to retarget to `dev`. Releases are
 
 **Changelog (required).** Every pull request must add an entry to [`CHANGELOG.md`](CHANGELOG.md) under the `## Unreleased` heading (create it if it's missing), grouped under `### Added` / `### Changed` / `### Fixed` / `### Security`. CI enforces this on pull requests. If a change genuinely warrants no entry (e.g. a documentation-only PR, a CI-config tweak, or a typo fix), apply the `skip-changelog` label to bypass the check. At release time, `## Unreleased` is renamed to the new version.
 
+**Tracking staged fixes (`fixed-pending-merge`).** When a PR implements the fix for an open issue or a Security & Quality alert (Dependabot / code-scanning), maintainers label it `fixed-pending-merge`, and apply the same label to any issue the PR closes. This makes it easy to see at a glance which problems are already fixed and just waiting on a merge — filter with `fixed-pending-merge` in the [issues](https://github.com/TemujinCalidius/fedihome/issues?q=is%3Aopen+label%3Afixed-pending-merge) or [pull requests](https://github.com/TemujinCalidius/fedihome/pulls?q=is%3Aopen+label%3Afixed-pending-merge) list. (Security & Quality *alerts* can't carry labels themselves, so the labelled PR — whose description lists the alerts it resolves — is their tracking record.) The label needs no cleanup: on merge the PR closes and any linked issue auto-closes via a `Closes #N` reference.
+
 ## Issue Templates
 
 ### Bug Report
