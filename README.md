@@ -2,6 +2,8 @@
 
 > Your home on the Fediverse. Blog, share photos, and connect — all from your own domain.
 
+**🌐 See it live at [fedihome.social](https://fedihome.social)** — the demo runs FediHome itself. Follow the project at `@fedihome@fedihome.social`.
+
 ![FediHome Homepage](docs/screenshots/homepage.png)
 
 ## What is FediHome?
