@@ -7,6 +7,7 @@
 
 ### Fixed
 - **The app listen port is now configurable.** The `dev`/`start` scripts hardcoded `--port 3000`, which overrode Next.js's built-in `PORT` support — so FediHome couldn't run on a host already using port 3000, and `PORT=…` was silently ignored. The flag is dropped (Next reads `PORT` natively), pm2 forwards `PORT`, and Docker Compose's host port is now `FEDIHOME_PORT`. All default to 3000, so existing deploys are unchanged. Remember to keep `SITE_URL` pointed at your real public origin if you change the port. (#27)
+- **`npm run update` now restarts pm2 deployments under any process name, and fails loudly if it can't restart.** The updater only restarted a pm2 process literally named `fedihome`, so a differently-named pm2 app (common on multi-site hosts) or a bare `npm start` silently kept serving the old build while the script exited 0. It now finds the pm2 process by working directory (falling back to the `fedihome` name), and when nothing can be restarted it prints a clear error and exits non-zero instead of a green success banner. (#32)
 - **The Docker image now builds and runs under Prisma 7.** Enabled Next.js `output: "standalone"` (the Dockerfile expected it but it was never configured, so `docker build` failed at the standalone copy); bundled the Prisma CLI's runtime deps (`@prisma/engines`, `@prisma/config`) into the runner so the startup `prisma db push` resolves them; and added a `.dockerignore` so host binaries can't leak into the Linux image. The `next start` / pm2 path is unaffected. (#40)
 
 ## 1.0.1 (2026-06-17)
