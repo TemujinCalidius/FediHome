@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
+import crypto from "crypto";
 import { PrismaClient } from "@/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import * as fs from "fs";
 import * as path from "path";
-import { verifyAdmin } from "@/lib/auth";
+import { verifyAdmin, safeCompare } from "@/lib/auth";
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
@@ -31,6 +32,30 @@ function validateField(name: string, value: unknown): string {
   return value;
 }
 
+/**
+ * First-run setup token. When ADMIN_SECRET isn't configured yet (a fresh,
+ * possibly publicly-exposed deploy), completing setup requires this out-of-band
+ * token so an anonymous visitor can't claim admin before the owner. Taken from
+ * SETUP_TOKEN if set; otherwise a random token is generated once, stored, and
+ * printed to the server console for the operator to copy.
+ */
+async function getOrCreateSetupToken(): Promise<string> {
+  const existing = await prisma.siteSetting.findUnique({ where: { key: "setup_token" } });
+  if (existing) return existing.value;
+  const token = crypto.randomBytes(24).toString("hex");
+  try {
+    await prisma.siteSetting.create({ data: { key: "setup_token", value: token } });
+    console.warn(
+      `\n[FediHome] First-run setup token — enter this in the setup wizard to complete setup:\n          ${token}\n`
+    );
+    return token;
+  } catch {
+    // Lost a race to create it — read whoever won.
+    const again = await prisma.siteSetting.findUnique({ where: { key: "setup_token" } });
+    return again?.value ?? token;
+  }
+}
+
 export async function POST(request: Request) {
   try {
     // C6: if ADMIN_SECRET is already configured, this endpoint must require
@@ -46,6 +71,25 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
+
+    // First-claim protection: when ADMIN_SECRET isn't set yet (a fresh deploy),
+    // require the out-of-band setup token so an anonymous visitor can't claim
+    // admin before the owner. install.sh sets ADMIN_SECRET, so its users never
+    // reach this branch; the block above handles the already-configured case.
+    if (!process.env.ADMIN_SECRET) {
+      const expected = process.env.SETUP_TOKEN || (await getOrCreateSetupToken());
+      const provided = typeof body.setupToken === "string" ? body.setupToken : "";
+      if (!provided || !safeCompare(provided, expected)) {
+        return NextResponse.json(
+          {
+            error:
+              "A setup token is required. Check your server logs for the token printed at first setup (or set SETUP_TOKEN), then enter it to complete setup.",
+          },
+          { status: 401 }
+        );
+      }
+    }
+
     const siteName = validateField("siteName", body.siteName ?? "");
     const authorName = validateField("authorName", body.authorName ?? "");
     const authorTagline = validateField("authorTagline", body.authorTagline ?? "");
@@ -101,14 +145,21 @@ export async function POST(request: Request) {
     // Build .env.local content. All field values were validated above to
     // contain no newlines / quotes / dollar / backtick, so this construction
     // is injection-safe.
-    const siteUrl =
-      process.env.SITE_URL ||
-      `https://${new URL(request.url).hostname}`;
-    const fediDomain = validateField("siteUrlHost", new URL(siteUrl).hostname);
+    // SITE_URL is the canonical public origin (ActivityPub IDs, WebFinger, RSS,
+    // signature keyId, CSRF). Prefer the value the wizard submitted
+    // (window.location.origin — correct protocol AND port), then any configured
+    // SITE_URL, then the request origin. `.origin`/`.host` preserve the port,
+    // unlike the old `https://${hostname}` derivation which dropped it.
+    const siteUrl = validateField(
+      "siteUrl",
+      body.siteUrl || process.env.SITE_URL || new URL(request.url).origin
+    );
+    const fediDomain = validateField("siteUrlHost", new URL(siteUrl).host);
 
     const envLines = [
       "",
       "# === FediHome Setup (auto-generated) ===",
+      `SITE_URL="${siteUrl}"`,
       `SITE_NAME="${siteName || "My FediHome"}"`,
       `AUTHOR_NAME="${authorName || "Your Name"}"`,
       `AUTHOR_TAGLINE="${authorTagline}"`,

@@ -2,7 +2,11 @@
 
 ## Unreleased
 
+### Security
+- **The first-run setup wizard now requires a one-time token.** On a fresh deploy that's publicly reachable before `ADMIN_SECRET` is set (manual/Docker installs), an anonymous visitor could previously POST `/api/setup` and claim admin. Completing setup now requires a `SETUP_TOKEN` — taken from the env var, or auto-generated once and printed to the server console — verified with a constant-time compare. It fails closed. `install.sh` installs already set `ADMIN_SECRET`, so they're unaffected. (#22)
+
 ### Fixed
+- **`SITE_URL` is now persisted at setup, preserving protocol and port.** Neither `install.sh` nor the setup wizard wrote `SITE_URL` (the canonical origin for ActivityPub IDs, WebFinger, RSS, signature keyId, and the CSRF check), and the wizard's fallback dropped the port and forced `https`. The installer now prompts for it (defaulting to any existing value, so a re-run never clobbers), and the wizard records the browser origin. Off-3000 / proxied deploys no longer silently break federation. Pairs with #27. (#33)
 - **The Docker image now builds and runs under Prisma 7.** Enabled Next.js `output: "standalone"` (the Dockerfile expected it but it was never configured, so `docker build` failed at the standalone copy); bundled the Prisma CLI's runtime deps (`@prisma/engines`, `@prisma/config`) into the runner so the startup `prisma db push` resolves them; and added a `.dockerignore` so host binaries can't leak into the Linux image. The `next start` / pm2 path is unaffected. (#40)
 
 ## 1.0.1 (2026-06-17)
