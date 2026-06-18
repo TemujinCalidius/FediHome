@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Security
+- **Hardened the outbound federation path.** `signedFetch` (the signed ActivityPub delivery POST) now runs the same `assertPublicHost` SSRF guard the inbound/resolver paths use, so a delivery target can never be coerced to a private/internal host even if a caller forgets to vet it. Also fixed a tainted-format-string in delivery error logging (the inbox URL is now passed as a `%s` argument, not interpolated into the format string), and added least-privilege `permissions:` blocks to the CI workflows. Resolves CodeQL `js/request-forgery` (delivery), `js/tainted-format-string`, and `actions/missing-workflow-permissions`.
+
 ### Fixed
 - **The Docker image now builds and runs under Prisma 7.** Enabled Next.js `output: "standalone"` (the Dockerfile expected it but it was never configured, so `docker build` failed at the standalone copy); bundled the Prisma CLI's runtime deps (`@prisma/engines`, `@prisma/config`) into the runner so the startup `prisma db push` resolves them; and added a `.dockerignore` so host binaries can't leak into the Linux image. The `next start` / pm2 path is unaffected. (#40)
 
