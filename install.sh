@@ -355,6 +355,13 @@ header "Step 6 of 6 — Configuring and building"
 cp -n .env.example .env.local 2>/dev/null || true
 chmod 600 .env.local
 
+# Public site URL — the canonical origin for ActivityPub, WebFinger, RSS, links
+# and the CSRF check. Behind a proxy/tunnel this is your https domain, NOT
+# localhost. Default to whatever is already in .env.local so a re-run never
+# silently clobbers a hand-set value.
+EXISTING_SITE_URL=$(grep -E '^SITE_URL=' .env.local 2>/dev/null | head -1 | sed -E 's/^SITE_URL=//; s/^"(.*)"$/\1/')
+SITE_URL_INPUT=$(ask "Public site URL (use https://yourdomain for a public site)" "${EXISTING_SITE_URL:-http://localhost:3000}")
+
 # Generate admin secret (preferring openssl, falling back to /dev/urandom)
 if command -v openssl >/dev/null 2>&1; then
   ADMIN_SECRET=$(openssl rand -hex 32)
@@ -380,8 +387,9 @@ node -e '
   };
   set("DATABASE_URL", process.env.DB_URL);
   set("ADMIN_SECRET", process.env.ADMIN_SECRET);
+  set("SITE_URL", process.env.SITE_URL_INPUT);
   fs.writeFileSync(path, content, { mode: 0o600 });
-' DB_URL="$DB_URL" ADMIN_SECRET="$ADMIN_SECRET"
+' DB_URL="$DB_URL" ADMIN_SECRET="$ADMIN_SECRET" SITE_URL_INPUT="$SITE_URL_INPUT"
 ok ".env.local written"
 
 say "Creating database tables..."

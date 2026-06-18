@@ -93,6 +93,7 @@ export default function SetupWizard() {
   const [contactEmail, setContactEmail] = useState("");
   const [adminSecret, setAdminSecret] = useState("");
   const [savedPassword, setSavedPassword] = useState(false);
+  const [setupToken, setSetupToken] = useState("");
 
   // Domain from current URL
   const [domain, setDomain] = useState("yourdomain.com");
@@ -129,6 +130,8 @@ export default function SetupWizard() {
           fediHandle: fediHandle || "me",
           contactEmail,
           adminSecret,
+          siteUrl: window.location.origin,
+          setupToken,
         }),
       });
       const data = await res.json();
@@ -364,6 +367,22 @@ export default function SetupWizard() {
                   I have saved my admin password somewhere safe
                 </span>
               </label>
+
+              <div className="mb-6">
+                <label className={labelClass}>First-run setup token</label>
+                <input
+                  type="text"
+                  value={setupToken}
+                  onChange={(e) => setSetupToken(e.target.value)}
+                  placeholder="Paste the token from your server logs"
+                  className={inputClass}
+                />
+                <p className="text-gray-500 text-xs mt-1.5 leading-relaxed">
+                  On first run, FediHome prints a one-time setup token to the server
+                  console (or set <code>SETUP_TOKEN</code>). It stops a stranger from
+                  claiming your site before you do.
+                </p>
+              </div>
 
               {error && (
                 <div className="rounded-lg bg-red-950/30 border border-red-800/40 p-3 mb-4">
