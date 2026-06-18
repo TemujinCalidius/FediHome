@@ -206,7 +206,11 @@ export async function POST(req: NextRequest) {
     }
 
     case "metaWeblog.getRecentPosts": {
-      const count = parseInt(extractParam(body, 3) || "10", 10);
+      // Clamp the client-supplied page size: bound it to 1–50 and reject
+      // non-finite values (a non-numeric param → NaN → Prisma `take: NaN` 500;
+      // a huge value → unbounded query). #9
+      const requested = parseInt(extractParam(body, 3) || "10", 10);
+      const count = Number.isFinite(requested) ? Math.min(Math.max(requested, 1), 50) : 10;
       const posts = await prisma.post.findMany({
         where: { published: true, inReplyToPostId: null },
         orderBy: { publishedAt: "desc" },
