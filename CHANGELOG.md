@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Fixed
+- **`npm run update` now restarts pm2 deployments under any process name, and fails loudly if it can't restart.** The updater only restarted a pm2 process literally named `fedihome`, so a differently-named pm2 app (common on multi-site hosts) or a bare `npm start` silently kept serving the old build while the script exited 0. It now finds the pm2 process by working directory (falling back to the `fedihome` name), and when nothing can be restarted it prints a clear error and exits non-zero instead of a green success banner. (#32)
 - **The Docker image now builds and runs under Prisma 7.** Enabled Next.js `output: "standalone"` (the Dockerfile expected it but it was never configured, so `docker build` failed at the standalone copy); bundled the Prisma CLI's runtime deps (`@prisma/engines`, `@prisma/config`) into the runner so the startup `prisma db push` resolves them; and added a `.dockerignore` so host binaries can't leak into the Linux image. The `next start` / pm2 path is unaffected. (#40)
 
 ## 1.0.1 (2026-06-17)
