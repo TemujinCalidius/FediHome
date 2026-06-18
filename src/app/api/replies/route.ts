@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { verifyAdmin } from "@/lib/auth";
+import { htmlToText } from "@/lib/html-text";
 
 const PAGE_SIZE = 25;
 
@@ -65,7 +66,7 @@ export async function GET(req: NextRequest) {
             domain: parent.domain,
             displayName: parent.displayName,
             avatarUrl: parent.avatarUrl,
-            snippet: stripAndTrim(parent.content, 160),
+            snippet: htmlToText(parent.content, 160),
             publishedAt: parent.publishedAt.toISOString(),
           }
         : null,
@@ -73,9 +74,4 @@ export async function GET(req: NextRequest) {
   });
 
   return NextResponse.json({ replies: items, nextCursor });
-}
-
-function stripAndTrim(html: string, max: number): string {
-  const text = html.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
-  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }

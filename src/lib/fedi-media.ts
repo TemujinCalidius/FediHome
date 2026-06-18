@@ -356,11 +356,13 @@ export async function fetchLinkEmbed(htmlContent: string): Promise<EmbedData | n
 }
 
 function decodeHtmlEntities(text: string): string {
+  // Decode &amp; LAST: otherwise a literal "&amp;lt;" would be doubly-unescaped
+  // to "<" instead of decoding to the intended "&lt;".
   return text
-    .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
     .replace(/&#039;/g, "'")
-    .replace(/&#x27;/g, "'");
+    .replace(/&#x27;/g, "'")
+    .replace(/&amp;/g, "&");
 }
