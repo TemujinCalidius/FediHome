@@ -136,6 +136,14 @@ npm run backfill-photo-dimensions
 - **Federation:** ActivityPub + HTTP Signatures
 - **Crossposting:** AT Protocol (Bluesky)
 
+## Support
+
+FediHome is free, open-source, and built in the open. If it's useful to you and you'd like to help fund its development, you can sponsor the project on GitHub:
+
+**[💖 Sponsor FediHome on GitHub →](https://github.com/sponsors/TemujinCalidius)**
+
+Every bit helps keep the project maintained and improving — thank you!
+
 ## Contributing
 See [CONTRIBUTING.md](CONTRIBUTING.md).
 
