@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Security
+- **The public guest-comment endpoint now caps the request body (64 KB → 413).** `POST /api/comments` parsed the body with no size limit (App Router routes don't inherit a `bodyParser` cap), so an unauthenticated caller could buffer a very large payload into memory before the field-length checks ran. Legitimate comments are far under the cap. (#8)
+
 ### Fixed
 - **The Docker image now builds and runs under Prisma 7.** Enabled Next.js `output: "standalone"` (the Dockerfile expected it but it was never configured, so `docker build` failed at the standalone copy); bundled the Prisma CLI's runtime deps (`@prisma/engines`, `@prisma/config`) into the runner so the startup `prisma db push` resolves them; and added a `.dockerignore` so host binaries can't leak into the Linux image. The `next start` / pm2 path is unaffected. (#40)
 
