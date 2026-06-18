@@ -16,6 +16,15 @@ All environment variables are set in `.env.local` at the project root. The `.env
 | `FEDI_HANDLE` | Your Fediverse username (the part before the `@domain`). | `sam` |
 | `FEDI_DOMAIN` | The domain portion of your Fediverse identity. Usually matches your site domain. | `myblog.com` |
 
+### Optional: App / Runtime
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `PORT` | The port the app binds to (`npm start` / `npm run dev` / pm2). Set this if port 3000 is already in use on the host. | `3000` |
+| `FEDIHOME_PORT` | **Docker Compose only.** The host port published in front of the container (which always listens on `3000`). | `3000` |
+
+> **Changing the port?** Also set `SITE_URL` to your real public origin. The listen port and the public URL are independent: `SITE_URL` drives ActivityPub IDs, WebFinger, RSS, and the CSRF origin check, so behind a reverse proxy or tunnel the port you bind locally is usually *not* the port in your public URL. A wrong `SITE_URL` silently breaks federation.
+
 ### Optional: Site Info
 
 These can also be set via the setup wizard or admin panel. Environment variables take precedence over database settings.
