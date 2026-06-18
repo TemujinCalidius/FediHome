@@ -2,7 +2,11 @@
 
 ## Unreleased
 
+### Security
+- **Hardened the outbound federation path.** `signedFetch` (the signed ActivityPub delivery POST) now runs the same `assertPublicHost` SSRF guard the inbound/resolver paths use, so a delivery target can never be coerced to a private/internal host even if a caller forgets to vet it. Also fixed a tainted-format-string in delivery error logging (the inbox URL is now passed as a `%s` argument, not interpolated into the format string), and added least-privilege `permissions:` blocks to the CI workflows. Resolves CodeQL `js/request-forgery` (delivery), `js/tainted-format-string`, and `actions/missing-workflow-permissions`.
+
 ### Fixed
+- **The app listen port is now configurable.** The `dev`/`start` scripts hardcoded `--port 3000`, which overrode Next.js's built-in `PORT` support — so FediHome couldn't run on a host already using port 3000, and `PORT=…` was silently ignored. The flag is dropped (Next reads `PORT` natively), pm2 forwards `PORT`, and Docker Compose's host port is now `FEDIHOME_PORT`. All default to 3000, so existing deploys are unchanged. Remember to keep `SITE_URL` pointed at your real public origin if you change the port. (#27)
 - **`npm run update` now restarts pm2 deployments under any process name, and fails loudly if it can't restart.** The updater only restarted a pm2 process literally named `fedihome`, so a differently-named pm2 app (common on multi-site hosts) or a bare `npm start` silently kept serving the old build while the script exited 0. It now finds the pm2 process by working directory (falling back to the `fedihome` name), and when nothing can be restarted it prints a clear error and exits non-zero instead of a green success banner. (#32)
 - **The Docker image now builds and runs under Prisma 7.** Enabled Next.js `output: "standalone"` (the Dockerfile expected it but it was never configured, so `docker build` failed at the standalone copy); bundled the Prisma CLI's runtime deps (`@prisma/engines`, `@prisma/config`) into the runner so the startup `prisma db push` resolves them; and added a `.dockerignore` so host binaries can't leak into the Linux image. The `next start` / pm2 path is unaffected. (#40)
 

@@ -6,6 +6,11 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, labeled, unlabeled]
 
+# Least-privilege token — read the repo + the PR's file list.
+permissions:
+  contents: read
+  pull-requests: read
+
 jobs:
   changelog:
     name: CHANGELOG updated
