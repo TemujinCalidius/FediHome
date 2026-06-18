@@ -4,7 +4,8 @@ services:
   app:
     build: .
     ports:
-      - "3000:3000"
+      # Host port is configurable (FEDIHOME_PORT); the container always listens on 3000.
+      - "${FEDIHOME_PORT:-3000}:3000"
     environment:
       - DATABASE_URL=postgresql://fedihome:fedihome@db:5432/fedihome
     env_file:

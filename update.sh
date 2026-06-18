@@ -173,9 +173,26 @@ if command -v docker >/dev/null 2>&1 && [ -f docker-compose.yml ]; then
 fi
 
 if [ "$RESTARTED" = false ] && command -v pm2 >/dev/null 2>&1; then
-  if pm2 describe fedihome >/dev/null 2>&1; then
-    say "Restarting via pm2..."
-    pm2 restart fedihome
+  # Match the pm2 process by working directory, so it works whatever the
+  # operator named it (not just the literal "fedihome"), then fall back to the
+  # canonical name. Node is a hard dependency of the app, so parsing the JSON
+  # process list is safe.
+  PM2_NAME=$(pm2 jlist 2>/dev/null | node -e '
+    let s = "";
+    process.stdin.on("data", (d) => (s += d)).on("end", () => {
+      try {
+        const dir = process.argv[1];
+        const m = JSON.parse(s).find((p) => p.pm2_env && p.pm2_env.pm_cwd === dir);
+        if (m) console.log(m.name);
+      } catch {}
+    });
+  ' "$INSTALL_DIR") || true
+  if [ -z "$PM2_NAME" ] && pm2 describe fedihome >/dev/null 2>&1; then
+    PM2_NAME=fedihome
+  fi
+  if [ -n "$PM2_NAME" ]; then
+    say "Restarting via pm2 ($PM2_NAME)..."
+    pm2 restart "$PM2_NAME"
     ok "Restarted via pm2"
     RESTARTED=true
   fi
@@ -191,15 +208,18 @@ if [ "$RESTARTED" = false ] && command -v systemctl >/dev/null 2>&1; then
 fi
 
 echo ""
-echo -e "${GREEN}${BOLD}✅ FediHome is up to date!${NC}"
-echo ""
-
 if [ "$RESTARTED" = false ]; then
-  warn "Could not detect how FediHome is running — please restart it manually."
+  fail "New code was built, but FediHome could NOT be auto-restarted — your site is still running the OLD version."
   echo "  If you started it with 'npm start', stop it (Ctrl+C) and run 'npm start' again."
   echo "  If it's behind a process manager you set up yourself, restart it there."
-else
-  echo "  Visit your site to see the changes. If you set up the maintenance dashboard,"
-  echo "  the 'new version available' notification will clear on the next check."
+  echo "  Tip: run FediHome under pm2 from this folder (any process name) or systemd"
+  echo "  so future updates restart automatically."
+  echo ""
+  exit 1
 fi
+
+echo -e "${GREEN}${BOLD}✅ FediHome is up to date!${NC}"
+echo ""
+echo "  Visit your site to see the changes. If you set up the maintenance dashboard,"
+echo "  the 'new version available' notification will clear on the next check."
 echo ""
