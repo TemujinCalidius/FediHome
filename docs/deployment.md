@@ -48,9 +48,11 @@ sudo apt install -y nodejs
 sudo apt install -y postgresql postgresql-contrib
 sudo systemctl enable postgresql
 
-# Create database and user
+# Create database and user (OWNER fedihome → the role can run `prisma db push` on PG15+)
 sudo -u postgres psql -c "CREATE USER fedihome WITH PASSWORD 'your-secure-password';"
 sudo -u postgres psql -c "CREATE DATABASE fedihome OWNER fedihome;"
+# Managed/external Postgres where the role can't own the DB? Also grant CREATE on schema public:
+#   sudo -u postgres psql -d fedihome -c "GRANT ALL ON SCHEMA public TO fedihome;"
 
 # Install nginx
 sudo apt install -y nginx

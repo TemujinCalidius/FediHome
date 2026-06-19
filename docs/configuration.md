@@ -155,6 +155,10 @@ createdb fedihome
 sudo -u postgres createdb fedihome
 ```
 
+> **PostgreSQL 15+:** the `public` schema no longer grants `CREATE` implicitly, so a role that doesn't **own** the database can't run `prisma db push` (it fails with `permission denied for schema public`). Create the database owned by your app role (`createdb -O fedihome fedihome`, or `CREATE DATABASE fedihome OWNER fedihome;`), or grant it explicitly: `sudo -u postgres psql -d fedihome -c 'GRANT ALL ON SCHEMA public TO fedihome;'`. The `install.sh` auto-create path handles this for you.
+
+> **Installing alongside an existing PostgreSQL?** `install.sh` defaults to a `fedihome` database + role, but **`DB_NAME`, `DB_USER`, `PGHOST` and `PGPORT` are all overridable** via environment variables — e.g. `DB_NAME=myblog DB_USER=myblog bash install.sh`. If a role or database with the chosen name already exists, the installer **asks before reusing it** and never silently resets an existing role's password. For managed Postgres (RDS / Supabase / Neon) where you can't own the database, use the installer's "paste a connection URL" option and make sure the role has `CREATE` on schema `public`.
+
 ### Syncing the Schema
 
 FediHome doesn't track migration files — `prisma/schema.prisma` is the source
