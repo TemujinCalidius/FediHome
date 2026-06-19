@@ -186,11 +186,12 @@ fi
 # ---------------------------------------------------------------------------
 header "Step 3 of 6 — Checking PostgreSQL"
 
+# Connection target — overridable for a non-default cluster / port.
+PGHOST="${PGHOST:-localhost}"
+PGPORT="${PGPORT:-5432}"
+
 postgres_running() {
-  case "$OS" in
-    mac)    pg_isready -q -h localhost 2>/dev/null ;;
-    *)      pg_isready -q -h localhost 2>/dev/null ;;
-  esac
+  pg_isready -q -h "$PGHOST" -p "$PGPORT" 2>/dev/null
 }
 
 if ! command -v psql >/dev/null 2>&1; then
@@ -243,7 +244,7 @@ for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
   sleep 1
 done
 if ! postgres_running; then
-  warn "PostgreSQL is installed but not responding on localhost:5432."
+  warn "PostgreSQL is installed but not responding on $PGHOST:$PGPORT."
   case "$OS" in
     mac)    echo "  Try: brew services start postgresql@15" ;;
     debian|redhat) echo "  Try: sudo systemctl start postgresql" ;;
@@ -298,6 +299,15 @@ run_psql() {
   esac
 }
 
+# Same, but connects to a specific database (needed for GRANT ... ON SCHEMA).
+run_psql_db() {
+  local db="$1"; local sql="$2"
+  case "$OS" in
+    mac)    psql -d "$db" -tAc "$sql" ;;
+    *)      sudo -u postgres psql -d "$db" -tAc "$sql" ;;
+  esac
+}
+
 echo "  FediHome needs a database to store your content."
 echo "  Option 1: let this script create one locally for you (recommended)"
 echo "  Option 2: paste a connection URL if you already have one (advanced)"
@@ -305,25 +315,42 @@ echo ""
 
 DB_URL=""
 if ask_yes_no "Create a local database automatically?"; then
-  DB_NAME="fedihome"
-  DB_USER="fedihome"
+  DB_NAME="${DB_NAME:-fedihome}"
+  DB_USER="${DB_USER:-fedihome}"
   DB_PASS="$(openssl rand -hex 16)"
 
-  say "Creating database '$DB_NAME' and user '$DB_USER'..."
+  say "Creating database '$DB_NAME' and user '$DB_USER' on $PGHOST:$PGPORT..."
 
-  # If the user/db already exist, reuse them and reset the password
+  # Role: create if absent. If it already exists, reset its password ONLY after
+  # an explicit confirmation — silently rewriting a pre-existing role's password
+  # would break anything else that depends on it.
   USER_EXISTS=$(run_psql "SELECT 1 FROM pg_roles WHERE rolname='$DB_USER';" 2>/dev/null || true)
   if [ "$USER_EXISTS" = "1" ]; then
-    run_psql "ALTER USER $DB_USER WITH PASSWORD '$DB_PASS';" >/dev/null
-    ok "User '$DB_USER' already existed — password reset"
+    warn "A PostgreSQL role '$DB_USER' already exists."
+    if ask_yes_no "Reset its password and reuse it for FediHome?" "n"; then
+      run_psql "ALTER USER $DB_USER WITH PASSWORD '$DB_PASS';" >/dev/null
+      ok "Reusing role '$DB_USER' (password reset)"
+    else
+      fail "Pick a different name and re-run, e.g.:  DB_USER=fedihome2 DB_NAME=fedihome2 bash install.sh"
+      echo "  (DB_NAME, DB_USER, PGHOST and PGPORT are all overridable via environment variables.)"
+      exit 1
+    fi
   else
     run_psql "CREATE USER $DB_USER WITH PASSWORD '$DB_PASS';" >/dev/null
     ok "User '$DB_USER' created"
   fi
 
+  # Database: create if absent. If it already exists, reuse ONLY after confirming
+  # (it may be an unrelated database that happens to share the name).
   DB_EXISTS=$(run_psql "SELECT 1 FROM pg_database WHERE datname='$DB_NAME';" 2>/dev/null || true)
   if [ "$DB_EXISTS" = "1" ]; then
-    ok "Database '$DB_NAME' already exists"
+    warn "A database '$DB_NAME' already exists."
+    if ask_yes_no "Reuse it for FediHome?" "n"; then
+      ok "Reusing database '$DB_NAME'"
+    else
+      fail "Pick a different name and re-run, e.g.:  DB_NAME=fedihome2 bash install.sh"
+      exit 1
+    fi
   else
     run_psql "CREATE DATABASE $DB_NAME OWNER $DB_USER;" >/dev/null
     ok "Database '$DB_NAME' created"
@@ -331,7 +358,15 @@ if ask_yes_no "Create a local database automatically?"; then
 
   run_psql "GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;" >/dev/null
 
-  DB_URL="postgresql://$DB_USER:$DB_PASS@localhost:5432/$DB_NAME"
+  # PostgreSQL 15+ dropped the implicit CREATE on schema public, so a non-owner
+  # role can't run `prisma db push`. Make the role the owner (a no-op for a DB we
+  # just created; safe for a reused one since reuse was confirmed above) and grant
+  # CREATE on schema public inside the database. Best-effort — tolerate managed
+  # clusters that don't permit ownership transfer.
+  run_psql "ALTER DATABASE $DB_NAME OWNER TO $DB_USER;" >/dev/null 2>&1 || true
+  run_psql_db "$DB_NAME" "GRANT ALL ON SCHEMA public TO $DB_USER;" >/dev/null 2>&1 || true
+
+  DB_URL="postgresql://$DB_USER:$DB_PASS@$PGHOST:$PGPORT/$DB_NAME"
   ok "Database is ready"
 else
   echo ""

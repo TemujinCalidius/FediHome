@@ -9,6 +9,9 @@
 ### Changed
 - **Migrated the Next.js `middleware` convention to `proxy`** (Next 16 deprecated `middleware`). `src/middleware.ts` → `src/proxy.ts`, function renamed `middleware` → `proxy`; the matcher and behaviour (setup redirect + ActivityPub content negotiation) are unchanged. Clears the `next build` deprecation warning and stays ahead of the eventual removal. (#68)
 
+### Fixed
+- **`install.sh` is safer alongside an existing PostgreSQL, and works on PostgreSQL 15+.** The database name/role/host/port are now overridable (`DB_NAME` / `DB_USER` / `PGHOST` / `PGPORT`); the installer now **asks** before reusing an existing database or resetting an existing role's password (previously it reset silently); and it grants the app role ownership + `CREATE` on schema `public`, so `prisma db push` succeeds on PG15+ / non-owner setups where it used to fail with `permission denied for schema public`. Defaults are unchanged on a clean host. (#31, #29)
+
 ## 1.1.0 (2026-06-19)
 
 **Security & reliability release.** A hardening pass across the federation, XML-RPC, guest-comment, and setup paths, plus a configurable app port (`PORT` / `FEDIHOME_PORT`) and smoother self-hosted installs. Backward-compatible — upgrade with the usual `npm run update`, no action required. Validated live on the [fedihome.social](https://fedihome.social) demo before release.
