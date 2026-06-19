@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.1.0 (2026-06-19)
+
+**Security & reliability release.** A hardening pass across the federation, XML-RPC, guest-comment, and setup paths, plus a configurable app port (`PORT` / `FEDIHOME_PORT`) and smoother self-hosted installs. Backward-compatible — upgrade with the usual `npm run update`, no action required. Validated live on the [fedihome.social](https://fedihome.social) demo before release.
+
 ### Security
 - **Hardened the outbound federation path.** `signedFetch` (the signed ActivityPub delivery POST) now runs the same `assertPublicHost` SSRF guard the inbound/resolver paths use, so a delivery target can never be coerced to a private/internal host even if a caller forgets to vet it. Also fixed a tainted-format-string in delivery error logging (the inbox URL is now passed as a `%s` argument, not interpolated into the format string), and added least-privilege `permissions:` blocks to the CI workflows. Resolves CodeQL `js/request-forgery` (delivery), `js/tainted-format-string`, and `actions/missing-workflow-permissions`.
 - **Hardened the XML-RPC (MetaWeblog) endpoint against ReDoS.** The hand-rolled regex value extraction backtracked polynomially on hostile input; it's been rewritten as a linear `indexOf` scan in a new, unit-tested `src/lib/xmlrpc.ts` module, and the endpoint now rejects oversized request bodies. Behaviour for real blogging clients is unchanged. Resolves the CodeQL `js/polynomial-redos` findings and the `js/incomplete-multi-character-sanitization` tag-strip in that file. Also clamps the `metaWeblog.getRecentPosts` page size to 1–50 and rejects non-finite values, so a crafted request can't trigger an unbounded query (or a `take: NaN` 500). (#9)
