@@ -94,30 +94,45 @@ git fetch --quiet origin "$CURRENT_BRANCH"
 
 LOCAL_SHA=$(git rev-parse HEAD)
 REMOTE_SHA=$(git rev-parse "origin/$CURRENT_BRANCH")
+BUILT_SHA=$(cat .fedihome-built-sha 2>/dev/null || true)
 
+SKIP_PULL=false
 if [ "$LOCAL_SHA" = "$REMOTE_SHA" ]; then
-  ok "You're already up to date."
-  exit 0
+  if [ "$BUILT_SHA" = "$LOCAL_SHA" ]; then
+    ok "You're already up to date (and the running build matches HEAD)."
+    exit 0
+  fi
+  # Nothing to pull, but the build on disk doesn't match HEAD — e.g. after a
+  # branch switch or a manual checkout. Rebuild + restart the current code
+  # rather than exiting, or the old build keeps serving. (#63)
+  warn "No new commits to pull, but the running build doesn't match HEAD — rebuilding and restarting the current code."
+  SKIP_PULL=true
 fi
 
-COMMIT_COUNT=$(git rev-list --count "HEAD..origin/$CURRENT_BRANCH")
-echo ""
-echo "  ${BOLD}$COMMIT_COUNT new commit(s):${NC}"
-git --no-pager log --pretty=format:"    %h  %s" "HEAD..origin/$CURRENT_BRANCH" | head -20
-echo ""
-echo ""
+if [ "$SKIP_PULL" = false ]; then
+  COMMIT_COUNT=$(git rev-list --count "HEAD..origin/$CURRENT_BRANCH")
+  echo ""
+  echo "  ${BOLD}$COMMIT_COUNT new commit(s):${NC}"
+  git --no-pager log --pretty=format:"    %h  %s" "HEAD..origin/$CURRENT_BRANCH" | head -20
+  echo ""
+  echo ""
 
-if ! ask_yes_no "Apply these updates?"; then
-  warn "Update cancelled."
-  exit 0
+  if ! ask_yes_no "Apply these updates?"; then
+    warn "Update cancelled."
+    exit 0
+  fi
 fi
 
 # ---------------------------------------------------------------------------
 # Step 2: Pull
 # ---------------------------------------------------------------------------
 header "Step 2 of 5 — Pulling latest code"
-git pull --ff-only origin "$CURRENT_BRANCH"
-ok "Code updated"
+if [ "$SKIP_PULL" = false ]; then
+  git pull --ff-only origin "$CURRENT_BRANCH"
+  ok "Code updated"
+else
+  say "Already at the latest commit — skipping pull, rebuilding the current code."
+fi
 
 # ---------------------------------------------------------------------------
 # Step 3: Dependencies
@@ -152,6 +167,9 @@ header "Step 5 of 5 — Rebuilding and restarting"
 
 say "Building..."
 npm run build
+# Record the commit we just built so a later run can detect a stale build
+# (e.g. after a branch switch) even when there's nothing to pull. (#63)
+git rev-parse HEAD > .fedihome-built-sha 2>/dev/null || true
 ok "Build complete"
 
 # Detect how the app is running and restart it. We check in order:
