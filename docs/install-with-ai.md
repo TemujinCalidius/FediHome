@@ -119,6 +119,11 @@ require opening any ports on my router.
 Please read FediHome's docs/cloudflare-tunnel.md guide and walk me through
 the setup. My domain is: YOURDOMAIN.COM   ← replace this with your actual domain
 
+If this machine already runs a Cloudflare tunnel for another site, don't
+overwrite my existing tunnel config — add FediHome as an extra hostname on
+the tunnel I already have (see the guide's "Already running a Cloudflare
+Tunnel?" section).
+
 Explain each step before doing it. Pause when I need to do something in the
 Cloudflare dashboard (like clicking a button) and tell me exactly what to
 click.

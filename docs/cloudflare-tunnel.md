@@ -17,6 +17,8 @@ Cloudflare Tunnel lets you expose your home-hosted FediHome instance to the inte
 - A Cloudflare account (free)
 - FediHome installed and running locally on `http://localhost:3000`
 
+> **Already running a Cloudflare Tunnel on this host?** The steps below assume a *fresh* setup — following them literally will overwrite your existing `~/.cloudflared/config.yml`, install a second service, and can take your other sites offline. Skip to **[Already running a Cloudflare Tunnel?](#already-running-a-cloudflare-tunnel)** below instead.
+
 ## Step 1: Add Your Domain to Cloudflare
 
 1. Go to [dash.cloudflare.com](https://dash.cloudflare.com) and sign up or log in.
@@ -189,6 +191,29 @@ FEDI_HANDLE=yourhandle
 ```
 
 Restart FediHome after changing these.
+
+## Already running a Cloudflare Tunnel?
+
+If this host already runs a cloudflared tunnel for another site, **don't** repeat Steps 3–8 as written — they assume a fresh setup and will clobber your existing tunnel. Instead, add FediHome as another hostname on the tunnel you already have:
+
+1. **Don't** re-run `cloudflared tunnel login` or `cloudflared tunnel create` — reuse your existing `cert.pem` and tunnel.
+2. **Add an ingress rule** to your existing `~/.cloudflared/config.yml`, *above* the `http_status:404` catch-all (which must stay last):
+   ```yaml
+   ingress:
+     - hostname: yourexistingsite.com
+       service: http://localhost:3000
+     - hostname: yourdomain.com        # FediHome — add this line
+       service: http://localhost:3001  # the port FediHome listens on (your PORT)
+     - service: http_status:404        # keep this last
+   ```
+3. **Reload the running tunnel** instead of installing a second service:
+   - systemd: `sudo systemctl restart cloudflared`
+   - launchd / manual: send it `SIGHUP` (`kill -HUP <cloudflared-pid>`), or restart however you run it.
+
+   Do **not** run `cloudflared service install` again — there's one tunnel service per host.
+4. **DNS:** `cloudflared tunnel route dns <tunnel> yourdomain.com` only works if your `cert.pem` covers that domain's zone. If it doesn't (e.g. a different Cloudflare account/zone), add the record by hand instead: a **proxied** `CNAME` for `yourdomain.com` → `<your-tunnel-id>.cfargotunnel.com`. If an `A`/`AAAA` record already exists for that hostname, **delete it first** — a leftover address record alongside the tunnel CNAME is a common cause of Cloudflare **error 525**.
+
+Then jump to [Update Your .env.local](#update-your-envlocal) and set `SITE_URL` / `FEDI_DOMAIN` for the FediHome hostname.
 
 ## Troubleshooting
 
