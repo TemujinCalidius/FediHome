@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Security
+- **Bumped `nodemailer` to v9** to clear GHSA-p6gq-j5cr-w38f (arbitrary file read / SSRF via the `raw` message option). FediHome doesn't use the `raw` option, so exposure was low, but it's a high-severity advisory on a direct dependency and the upgrade is drop-in. (#66)
+- **`signedGet` now runs the `assertPublicHost` SSRF guard**, matching `signedFetch`. Every current caller already vets the URL, so this is defense-in-depth/consistency — a signed ActivityPub GET can no longer be coerced to a private/internal host even if a future caller forgets to check. (#67)
+
 ## 1.1.0 (2026-06-19)
 
 **Security & reliability release.** A hardening pass across the federation, XML-RPC, guest-comment, and setup paths, plus a configurable app port (`PORT` / `FEDIHOME_PORT`) and smoother self-hosted installs. Backward-compatible — upgrade with the usual `npm run update`, no action required. Validated live on the [fedihome.social](https://fedihome.social) demo before release.
