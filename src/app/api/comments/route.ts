@@ -8,6 +8,13 @@ export async function POST(req: NextRequest) {
   if (!verifyOrigin(req)) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
+  // Cap the body before parsing: a name (<=100) + comment (<=2000) plus the JSON
+  // envelope is far under 64 KB, so reject anything larger up front rather than
+  // buffering a huge unauthenticated payload into memory (DoS).
+  const MAX_BODY = 64 * 1024;
+  if (Number(req.headers.get("content-length")) > MAX_BODY) {
+    return NextResponse.json({ error: "Payload too large" }, { status: 413 });
+  }
   const body = await req.json();
   const { guestName, guestEmail, content, postId, photoId, website } = body;
 

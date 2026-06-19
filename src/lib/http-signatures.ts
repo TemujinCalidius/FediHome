@@ -16,6 +16,11 @@ export async function signedFetch(
   url: string,
   body: string
 ): Promise<Response> {
+  // SSRF defense-in-depth: callers generally vet the target inbox, but guard
+  // here too so a signed POST can never be coerced to a private/internal host.
+  if (!(await assertPublicHost(url))) {
+    throw new Error(`signedFetch: refusing non-public host ${url}`);
+  }
   const keys = await prisma.actorKeys.findUnique({ where: { id: "main" } });
   if (!keys) throw new Error("Actor keys not found");
 
@@ -130,7 +135,7 @@ export async function deliverActivity(
     return { ok: false, status: res.status, error: `${res.status}: ${trimmed}` };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error(`Delivery to ${inbox} error:`, err);
+    console.error("Delivery to %s error:", inbox, err);
     return { ok: false, status: 0, error: msg };
   }
 }

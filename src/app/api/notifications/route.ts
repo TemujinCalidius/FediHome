@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { verifyAdmin } from "@/lib/auth";
+import { htmlToText } from "@/lib/html-text";
 
 interface NotificationItem {
   id: string;
@@ -104,7 +105,7 @@ export async function GET(req: NextRequest) {
     }
   }
   for (const r of ourReplies) {
-    const snippet = r.content.replace(/<[^>]*>/g, "").slice(0, 50) + (r.content.length > 50 ? "..." : "");
+    const snippet = htmlToText(r.content, 50);
     apIdToUrl.set(r.apId, { url: "/timeline", name: snippet });
     ourApIds.push(r.apId);
   }
