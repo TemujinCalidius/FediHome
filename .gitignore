@@ -6,6 +6,9 @@ node_modules/
 out/
 tsconfig.tsbuildinfo
 
+# update.sh: records the commit last built, to detect a stale build
+.fedihome-built-sha
+
 # Environment (contains secrets)
 .env
 .env.local
