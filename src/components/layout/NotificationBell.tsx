@@ -173,7 +173,6 @@ export default function NotificationBell() {
       window.removeEventListener("focus", tick);
       navigator.serviceWorker?.removeEventListener("message", onSwMsg);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
