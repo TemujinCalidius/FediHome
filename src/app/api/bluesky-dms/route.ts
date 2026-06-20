@@ -3,7 +3,7 @@ import { pollBlueskyDMs } from "@/lib/bluesky-dm-poll";
 import { verifyAdmin } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
-  if (!verifyAdmin(req)) {
+  if (!(await verifyAdmin(req))) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 

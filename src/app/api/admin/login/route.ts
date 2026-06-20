@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import crypto from "crypto";
-import { safeCompare } from "@/lib/auth";
+import { safeCompare, createAdminSession } from "@/lib/auth";
 import { rateLimitKey } from "@/lib/client-ip";
 
 const MAX_ATTEMPTS = 5;
@@ -49,21 +48,18 @@ export async function POST(req: NextRequest) {
 
   loginAttempts.delete(key);
 
-  // H4: per-login random session token. Cookie value is no longer
-  // sha256(ADMIN_SECRET) — every login produces a unique HMAC-bound token.
-  const sessionId = crypto.randomBytes(16).toString("hex");
-  const mac = crypto
-    .createHmac("sha256", process.env.ADMIN_SECRET || "")
-    .update(sessionId)
-    .digest("hex");
-  const cookieValue = `${sessionId}.${mac}`;
+  // H4: per-login random session token bound by HMAC(ADMIN_SECRET, sessionId).
+  // The session is also persisted (AdminSession) so it can be revoked (#14).
+  const { cookieValue, maxAgeSeconds } = await createAdminSession(
+    req.headers.get("user-agent")
+  );
 
   const response = NextResponse.json({ success: true });
   response.cookies.set("sl_admin", cookieValue, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
-    maxAge: 60 * 60 * 24 * 30,
+    maxAge: maxAgeSeconds,
     path: "/",
   });
 

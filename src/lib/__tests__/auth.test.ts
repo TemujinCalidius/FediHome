@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import crypto from "crypto";
-import { safeCompare, hashToken, verifyAdminCookieValue, verifyOrigin } from "../auth";
+import { safeCompare, hashToken, verifyAdminCookieValue, verifyOrigin, sessionIdFromCookie } from "../auth";
 
 // verifyAdminCookieValue and verifyOrigin don't touch the DB so they can be
 // tested without mocking Prisma.
@@ -94,6 +94,21 @@ describe("verifyAdminCookieValue", () => {
   it("rejects a session ID that fails the hex format check", () => {
     const mac = crypto.createHmac("sha256", secret).update("ZZZZ").digest("hex");
     expect(verifyAdminCookieValue(`ZZZZ.${mac}`)).toBe(false);
+  });
+});
+
+describe("sessionIdFromCookie", () => {
+  it("extracts the 32-hex session id from a well-formed cookie", () => {
+    const id = "aabbccddeeff00112233445566778899";
+    expect(sessionIdFromCookie(`${id}.deadbeef`)).toBe(id);
+  });
+
+  it("returns null for undefined, missing dot, or bad-length / non-hex id", () => {
+    expect(sessionIdFromCookie(undefined)).toBeNull();
+    expect(sessionIdFromCookie("nodothere")).toBeNull();
+    expect(sessionIdFromCookie(".mac")).toBeNull();
+    expect(sessionIdFromCookie("tooshort.mac")).toBeNull();
+    expect(sessionIdFromCookie("ZZZZccddeeff00112233445566778899.mac")).toBeNull();
   });
 });
 

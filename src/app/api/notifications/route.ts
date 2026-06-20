@@ -17,7 +17,7 @@ interface NotificationItem {
 }
 
 export async function POST(req: NextRequest) {
-  if (!verifyAdmin(req)) {
+  if (!(await verifyAdmin(req))) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
-  if (!verifyAdmin(req)) {
+  if (!(await verifyAdmin(req))) {
     return NextResponse.json({ count: 0, items: [], categoryCounts: {} });
   }
 

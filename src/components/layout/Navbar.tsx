@@ -9,8 +9,8 @@ import { navLinks } from "@/lib/nav";
 export default async function Navbar() {
   const cookieStore = await cookies();
   const adminCookie = cookieStore.get("sl_admin")?.value;
-  const { verifyAdminCookieValue } = await import("@/lib/auth");
-  const isAdmin = verifyAdminCookieValue(adminCookie);
+  const { verifyAdminSession } = await import("@/lib/auth");
+  const isAdmin = await verifyAdminSession(adminCookie);
 
   return (
     <nav className="border-b border-surface-800 bg-surface-950/90 backdrop-blur-md sticky top-0 z-50">

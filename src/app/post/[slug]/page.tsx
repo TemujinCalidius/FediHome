@@ -4,7 +4,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { marked } from "marked";
 import { cookies } from "next/headers";
-import { verifyAdminCookieValue } from "@/lib/auth";
+import { verifyAdminSession } from "@/lib/auth";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { LightboxGallery } from "@/components/ui/Lightbox";
 import { iframeSrcFor } from "@/lib/peertube";
@@ -57,7 +57,7 @@ export default async function PostPage({
   // Check admin status for reply buttons
   const cookieStore = await cookies();
   const adminCookie = cookieStore.get("sl_admin")?.value;
-  const isAdmin = verifyAdminCookieValue(adminCookie);
+  const isAdmin = await verifyAdminSession(adminCookie);
 
   const post = await prisma.post.findUnique({
     where: { slug },

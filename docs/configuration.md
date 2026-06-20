@@ -22,6 +22,7 @@ All environment variables are set in `.env.local` at the project root. The `.env
 |----------|-------------|---------|
 | `PORT` | The port the app binds to (`npm start` / `npm run dev` / pm2). Set this if port 3000 is already in use on the host. | `3000` |
 | `FEDIHOME_PORT` | **Docker Compose only.** The host port published in front of the container (which always listens on `3000`). | `3000` |
+| `ADMIN_SESSION_TTL_DAYS` | How many days an admin login stays valid before re-authentication is required. Sessions are individually revocable from **/admin/sessions** (linked from the timeline header), so a lost device can be signed out without rotating `ADMIN_SECRET`. | `30` |
 
 > **Changing the port?** Also set `SITE_URL` to your real public origin. The listen port and the public URL are independent: `SITE_URL` drives ActivityPub IDs, WebFinger, RSS, and the CSRF origin check, so behind a reverse proxy or tunnel the port you bind locally is usually *not* the port in your public URL. A wrong `SITE_URL` silently breaks federation.
 

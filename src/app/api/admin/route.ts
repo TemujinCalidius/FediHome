@@ -128,7 +128,7 @@ const REMOTE_FETCH_TIMEOUT_MS = 8000;
 const siteUrl = siteConfig.url;
 
 export async function POST(req: NextRequest) {
-  if (!verifyAdmin(req)) {
+  if (!(await verifyAdmin(req))) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   if (!verifyOrigin(req)) {

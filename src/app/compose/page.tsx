@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
-import { verifyAdminCookieValue } from "@/lib/auth";
+import { verifyAdminSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import ComposeClient, { type InitialValues } from "./ComposeClient";
 import TimelineLogin from "../timeline/TimelineLogin";
@@ -18,7 +18,7 @@ export default async function ComposePage({
   searchParams: Promise<{ edit?: string }>;
 }) {
   const cookieStore = await cookies();
-  const isAdmin = verifyAdminCookieValue(cookieStore.get("sl_admin")?.value);
+  const isAdmin = await verifyAdminSession(cookieStore.get("sl_admin")?.value);
 
   if (!isAdmin) {
     return <TimelineLogin />;

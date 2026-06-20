@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
-import { verifyAdminCookieValue } from "@/lib/auth";
+import { verifyAdminSession } from "@/lib/auth";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { isTinylyticsConfigured, getSiteStats, getLeaderboard, getRecentHits, getUserJourneys } from "@/lib/tinylytics";
 import { siteConfig } from "@/../site.config";
@@ -18,7 +18,7 @@ export const metadata = {
 export default async function TimelinePage() {
   const cookieStore = await cookies();
   const adminToken = cookieStore.get("sl_admin")?.value;
-  const isAdmin = verifyAdminCookieValue(adminToken);
+  const isAdmin = await verifyAdminSession(adminToken);
 
   if (!isAdmin) {
     return <TimelineLogin />;
@@ -152,6 +152,12 @@ export default async function TimelinePage() {
         <div className="flex items-center gap-4 text-sm text-gray-500">
           <span>{totalFollowerCount} followers</span>
           <span>{totalFollowingCount} following</span>
+          <a
+            href="/admin/sessions"
+            className="text-xs text-gray-500 hover:text-white transition-colors"
+          >
+            Sessions
+          </a>
           <a
             href="/compose"
             className="btn-primary text-xs !py-1.5"
