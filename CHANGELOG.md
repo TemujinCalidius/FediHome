@@ -7,6 +7,7 @@
 
 ### Fixed
 - **Post pages no longer re-poll Bluesky on every render.** Polling is now throttled by a per-post TTL and each network call has a timeout, so a slow or failing Bluesky never blocks page render; poll failures now log `err.cause` and the post URI instead of being swallowed. (#54)
+- **Fixed two React 19 render-purity violations** surfaced by the restored lint: a ref written during render in the timeline (`TimelineClient`) now updates in an effect, and `NotificationBell` no longer calls `Date.now()` during render (relative times come from effect-backed state). (#78)
 
 ## 1.2.0 (2026-06-20)
 
