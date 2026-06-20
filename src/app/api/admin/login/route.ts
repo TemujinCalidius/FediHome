@@ -1,28 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { safeCompare } from "@/lib/auth";
+import { rateLimitKey } from "@/lib/client-ip";
 
 const MAX_ATTEMPTS = 5;
 const WINDOW_MS = 60 * 1000;
 const MAX_BUCKETS = 1000;
 
 const loginAttempts = new Map<string, { count: number; resetAt: number }>();
-
-/**
- * Resolve the client IP for rate limiting.
- *
- * X-Forwarded-For is attacker-controlled unless a trusted reverse proxy
- * overwrites it. Honor it only when TRUSTED_PROXY=true is explicitly set.
- * Otherwise all requests share a single bucket — that's stricter, not laxer:
- * an attacker still can't rotate buckets to defeat the rate limit (H2).
- */
-function getRateLimitKey(req: NextRequest): string {
-  if (process.env.TRUSTED_PROXY === "true") {
-    const xff = req.headers.get("x-forwarded-for");
-    if (xff) return xff.split(",")[0].trim() || "default";
-  }
-  return "default";
-}
 
 function evictIfNeeded(now: number) {
   if (loginAttempts.size < MAX_BUCKETS) return;
@@ -39,7 +24,7 @@ function evictIfNeeded(now: number) {
 }
 
 export async function POST(req: NextRequest) {
-  const key = getRateLimitKey(req);
+  const key = rateLimitKey(req);
   const now = Date.now();
   const attempts = loginAttempts.get(key);
 
