@@ -139,7 +139,11 @@ export default async function PostPage({
       const { pollBlueskyReplies } = await import("@/lib/bluesky-poll");
       await pollBlueskyReplies(post.id, post.blueskyUri);
     } catch (err) {
-      console.error("Bluesky poll failed:", err);
+      const cause = err instanceof Error && err.cause ? ` cause=${String(err.cause)}` : "";
+      console.error(
+        `Bluesky poll failed for post ${post.id} (${post.blueskyUri}):${cause}`,
+        err,
+      );
     }
   }
 
