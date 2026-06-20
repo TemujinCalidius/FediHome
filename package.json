@@ -60,5 +60,11 @@
     "eslint-config-next": "^16.2.9",
     "tsx": "^4.21.0",
     "vitest": "^4.1.9"
+  },
+  "overrides": {
+    "yaml": "^2.8.3",
+    "js-yaml": "^4.2.0",
+    "@opentelemetry/core": "^2.8.0",
+    "@hono/node-server": "^1.19.13"
   }
 }
