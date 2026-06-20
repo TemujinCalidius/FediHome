@@ -48,20 +48,31 @@ echo "  ==================="
 echo "  Folder: $INSTALL_DIR"
 echo ""
 
-# Read from /dev/tty when stdin is piped (curl | bash)
-if [ ! -t 0 ] && [ -e /dev/tty ]; then
+# Read from /dev/tty when stdin is piped (curl | bash) — but only if it's
+# actually openable (a bare headless run has /dev/tty as an unusable device).
+if [ ! -t 0 ] && { : < /dev/tty; } 2>/dev/null; then
   INPUT_FROM=/dev/tty
 else
   INPUT_FROM=/dev/stdin
 fi
 
+# Non-interactive mode (CI / FEDIHOME_YES / FEDIHOME_NONINTERACTIVE): skip
+# prompts and use each prompt's stated default.
+NONINTERACTIVE=0
+if [ -n "${FEDIHOME_NONINTERACTIVE:-}" ] || [ -n "${FEDIHOME_YES:-}" ] || [ "${CI:-}" = "true" ] || [ "${CI:-}" = "1" ]; then
+  NONINTERACTIVE=1
+fi
+
 ask_yes_no() {
   local prompt="$1"
   local default="${2:-y}"
+  if [ "$NONINTERACTIVE" = "1" ]; then
+    case "$default" in [yY]*) return 0 ;; *) return 1 ;; esac
+  fi
   local answer
   local suffix="[Y/n]"
   [ "$default" = "n" ] && suffix="[y/N]"
-  read -r -p "  $prompt $suffix " answer < "$INPUT_FROM"
+  read -r -p "  $prompt $suffix " answer < "$INPUT_FROM" 2>/dev/null || answer=""
   answer="${answer:-$default}"
   case "$answer" in
     [yY]|[yY][eE][sS]) return 0 ;;

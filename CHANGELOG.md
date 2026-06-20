@@ -16,6 +16,7 @@
 - **Post pages no longer re-poll Bluesky on every render.** Polling is now throttled by a per-post TTL and each network call has a timeout, so a slow or failing Bluesky never blocks page render; poll failures now log `err.cause` and the post URI instead of being swallowed. (#54)
 - **Fixed two React 19 render-purity violations** surfaced by the restored lint: a ref written during render in the timeline (`TimelineClient`) now updates in an effect, and `NotificationBell` no longer calls `Date.now()` during render (relative times come from effect-backed state). (#78)
 - **Cleared the one ESLint error** (`@next/next/no-html-link-for-pages`) on the setup wizard's completion screen — "Go to your site" is now a `next/link` `<Link>` (client transition instead of a full reload) — and removed two stale `eslint-disable` directives. (#83)
+- **`install.sh` / `update.sh` run cleanly without a controlling terminal.** They no longer emit `/dev/tty: Device not configured` when run headlessly (the tty is now probed for openability before use), and they honour a non-interactive mode — set `FEDIHOME_NONINTERACTIVE=1` / `FEDIHOME_YES=1` / `CI=1` to skip prompts and take each one's stated default (destructive install prompts default to "no", so unattended runs are fail-closed). (#77)
 
 ## 1.2.0 (2026-06-20)
 
