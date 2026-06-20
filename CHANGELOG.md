@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 1.2.0 (2026-06-20)
+
+**Security & reliability release.** Clears a high-severity `nodemailer` advisory (#66) and adds the `assertPublicHost` SSRF guard to signed ActivityPub GETs (#67), migrates to the Next 16 `proxy` convention (#68), and hardens self-hosted installs/updates — configurable/safe PostgreSQL setup including PG15+ (#29, #31) and stale-build rebuilds (#63). Backward-compatible — upgrade with the usual `npm run update`.
+
+### Security
+- **Bumped `nodemailer` to v9** to clear GHSA-p6gq-j5cr-w38f (arbitrary file read / SSRF via the `raw` message option). FediHome doesn't use the `raw` option, so exposure was low, but it's a high-severity advisory on a direct dependency and the upgrade is drop-in. (#66)
+- **`signedGet` now runs the `assertPublicHost` SSRF guard**, matching `signedFetch`. Every current caller already vets the URL, so this is defense-in-depth/consistency — a signed ActivityPub GET can no longer be coerced to a private/internal host even if a future caller forgets to check. (#67)
+
+### Changed
+- **Migrated the Next.js `middleware` convention to `proxy`** (Next 16 deprecated `middleware`). `src/middleware.ts` → `src/proxy.ts`, function renamed `middleware` → `proxy`; the matcher and behaviour (setup redirect + ActivityPub content negotiation) are unchanged. Clears the `next build` deprecation warning and stays ahead of the eventual removal. (#68)
+
+### Fixed
+- **`install.sh` is safer alongside an existing PostgreSQL, and works on PostgreSQL 15+.** The database name/role/host/port are now overridable (`DB_NAME` / `DB_USER` / `PGHOST` / `PGPORT`); the installer now **asks** before reusing an existing database or resetting an existing role's password (previously it reset silently); and it grants the app role ownership + `CREATE` on schema `public`, so `prisma db push` succeeds on PG15+ / non-owner setups where it used to fail with `permission denied for schema public`. Defaults are unchanged on a clean host. (#31, #29)
+- **`npm run update` now rebuilds + restarts when the running build is stale, not only when there are commits to pull.** It records the last-built commit and, if HEAD differs from it (e.g. after switching branches) with nothing to pull, rebuilds and restarts the current code instead of exiting "already up to date" while the old build keeps serving. (#63)
+
 ## 1.1.0 (2026-06-19)
 
 **Security & reliability release.** A hardening pass across the federation, XML-RPC, guest-comment, and setup paths, plus a configurable app port (`PORT` / `FEDIHOME_PORT`) and smoother self-hosted installs. Backward-compatible — upgrade with the usual `npm run update`, no action required. Validated live on the [fedihome.social](https://fedihome.social) demo before release.

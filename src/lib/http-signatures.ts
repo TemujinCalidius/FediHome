@@ -70,6 +70,11 @@ export async function signedFetch(
  * collections. Signs `(request-target) host date` with the site actor key.
  */
 export async function signedGet(url: string, timeoutMs = 10000): Promise<Response> {
+  // SSRF defense-in-depth: callers vet the target, but guard here too so a
+  // signed GET can never be coerced to a private/internal host.
+  if (!(await assertPublicHost(url))) {
+    throw new Error(`signedGet: refusing non-public host ${url}`);
+  }
   const keys = await prisma.actorKeys.findUnique({ where: { id: "main" } });
   if (!keys) throw new Error("Actor keys not found");
 
