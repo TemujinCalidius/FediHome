@@ -4,6 +4,8 @@ import { prisma } from "@/lib/db";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { marked } from "marked";
 
+const DEBUG = process.env.FEDIHOME_DEBUG === "true";
+
 function slugify(text: string): string {
   return text
     .toLowerCase()
@@ -154,11 +156,11 @@ export async function POST(req: NextRequest) {
     const { crosspostToBluesky, crosspostToThreads } = await import("@/lib/crosspost");
     const postUrl = `${siteUrl}/post/${slug}`;
     crosspostToBluesky(content, postUrl).then((r) => {
-      if (r.success) console.log("Cross-posted to Bluesky:", r.uri);
+      if (DEBUG && r.success) console.log("Cross-posted to Bluesky:", r.uri);
       else console.error("Bluesky crosspost failed:", r.error);
     });
     crosspostToThreads(content, postUrl).then((r) => {
-      if (r.success) console.log("Cross-posted to Threads:", r.id);
+      if (DEBUG && r.success) console.log("Cross-posted to Threads:", r.id);
       else console.error("Threads crosspost failed:", r.error);
     });
   }

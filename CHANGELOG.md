@@ -11,6 +11,7 @@
 
 ### Changed
 - **Restored `npm run lint` under Next 16** (which removed the `next lint` command): added ESLint 9 with a flat `eslint.config.mjs` wiring `@next/eslint-plugin-next`, `eslint-plugin-react-hooks` v7 (React 19 "Rules of React"), and the TypeScript parser. The new render-purity/ref rules are surfaced as warnings for now. (#21)
+- **Debug `console.log`s on the hot publish/federation paths are now silent by default.** Five informational logs (Micropub crosspost success, AP inbox activity received / unhandled type / DM received) are gated behind `FEDIHOME_DEBUG=true`; `console.error`/`console.warn` diagnostics are untouched. (#13)
 
 ### Fixed
 - **Post pages no longer re-poll Bluesky on every render.** Polling is now throttled by a per-post TTL and each network call has a timeout, so a slow or failing Bluesky never blocks page render; poll failures now log `err.cause` and the post URI instead of being swallowed. (#54)
