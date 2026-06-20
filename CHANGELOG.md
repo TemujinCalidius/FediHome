@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.3.0 (2026-06-21)
+
+**Features & hardening release.** Individually revocable admin sessions (#14), a "hide social graph" privacy opt-out (#23), and an optional "support the project" link (#64), plus rate-limit/dependency-advisory hardening (#10, #12, #55) and a large maintainability refactor that splits the 1,076-line `admin/route.ts` into per-domain modules (#11). Backward-compatible — upgrade with the usual `npm run update`. **One-time note:** this adds an `AdminSession` table and invalidates existing admin logins once, so sign in again after upgrading (see Schema below).
+
 ### Added
 - **Optional "Support the project" link.** Set `FUNDING_URL` (e.g. your GitHub Sponsors / Ko-fi / Liberapay page) to show a themed `♥` link on the landing page (`LANDING_MODE`) and in the footer; `FUNDING_LABEL` customises the text (default "Support FediHome"). Unset → nothing renders, so other self-hosters see no change. Mirrors the existing config-driven webring/badge footer extras. (#64)
 - **`HIDE_SOCIAL_GRAPH` privacy knob.** When set, `/ap/followers` and `/ap/following` still report their counts (`totalItems`) but no longer enumerate who follows you / who you follow — Mastodon's "hide social graph" behaviour. Off by default; federation delivery is unaffected (it only references the collection URIs, never their contents). (#23)
