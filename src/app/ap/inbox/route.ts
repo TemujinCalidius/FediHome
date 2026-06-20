@@ -9,6 +9,7 @@ import { htmlToText } from "@/lib/html-text";
 
 const siteUrl = process.env.SITE_URL || "http://localhost:3000";
 const ACTOR_FETCH_TIMEOUT_MS = 8000;
+const DEBUG = process.env.FEDIHOME_DEBUG === "true";
 
 /** Escape plain text for safe inclusion in HTML (Article `name` is plain text). */
 function escapeText(s: string): string {
@@ -64,7 +65,7 @@ export async function POST(req: NextRequest) {
   }
 
   // L1: encode actorUri before logging to prevent log-injection via newlines
-  console.log(`AP inbox: ${type} from ${encodeURIComponent(actorUri)}`);
+  if (DEBUG) console.log(`AP inbox: ${type} from ${encodeURIComponent(actorUri)}`);
 
   switch (type) {
     case "Follow":
@@ -107,7 +108,7 @@ export async function POST(req: NextRequest) {
       break;
 
     default:
-      console.log(`Unhandled ActivityPub activity type: ${type}`);
+      if (DEBUG) console.log(`Unhandled ActivityPub activity type: ${type}`);
   }
 
   return new NextResponse(null, { status: 202 });
@@ -386,7 +387,7 @@ async function handleNote(actorUri: string, note: Record<string, unknown>) {
       },
       update: {},
     });
-    console.log(`AP inbox: DM from ${info.username}@${info.domain}`);
+    if (DEBUG) console.log(`AP inbox: DM from ${info.username}@${info.domain}`);
     if (!dmExisted) {
       void sendPushToOwner({
         title: "New message",
