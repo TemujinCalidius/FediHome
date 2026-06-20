@@ -7,7 +7,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint .",
     "postinstall": "prisma generate",
     "update": "bash update.sh",
     "check-updates": "tsx scripts/check-updates.ts",
@@ -51,10 +51,13 @@
     "web-push": "^3.6.7"
   },
   "devDependencies": {
+    "@eslint/eslintrc": "^3.3.5",
     "@types/nodemailer": "^8.0.1",
     "@types/pg": "^8.20.0",
     "@types/sanitize-html": "^2.16.1",
     "@vitest/coverage-v8": "^4.1.9",
+    "eslint": "^9.39.4",
+    "eslint-config-next": "^16.2.9",
     "tsx": "^4.21.0",
     "vitest": "^4.1.9"
   }
