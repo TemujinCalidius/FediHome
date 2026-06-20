@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.2.0 (2026-06-20)
+
+**Security & reliability release.** Clears a high-severity `nodemailer` advisory (#66) and adds the `assertPublicHost` SSRF guard to signed ActivityPub GETs (#67), migrates to the Next 16 `proxy` convention (#68), and hardens self-hosted installs/updates — configurable/safe PostgreSQL setup including PG15+ (#29, #31) and stale-build rebuilds (#63). Backward-compatible — upgrade with the usual `npm run update`.
+
 ### Security
 - **Bumped `nodemailer` to v9** to clear GHSA-p6gq-j5cr-w38f (arbitrary file read / SSRF via the `raw` message option). FediHome doesn't use the `raw` option, so exposure was low, but it's a high-severity advisory on a direct dependency and the upgrade is drop-in. (#66)
 - **`signedGet` now runs the `assertPublicHost` SSRF guard**, matching `signedFetch`. Every current caller already vets the URL, so this is defense-in-depth/consistency — a signed ActivityPub GET can no longer be coerced to a private/internal host even if a future caller forgets to check. (#67)
