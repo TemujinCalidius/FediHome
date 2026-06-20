@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
+import Link from "next/link";
 
 const TOTAL_STEPS = 6;
 
@@ -447,9 +448,9 @@ export default function SetupWizard() {
                 </div>
               </div>
 
-              <a href="/" className="btn-primary text-base px-8 py-3 inline-block no-underline cursor-pointer">
+              <Link href="/" className="btn-primary text-base px-8 py-3 inline-block no-underline cursor-pointer">
                 Go to your site &rarr;
-              </a>
+              </Link>
             </div>
           )}
         </div>
