@@ -5,6 +5,7 @@ import { deliverActivity, deliverToFollowers } from "@/lib/http-signatures";
 import { crosspostToBluesky, crosspostReplyToBluesky, crosspostToThreads, crosspostToDayOne } from "@/lib/crosspost";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { parseMentions, linkMentions, buildApMentionTags, collectMentionInboxes } from "@/lib/mentions";
+import { imageAttachment } from "@/lib/ap-post";
 import path from "path";
 
 const siteUrl = process.env.SITE_URL || "http://localhost:3000";
@@ -372,20 +373,27 @@ async function composeHandler(req: NextRequest) {
   }
 
   // Build AP attachment array for photos AND audio
-  const apImageAttachments = (photos || []).map((p) => {
-    const url = p.url.startsWith("http") ? p.url : `${siteUrl}${p.url}`;
-    const ext = url.split(".").pop()?.toLowerCase() || "jpg";
-    const mimeMap: Record<string, string> = {
-      jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png",
-      webp: "image/webp", gif: "image/gif",
-    };
-    return {
-      type: "Image",
-      mediaType: mimeMap[ext] || "image/jpeg",
-      url,
-      name: p.alt || "",
-    };
-  });
+  const apImageAttachments = [
+    // Federate the cover image too (previously only inline photos were attached,
+    // so a titled Article with a cover federated imageless). (#96)
+    ...(post.coverImage && !(photos || []).some((p) => p.url === post.coverImage)
+      ? [imageAttachment(post.coverImage)]
+      : []),
+    ...(photos || []).map((p) => {
+      const url = p.url.startsWith("http") ? p.url : `${siteUrl}${p.url}`;
+      const ext = url.split(".").pop()?.toLowerCase() || "jpg";
+      const mimeMap: Record<string, string> = {
+        jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png",
+        webp: "image/webp", gif: "image/gif",
+      };
+      return {
+        type: "Image",
+        mediaType: mimeMap[ext] || "image/jpeg",
+        url,
+        name: p.alt || "",
+      };
+    }),
+  ];
 
   const apAudioAttachments = (audios || []).map((a) => {
     const url = a.url.startsWith("http") ? a.url : `${siteUrl}${a.url}`;
@@ -631,15 +639,20 @@ async function updatePostHandler(postId: string, input: EditInput) {
     apContent = `${apContent}\n${videoLinks}`;
   }
 
-  const apImageAttachments = (input.photos || []).map((p) => {
-    const url = p.url.startsWith("http") ? p.url : `${siteUrl}${p.url}`;
-    const ext = url.split(".").pop()?.toLowerCase() || "jpg";
-    const mimeMap: Record<string, string> = {
-      jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png",
-      webp: "image/webp", gif: "image/gif",
-    };
-    return { type: "Image", mediaType: mimeMap[ext] || "image/jpeg", url, name: p.alt || "" };
-  });
+  const apImageAttachments = [
+    ...(updated.coverImage && !(input.photos || []).some((p) => p.url === updated.coverImage)
+      ? [imageAttachment(updated.coverImage)]
+      : []),
+    ...(input.photos || []).map((p) => {
+      const url = p.url.startsWith("http") ? p.url : `${siteUrl}${p.url}`;
+      const ext = url.split(".").pop()?.toLowerCase() || "jpg";
+      const mimeMap: Record<string, string> = {
+        jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png",
+        webp: "image/webp", gif: "image/gif",
+      };
+      return { type: "Image", mediaType: mimeMap[ext] || "image/jpeg", url, name: p.alt || "" };
+    }),
+  ];
   const apAudioAttachments = (input.audios || []).map((a) => {
     const url = a.url.startsWith("http") ? a.url : `${siteUrl}${a.url}`;
     return { type: "Document", mediaType: "audio/mpeg", url, name: a.title || "" };
