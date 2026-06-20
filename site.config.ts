@@ -46,6 +46,11 @@ export const siteConfig = {
   publicFeed: process.env.PUBLIC_FEED === "true",
   publicFeedTitle: process.env.PUBLIC_FEED_TITLE || "The Fediverse feed",
 
+  // When HIDE_SOCIAL_GRAPH=true, /ap/followers and /ap/following still report
+  // their counts (totalItems) but don't enumerate members — Mastodon's
+  // hidden-collection behaviour. Off by default.
+  hideSocialGraph: process.env.HIDE_SOCIAL_GRAPH === "true",
+
   // Assets
   avatarPath: "/images/avatar.png",
   bannerPath: "/images/banner.webp",

@@ -4,6 +4,7 @@
 
 ### Added
 - **Optional "Support the project" link.** Set `FUNDING_URL` (e.g. your GitHub Sponsors / Ko-fi / Liberapay page) to show a themed `♥` link on the landing page (`LANDING_MODE`) and in the footer; `FUNDING_LABEL` customises the text (default "Support FediHome"). Unset → nothing renders, so other self-hosters see no change. Mirrors the existing config-driven webring/badge footer extras. (#64)
+- **`HIDE_SOCIAL_GRAPH` privacy knob.** When set, `/ap/followers` and `/ap/following` still report their counts (`totalItems`) but no longer enumerate who follows you / who you follow — Mastodon's "hide social graph" behaviour. Off by default; federation delivery is unaffected (it only references the collection URIs, never their contents). (#23)
 
 ### Security
 - **Cleared 4 of 5 outstanding transitive-dependency advisories** via npm `overrides`, forcing patched versions of `yaml`, `js-yaml`, `@opentelemetry/core`, and `@hono/node-server` (the last dev-only, via `@prisma/dev`). All were low-exposure moderates; verified with tsc / 70 tests / build / lint. The one remaining — `postcss` bundled *inside* Next.js (GHSA-qx2v-qp2m-jg93) — has no upstream fix and is build-time / trusted-CSS only. (#12, #55)
