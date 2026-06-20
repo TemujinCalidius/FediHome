@@ -72,6 +72,8 @@ export const siteConfig = {
     badgeSrc: process.env.FOOTER_BADGE_SRC || "",
     badgeHref: process.env.FOOTER_BADGE_HREF || "",
     badgeAlt: process.env.FOOTER_BADGE_ALT || "Badge",
+    fundingUrl: process.env.FUNDING_URL || "",
+    fundingLabel: process.env.FUNDING_LABEL || "Support FediHome",
   },
 } as const;
 
