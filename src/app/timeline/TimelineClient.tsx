@@ -1616,7 +1616,11 @@ export default function TimelineClient({
   const loadingMoreRef = useRef(false); // stable mirror of loadingMore for the live refresh guard
   // Always-current posts, so the live refresh can dedup without re-subscribing.
   const postsRef = useRef(posts);
-  postsRef.current = posts;
+  // Keep the ref current for the async live-refresh handlers (read in callbacks, not during
+  // render). Writing it in an effect satisfies the Rules of React (no ref writes in render).
+  useEffect(() => {
+    postsRef.current = posts;
+  }, [posts]);
   const [replyTo, setReplyTo] = useState<{ apId: string; inbox: string } | null>(null);
   const [replyContent, setReplyContent] = useState("");
   const [followHandle, setFollowHandle] = useState("");

@@ -186,10 +186,20 @@ export default function NotificationBell() {
     return () => document.removeEventListener("mousedown", handleClick);
   }, [open]);
 
+  // Capture "now" in an effect (not during render) so relative times stay pure and
+  // hydration-safe; refresh it each minute.
+  const [now, setNow] = useState(0);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: sync client-only time after mount
+    setNow(Date.now());
+    const id = setInterval(() => setNow(Date.now()), 60000);
+    return () => clearInterval(id);
+  }, []);
+
   if (!loaded) return null;
 
   const timeAgo = (dateStr: string) => {
-    const diff = Date.now() - new Date(dateStr).getTime();
+    const diff = now - new Date(dateStr).getTime();
     const mins = Math.floor(diff / 60000);
     if (mins < 1) return "now";
     if (mins < 60) return `${mins}m`;
