@@ -4,6 +4,7 @@ import { hashToken } from "@/lib/auth";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { marked } from "marked";
 import { extractParam, extractStruct, between } from "@/lib/xmlrpc";
+import { rateLimitKey } from "@/lib/client-ip";
 
 /**
  * XML-RPC endpoint (MetaWeblog API) for compatibility with micro.blog app
@@ -23,14 +24,6 @@ const RATE_WINDOW_MS = 60_000;
 // Cap the body so parsing work is bounded regardless of input.
 const MAX_REQUEST_CHARS = 1_000_000;
 const rateBuckets = new Map<string, { count: number; resetAt: number }>();
-
-function getRateLimitKey(req: NextRequest): string {
-  if (process.env.TRUSTED_PROXY === "true") {
-    const xff = req.headers.get("x-forwarded-for");
-    if (xff) return xff.split(",")[0].trim() || "default";
-  }
-  return "default";
-}
 
 function isRateLimited(key: string): boolean {
   const now = Date.now();
@@ -90,7 +83,7 @@ function slugify(text: string): string {
 }
 
 export async function POST(req: NextRequest) {
-  if (isRateLimited(getRateLimitKey(req))) {
+  if (isRateLimited(rateLimitKey(req))) {
     return xmlResponse(fault(429, "rate limit exceeded"), 429);
   }
 
