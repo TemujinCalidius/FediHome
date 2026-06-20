@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Changed
+- **Dependency refresh — five major bumps, all backward-compatible.** TypeScript `5.9 → 6.0`, `marked` `17 → 18` (markdown→HTML output verified unchanged on representative posts), `@types/node` `25 → 26`, `@atproto/api` `0.19 → 0.20` (Bluesky SDK), and ESLint `9 → 10`, plus in-range patch/minor updates (Next 16.2.9, React 19.2.7, `pg`, `tailwindcss`, `fast-xml-parser`, `music-metadata`, `@fedify/next`). Verified with tsc / 77 tests / build / lint (0 errors) / `npm audit` (unchanged at 3 moderate — the parked postcss advisory). The ESLint 9→10 bump installs with peer warnings (`@next/eslint-plugin-next` and `eslint-plugin-react-hooks` still declare `eslint ^9`); lint runs clean regardless — to be tidied once those plugins ship eslint-10 peers.
+
 ## 1.3.0 (2026-06-21)
 
 **Features & hardening release.** Individually revocable admin sessions (#14), a "hide social graph" privacy opt-out (#23), and an optional "support the project" link (#64), plus rate-limit/dependency-advisory hardening (#10, #12, #55) and a large maintainability refactor that splits the 1,076-line `admin/route.ts` into per-domain modules (#11). Backward-compatible — upgrade with the usual `npm run update`. **One-time note:** this adds an `AdminSession` table and invalidates existing admin logins once, so sign in again after upgrading (see Schema below).
