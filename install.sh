@@ -37,15 +37,26 @@ echo "  This will install FediHome on your computer. It takes about 5 minutes."
 echo "  You'll be asked a few questions along the way."
 echo ""
 
+# Non-interactive mode (CI / FEDIHOME_YES / FEDIHOME_NONINTERACTIVE): skip every
+# prompt and use its stated default. Destructive install prompts default to "no"
+# (they exit rather than clobber), so an unattended run is fail-closed.
+NONINTERACTIVE=0
+if [ -n "${FEDIHOME_NONINTERACTIVE:-}" ] || [ -n "${FEDIHOME_YES:-}" ] || [ "${CI:-}" = "true" ] || [ "${CI:-}" = "1" ]; then
+  NONINTERACTIVE=1
+fi
+
 # Detect when piped via curl (stdin is not a TTY). We still want interactive
 # prompts to work — read from /dev/tty so the user can answer questions.
-if [ ! -t 0 ]; then
-  if [ -t 1 ] && [ -e /dev/tty ]; then
+if [ "$NONINTERACTIVE" = "1" ]; then
+  INPUT_FROM=/dev/null
+elif [ ! -t 0 ]; then
+  if [ -t 1 ] && { : < /dev/tty; } 2>/dev/null; then
     INPUT_FROM=/dev/tty
   else
     fail "No interactive terminal available. Please run this script directly:"
     echo "    curl -sSL https://raw.githubusercontent.com/TemujinCalidius/fedihome/main/install.sh -o install.sh"
     echo "    bash install.sh"
+    echo "  Or set FEDIHOME_NONINTERACTIVE=1 to run unattended with defaults."
     exit 1
   fi
 else
@@ -56,6 +67,7 @@ ask() {
   # ask "Prompt text" "default value" -> echoes the answer
   local prompt="$1"
   local default="$2"
+  if [ "$NONINTERACTIVE" = "1" ]; then echo "$default"; return; fi
   local answer
   if [ -n "$default" ]; then
     read -r -p "  $prompt [$default]: " answer < "$INPUT_FROM"
@@ -70,10 +82,13 @@ ask_yes_no() {
   # ask_yes_no "Question?" "y" -> returns 0 for yes, 1 for no
   local prompt="$1"
   local default="${2:-y}"
+  if [ "$NONINTERACTIVE" = "1" ]; then
+    case "$default" in [yY]*) return 0 ;; *) return 1 ;; esac
+  fi
   local answer
   local suffix="[Y/n]"
   [ "$default" = "n" ] && suffix="[y/N]"
-  read -r -p "  $prompt $suffix " answer < "$INPUT_FROM"
+  read -r -p "  $prompt $suffix " answer < "$INPUT_FROM" 2>/dev/null || answer=""
   answer="${answer:-$default}"
   case "$answer" in
     [yY]|[yY][eE][sS]) return 0 ;;

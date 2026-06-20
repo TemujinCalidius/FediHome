@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+## 1.3.0 (2026-06-21)
+
+**Features & hardening release.** Individually revocable admin sessions (#14), a "hide social graph" privacy opt-out (#23), and an optional "support the project" link (#64), plus rate-limit/dependency-advisory hardening (#10, #12, #55) and a large maintainability refactor that splits the 1,076-line `admin/route.ts` into per-domain modules (#11). Backward-compatible — upgrade with the usual `npm run update`. **One-time note:** this adds an `AdminSession` table and invalidates existing admin logins once, so sign in again after upgrading (see Schema below).
+
+### Added
+- **Optional "Support the project" link.** Set `FUNDING_URL` (e.g. your GitHub Sponsors / Ko-fi / Liberapay page) to show a themed `♥` link on the landing page (`LANDING_MODE`) and in the footer; `FUNDING_LABEL` customises the text (default "Support FediHome"). Unset → nothing renders, so other self-hosters see no change. Mirrors the existing config-driven webring/badge footer extras. (#64)
+- **`HIDE_SOCIAL_GRAPH` privacy knob.** When set, `/ap/followers` and `/ap/following` still report their counts (`totalItems`) but no longer enumerate who follows you / who you follow — Mastodon's "hide social graph" behaviour. Off by default; federation delivery is unaffected (it only references the collection URIs, never their contents). (#23)
+- **Revocable admin sessions.** Admin logins are now persisted server-side, so an individual session can be revoked without rotating `ADMIN_SECRET` (which logs *everyone* out). A new **/admin/sessions** page (linked from the timeline header) lists every signed-in device with its browser/OS and last-active time, and lets you revoke any one, "sign out all other sessions", or sign out the current device. Sessions also expire now — `ADMIN_SESSION_TTL_DAYS` (default 30) bounds their lifetime. **On upgrade, existing admin logins are invalidated once** (the new session store starts empty), so you'll sign in again after deploying. (#14)
+
+### Security
+- **Cleared 4 of 5 outstanding transitive-dependency advisories** via npm `overrides`, forcing patched versions of `yaml`, `js-yaml`, `@opentelemetry/core`, and `@hono/node-server` (the last dev-only, via `@prisma/dev`). All were low-exposure moderates; verified with tsc / 70 tests / build / lint. The one remaining — `postcss` bundled *inside* Next.js (GHSA-qx2v-qp2m-jg93) — has no upstream fix and is build-time / trusted-CSS only. (#12, #55)
+
+### Changed
+- **Restored `npm run lint` under Next 16** (which removed the `next lint` command): added ESLint 9 with a flat `eslint.config.mjs` wiring `@next/eslint-plugin-next`, `eslint-plugin-react-hooks` v7 (React 19 "Rules of React"), and the TypeScript parser. The new render-purity/ref rules are surfaced as warnings for now. (#21)
+- **Debug `console.log`s on the hot publish/federation paths are now silent by default.** Five informational logs (Micropub crosspost success, AP inbox activity received / unhandled type / DM received) are gated behind `FEDIHOME_DEBUG=true`; `console.error`/`console.warn` diagnostics are untouched. (#13)
+- **Unified the rate-limit IP keying behind a single `rateLimitKey()` helper** (`src/lib/client-ip.ts`). The admin-login, XML-RPC, and guest-comment endpoints each carried their own byte-identical copy of the "trust `X-Forwarded-For` only when `TRUSTED_PROXY=true`, else one shared bucket" logic; they now share one tested helper, so the security invariant can't drift between routes. Behaviour is unchanged (the guest-comment hash now keys off `default` instead of `unknown` in the degenerate "proxy trusted but no forwarded header" case). (#10)
+- **Split the 1,076-line `admin/route.ts` into per-domain action modules.** The single giant `switch (action)` POST handler is now a thin auth + dispatch layer (~55 lines) delegating to `_actions/{comments,replies,dms,fedi-graph,fedi-interactions,bluesky}.ts`. Pure refactor — every admin action (comment moderation, fedi/Bluesky replies, DMs, follow-graph, like/boost/block) behaves identically; verified by a per-action old-vs-new equivalence audit. (#11)
+
+### Fixed
+- **Post pages no longer re-poll Bluesky on every render.** Polling is now throttled by a per-post TTL and each network call has a timeout, so a slow or failing Bluesky never blocks page render; poll failures now log `err.cause` and the post URI instead of being swallowed. (#54)
+- **Fixed two React 19 render-purity violations** surfaced by the restored lint: a ref written during render in the timeline (`TimelineClient`) now updates in an effect, and `NotificationBell` no longer calls `Date.now()` during render (relative times come from effect-backed state). (#78)
+- **Cleared the one ESLint error** (`@next/next/no-html-link-for-pages`) on the setup wizard's completion screen — "Go to your site" is now a `next/link` `<Link>` (client transition instead of a full reload) — and removed two stale `eslint-disable` directives. (#83)
+- **`install.sh` / `update.sh` run cleanly without a controlling terminal.** They no longer emit `/dev/tty: Device not configured` when run headlessly (the tty is now probed for openability before use), and they honour a non-interactive mode — set `FEDIHOME_NONINTERACTIVE=1` / `FEDIHOME_YES=1` / `CI=1` to skip prompts and take each one's stated default (destructive install prompts default to "no", so unattended runs are fail-closed). (#77)
+
+### Schema
+- New **`AdminSession`** table — persisted admin login sessions, enabling individual session revocation. Apply with `npx prisma db push` (the `update.sh` upgrade path runs this automatically). Existing admin logins are invalidated once on upgrade (the table starts empty), so sign in again afterwards. (#14)
+
 ## 1.2.0 (2026-06-20)
 
 **Security & reliability release.** Clears a high-severity `nodemailer` advisory (#66) and adds the `assertPublicHost` SSRF guard to signed ActivityPub GETs (#67), migrates to the Next 16 `proxy` convention (#68), and hardens self-hosted installs/updates — configurable/safe PostgreSQL setup including PG15+ (#29, #31) and stale-build rebuilds (#63). Backward-compatible — upgrade with the usual `npm run update`.

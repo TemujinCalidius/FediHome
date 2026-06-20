@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import crypto from "crypto";
 import { verifyOrigin } from "@/lib/auth";
 import { sendPushToOwner } from "@/lib/push";
+import { rateLimitKey } from "@/lib/client-ip";
 
 export async function POST(req: NextRequest) {
   if (!verifyOrigin(req)) {
@@ -45,15 +46,10 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Rate limiting — hash the IP. Trust forwarded headers only when a known
-  // reverse proxy is in front (H3): otherwise an attacker rotates XFF values
-  // to mint unlimited buckets and defeat the limit.
-  const trustProxy = process.env.TRUSTED_PROXY === "true";
-  const ip = trustProxy
-    ? (req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-       req.headers.get("x-real-ip") ||
-       "unknown")
-    : "default";
+  // Rate limiting — hash the IP. The bucket key honours forwarded headers only
+  // when a trusted reverse proxy is in front (TRUSTED_PROXY=true); otherwise all
+  // requests share one bucket so a spoofed XFF can't mint unlimited buckets (H3).
+  const ip = rateLimitKey(req);
   const ipHash = crypto.createHash("sha256").update(ip).digest("hex");
 
   // Check rate: max 3 comments per IP per hour

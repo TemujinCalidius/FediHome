@@ -317,6 +317,20 @@ model AuthToken {
   lastUsedAt DateTime?
 }
 
+// Persisted admin login sessions. The cookie is "<id>.<HMAC(ADMIN_SECRET, id)>";
+// `id` is the random 32-hex session id (the cookie's first segment). Persisting
+// it makes sessions individually revocable — verifyAdmin checks the row exists
+// and is unexpired, so deleting a row invalidates that cookie on next use. (#14)
+model AdminSession {
+  id         String   @id          // = cookie session id (32-hex); not a cuid
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime @default(now())
+  expiresAt  DateTime?
+  userAgent  String?               // for the sessions UI ("Chrome on macOS")
+
+  @@index([expiresAt])
+}
+
 // === Direct Messages ===
 
 model DirectMessage {

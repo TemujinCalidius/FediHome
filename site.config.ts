@@ -46,6 +46,11 @@ export const siteConfig = {
   publicFeed: process.env.PUBLIC_FEED === "true",
   publicFeedTitle: process.env.PUBLIC_FEED_TITLE || "The Fediverse feed",
 
+  // When HIDE_SOCIAL_GRAPH=true, /ap/followers and /ap/following still report
+  // their counts (totalItems) but don't enumerate members — Mastodon's
+  // hidden-collection behaviour. Off by default.
+  hideSocialGraph: process.env.HIDE_SOCIAL_GRAPH === "true",
+
   // Assets
   avatarPath: "/images/avatar.png",
   bannerPath: "/images/banner.webp",
@@ -72,6 +77,8 @@ export const siteConfig = {
     badgeSrc: process.env.FOOTER_BADGE_SRC || "",
     badgeHref: process.env.FOOTER_BADGE_HREF || "",
     badgeAlt: process.env.FOOTER_BADGE_ALT || "Badge",
+    fundingUrl: process.env.FUNDING_URL || "",
+    fundingLabel: process.env.FUNDING_LABEL || "Support FediHome",
   },
 } as const;
 

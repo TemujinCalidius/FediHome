@@ -14,7 +14,7 @@ type FediPostRow = Awaited<ReturnType<typeof prisma.fediPost.findUnique>>;
 
 export async function GET(req: NextRequest) {
   // Admin-only
-  if (!verifyAdmin(req)) {
+  if (!(await verifyAdmin(req))) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 

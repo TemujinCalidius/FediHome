@@ -62,7 +62,7 @@ export async function POST(request: Request) {
     // admin auth. Otherwise an attacker who can reach the box (DB wiped,
     // initial deploy, snapshot restore) can re-setup and take over.
     if (process.env.ADMIN_SECRET) {
-      if (!verifyAdmin(request as Request & { cookies: { get(name: string): { value: string } | undefined } })) {
+      if (!(await verifyAdmin(request as Request & { cookies: { get(name: string): { value: string } | undefined } }))) {
         return NextResponse.json(
           { error: "Setup is locked; admin authentication required." },
           { status: 401 }
