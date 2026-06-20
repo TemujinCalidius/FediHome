@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import { marked } from "marked";
 import { cookies } from "next/headers";
 import { verifyAdminSession } from "@/lib/auth";
+import { postOgImage, postOgDescription } from "@/lib/og";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { LightboxGallery } from "@/components/ui/Lightbox";
 import { iframeSrcFor } from "@/lib/peertube";
@@ -34,15 +35,24 @@ export async function generateMetadata({
   const { slug } = await params;
   const post = await prisma.post.findUnique({ where: { slug } });
   if (!post) return { title: "Not Found" };
+  const title = post.title || "Post";
+  const description = postOgDescription(post);
+  const image = postOgImage(post);
   return {
-    title: post.title || "Post",
-    description: post.excerpt || post.content.slice(0, 160),
+    title,
+    description,
     openGraph: {
-      title: post.title || "Post",
-      description: post.excerpt || post.content.slice(0, 160),
+      title,
+      description,
       type: "article",
       publishedTime: post.publishedAt.toISOString(),
-      images: post.coverImage ? [post.coverImage] : [],
+      images: [image],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images: [image],
     },
   };
 }

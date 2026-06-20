@@ -3,6 +3,7 @@ import { verifyMicropubToken } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { marked } from "marked";
+import { buildPostObject } from "@/lib/ap-post";
 
 const DEBUG = process.env.FEDIHOME_DEBUG === "true";
 
@@ -127,26 +128,13 @@ export async function POST(req: NextRequest) {
   // Federate the post via ActivityPub
   if (post.published) {
     const { deliverToFollowers } = await import("@/lib/http-signatures");
-    const escapedContent = content
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
     const activity = {
       "@context": "https://www.w3.org/ns/activitystreams",
       id: `${siteUrl}/ap/create/${post.id}`,
       type: "Create",
       actor: `${siteUrl}/ap/actor`,
       published: post.publishedAt.toISOString(),
-      object: {
-        type: title ? "Article" : "Note",
-        id: post.apId,
-        attributedTo: `${siteUrl}/ap/actor`,
-        content: `<p>${escapedContent.replace(/\n/g, "<br>")}</p>`,
-        url: `${siteUrl}/post/${slug}`,
-        published: post.publishedAt.toISOString(),
-        to: ["https://www.w3.org/ns/activitystreams#Public"],
-        cc: [`${siteUrl}/ap/followers`],
-      },
+      object: buildPostObject(post),
     };
     deliverToFollowers(activity).catch((err) =>
       console.error("Failed to federate post:", err)
