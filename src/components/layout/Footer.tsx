@@ -3,9 +3,9 @@ import { siteConfig } from "@/../site.config";
 
 export default async function Footer() {
   const stats = await getSiteStats();
-  const { webringUrl, webringLabel, badgeSrc, badgeHref, badgeAlt } =
+  const { webringUrl, webringLabel, badgeSrc, badgeHref, badgeAlt, fundingUrl, fundingLabel } =
     siteConfig.footer;
-  const hasExtras = Boolean(badgeSrc || webringUrl);
+  const hasExtras = Boolean(badgeSrc || webringUrl || fundingUrl);
 
   return (
     <footer className="mt-auto">
@@ -57,6 +57,16 @@ export default async function Footer() {
                   className="text-sm text-gray-400 hover:text-accent-400 transition-colors"
                 >
                   {webringLabel}
+                </a>
+              )}
+              {fundingUrl && (
+                <a
+                  href={fundingUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-gray-400 hover:text-accent-400 transition-colors"
+                >
+                  ♥ {fundingLabel}
                 </a>
               )}
             </div>

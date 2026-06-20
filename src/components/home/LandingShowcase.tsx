@@ -41,6 +41,7 @@ const INSTALL_ONE_LINER =
  */
 export default function LandingShowcase() {
   const repo = siteConfig.repoUrl;
+  const funding = siteConfig.footer.fundingUrl;
   return (
     <div className="relative overflow-hidden">
       {/* Subtle generated texture backdrop + fade into the page background */}
@@ -83,6 +84,16 @@ export default function LandingShowcase() {
               <a href="#install" className="btn-outlined text-xs">
                 How to install
               </a>
+              {funding && (
+                <a
+                  href={funding}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-outlined text-xs"
+                >
+                  ♥ {siteConfig.footer.fundingLabel}
+                </a>
+              )}
             </div>
             <p className="mt-4 text-sm text-gray-500">
               Follow{" "}
