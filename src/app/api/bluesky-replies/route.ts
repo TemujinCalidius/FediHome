@@ -11,7 +11,7 @@ import { verifyAdmin } from "@/lib/auth";
  * Protected by admin cookie or a simple API secret for cron use.
  */
 export async function GET(req: NextRequest) {
-  if (!verifyAdmin(req)) {
+  if (!(await verifyAdmin(req))) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 

@@ -5,7 +5,7 @@ import { siteConfig } from "@/../site.config";
 
 /** Fire a test push to all of the owner's devices so a new install can be verified. */
 export async function POST(req: NextRequest) {
-  if (!verifyAdmin(req)) {
+  if (!(await verifyAdmin(req))) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   if (!verifyOrigin(req)) {

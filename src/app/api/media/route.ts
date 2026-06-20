@@ -16,7 +16,7 @@ const MAX_AUDIO_SIZE = 100 * 1024 * 1024; // 100 MB
 export async function POST(req: NextRequest) {
   // Accept either Micropub token or admin cookie
   const auth = await verifyMicropubToken(req.headers.get("authorization"));
-  if (!auth.valid && !verifyAdmin(req)) {
+  if (!auth.valid && !(await verifyAdmin(req))) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 

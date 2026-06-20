@@ -5,6 +5,7 @@
 ### Added
 - **Optional "Support the project" link.** Set `FUNDING_URL` (e.g. your GitHub Sponsors / Ko-fi / Liberapay page) to show a themed `♥` link on the landing page (`LANDING_MODE`) and in the footer; `FUNDING_LABEL` customises the text (default "Support FediHome"). Unset → nothing renders, so other self-hosters see no change. Mirrors the existing config-driven webring/badge footer extras. (#64)
 - **`HIDE_SOCIAL_GRAPH` privacy knob.** When set, `/ap/followers` and `/ap/following` still report their counts (`totalItems`) but no longer enumerate who follows you / who you follow — Mastodon's "hide social graph" behaviour. Off by default; federation delivery is unaffected (it only references the collection URIs, never their contents). (#23)
+- **Revocable admin sessions.** Admin logins are now persisted server-side, so an individual session can be revoked without rotating `ADMIN_SECRET` (which logs *everyone* out). A new **/admin/sessions** page (linked from the timeline header) lists every signed-in device with its browser/OS and last-active time, and lets you revoke any one, "sign out all other sessions", or sign out the current device. Sessions also expire now — `ADMIN_SESSION_TTL_DAYS` (default 30) bounds their lifetime. **On upgrade, existing admin logins are invalidated once** (the new session store starts empty), so you'll sign in again after deploying. (#14)
 
 ### Security
 - **Cleared 4 of 5 outstanding transitive-dependency advisories** via npm `overrides`, forcing patched versions of `yaml`, `js-yaml`, `@opentelemetry/core`, and `@hono/node-server` (the last dev-only, via `@prisma/dev`). All were low-exposure moderates; verified with tsc / 70 tests / build / lint. The one remaining — `postcss` bundled *inside* Next.js (GHSA-qx2v-qp2m-jg93) — has no upstream fix and is build-time / trusted-CSS only. (#12, #55)
@@ -19,6 +20,9 @@
 - **Fixed two React 19 render-purity violations** surfaced by the restored lint: a ref written during render in the timeline (`TimelineClient`) now updates in an effect, and `NotificationBell` no longer calls `Date.now()` during render (relative times come from effect-backed state). (#78)
 - **Cleared the one ESLint error** (`@next/next/no-html-link-for-pages`) on the setup wizard's completion screen — "Go to your site" is now a `next/link` `<Link>` (client transition instead of a full reload) — and removed two stale `eslint-disable` directives. (#83)
 - **`install.sh` / `update.sh` run cleanly without a controlling terminal.** They no longer emit `/dev/tty: Device not configured` when run headlessly (the tty is now probed for openability before use), and they honour a non-interactive mode — set `FEDIHOME_NONINTERACTIVE=1` / `FEDIHOME_YES=1` / `CI=1` to skip prompts and take each one's stated default (destructive install prompts default to "no", so unattended runs are fail-closed). (#77)
+
+### Schema
+- New **`AdminSession`** table — persisted admin login sessions, enabling individual session revocation. Apply with `npx prisma db push` (the `update.sh` upgrade path runs this automatically). Existing admin logins are invalidated once on upgrade (the table starts empty), so sign in again afterwards. (#14)
 
 ## 1.2.0 (2026-06-20)
 

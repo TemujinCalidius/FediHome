@@ -6,7 +6,7 @@ import { verifyAdmin } from "@/lib/auth";
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
-  if (!verifyAdmin(req)) {
+  if (!(await verifyAdmin(req))) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
