@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Security
+- **Cleared 4 of 5 outstanding transitive-dependency advisories** via npm `overrides`, forcing patched versions of `yaml`, `js-yaml`, `@opentelemetry/core`, and `@hono/node-server` (the last dev-only, via `@prisma/dev`). All were low-exposure moderates; verified with tsc / 70 tests / build / lint. The one remaining — `postcss` bundled *inside* Next.js (GHSA-qx2v-qp2m-jg93) — has no upstream fix and is build-time / trusted-CSS only. (#12, #55)
+
 ### Changed
 - **Restored `npm run lint` under Next 16** (which removed the `next lint` command): added ESLint 9 with a flat `eslint.config.mjs` wiring `@next/eslint-plugin-next`, `eslint-plugin-react-hooks` v7 (React 19 "Rules of React"), and the TypeScript parser. The new render-purity/ref rules are surfaced as warnings for now. (#21)
 
