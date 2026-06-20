@@ -1,19 +1,45 @@
 import { BskyAgent } from "@atproto/api";
 import { prisma } from "./db";
 
+// In-memory throttle so a post page doesn't re-poll Bluesky on every render.
+// Keyed by postId; best-effort (resets on server restart), not durable state.
+const POLL_TTL_MS = 60_000;
+const POLL_TIMEOUT_MS = 15_000;
+const lastPolledAt = new Map<string, number>();
+
+// Bound a network call so a hung Bluesky request can't block the page render.
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms),
+    ),
+  ]);
+}
+
 /**
  * Poll Bluesky for replies, likes, and reposts on a specific post.
- * Called on page load for posts with a blueskyUri.
+ * Called on page load for posts with a blueskyUri. Throttled by POLL_TTL_MS so
+ * repeated renders within the window are skipped.
  */
 export async function pollBlueskyReplies(postId: string, blueskyUri: string): Promise<number> {
   const handle = process.env.BLUESKY_HANDLE;
   const password = process.env.BLUESKY_APP_PASSWORD;
   if (!handle || !password) return 0;
 
-  const agent = new BskyAgent({ service: "https://bsky.social" });
-  await agent.login({ identifier: handle, password });
+  // Skip if this post was polled within the TTL window.
+  const last = lastPolledAt.get(postId);
+  if (last !== undefined && Date.now() - last < POLL_TTL_MS) return 0;
+  lastPolledAt.set(postId, Date.now());
 
-  const threadRes = await agent.getPostThread({ uri: blueskyUri, depth: 10 });
+  const agent = new BskyAgent({ service: "https://bsky.social" });
+  await withTimeout(agent.login({ identifier: handle, password }), POLL_TIMEOUT_MS, "Bluesky login");
+
+  const threadRes = await withTimeout(
+    agent.getPostThread({ uri: blueskyUri, depth: 10 }),
+    POLL_TIMEOUT_MS,
+    "Bluesky getPostThread",
+  );
   if (!threadRes.success) return 0;
 
   const thread = threadRes.data.thread;
@@ -75,8 +101,11 @@ async function processReplies(replies: any[], postId: string): Promise<number> {
         },
       });
       count++;
-    } catch {
-      // skip
+    } catch (err) {
+      console.warn(
+        `Bluesky reply upsert failed for ${uri}:`,
+        err instanceof Error ? err.message : err,
+      );
     }
 
     if (reply.replies && Array.isArray(reply.replies)) {
