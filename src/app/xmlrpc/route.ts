@@ -5,6 +5,7 @@ import { sanitizeHtml } from "@/lib/sanitize";
 import { marked } from "marked";
 import { extractParam, extractStruct, between } from "@/lib/xmlrpc";
 import { rateLimitKey } from "@/lib/client-ip";
+import { buildPostObject } from "@/lib/ap-post";
 
 /**
  * XML-RPC endpoint (MetaWeblog API) for compatibility with micro.blog app
@@ -168,26 +169,13 @@ export async function POST(req: NextRequest) {
       });
 
       const { deliverToFollowers } = await import("@/lib/http-signatures");
-      const escapedContent = content
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;");
       const activity = {
         "@context": "https://www.w3.org/ns/activitystreams",
         id: `${siteUrl}/ap/create/${post.id}`,
         type: "Create",
         actor: `${siteUrl}/ap/actor`,
         published: post.publishedAt.toISOString(),
-        object: {
-          type: title ? "Article" : "Note",
-          id: post.apId,
-          attributedTo: `${siteUrl}/ap/actor`,
-          content: `<p>${escapedContent.replace(/\n/g, "<br>")}</p>`,
-          url: `${siteUrl}/post/${slug}`,
-          published: post.publishedAt.toISOString(),
-          to: ["https://www.w3.org/ns/activitystreams#Public"],
-          cc: [`${siteUrl}/ap/followers`],
-        },
+        object: buildPostObject(post),
       };
       deliverToFollowers(activity).catch(() => {});
 

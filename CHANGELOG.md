@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.4.0 (2026-06-22)
+
+**Federation & maintenance release.** Shared posts now unfurl with a real preview card (image + summary) instead of a bare title+link, and the ActivityPub post object is unified across every publish path (#96); plus a five-major dependency refresh — TypeScript 6, marked 18, @atproto 0.20, @types/node 26, ESLint 10 (#100). Backward-compatible — upgrade with the usual `npm run update`.
+
+### Changed
+- **Dependency refresh — five major bumps, all backward-compatible.** TypeScript `5.9 → 6.0`, `marked` `17 → 18` (markdown→HTML output verified unchanged on representative posts), `@types/node` `25 → 26`, `@atproto/api` `0.19 → 0.20` (Bluesky SDK), and ESLint `9 → 10`, plus in-range patch/minor updates (Next 16.2.9, React 19.2.7, `pg`, `tailwindcss`, `fast-xml-parser`, `music-metadata`, `@fedify/next`). Verified with tsc / 77 tests / build / lint (0 errors) / `npm audit` (unchanged at 3 moderate — the parked postcss advisory). The ESLint 9→10 bump installs with peer warnings (`@next/eslint-plugin-next` and `eslint-plugin-react-hooks` still declare `eslint ^9`); lint runs clean regardless — to be tidied once those plugins ship eslint-10 peers.
+
+### Fixed
+- **Shared posts now unfurl with a real preview, and federate consistently across every publish path.** A titled post (Article) used to appear as a bare title + link on Mastodon and other servers — no description, no image. Two changes: (1) every post page now emits a complete Open Graph / Twitter card — a guaranteed preview image (cover → first photo → first inline image → audio cover → site default) and a clean, markdown-stripped description — so the link shows a picture and summary wherever it's posted (Mastodon's link card, Bluesky, Threads, Slack, Discord, …); (2) the ActivityPub post object is now built by one shared `buildPostObject()` used by the Micropub, XML-RPC, outbox, and per-post AP routes, so all paths federate identically — the Micropub/XML-RPC paths no longer send escaped raw markdown, titled Articles carry their `name`, and the cover image is attached (previously only inline photos were). (#96)
+
 ## 1.3.0 (2026-06-21)
 
 **Features & hardening release.** Individually revocable admin sessions (#14), a "hide social graph" privacy opt-out (#23), and an optional "support the project" link (#64), plus rate-limit/dependency-advisory hardening (#10, #12, #55) and a large maintainability refactor that splits the 1,076-line `admin/route.ts` into per-domain modules (#11). Backward-compatible — upgrade with the usual `npm run update`. **One-time note:** this adds an `AdminSession` table and invalidates existing admin logins once, so sign in again after upgrading (see Schema below).
