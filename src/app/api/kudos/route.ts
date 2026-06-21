@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createKudos, getKudosForPath } from "@/lib/tinylytics";
 import { verifyOrigin } from "@/lib/auth";
+import { rateLimitKey } from "@/lib/client-ip";
 
 // Rate limit: 1 kudos per IP per path per hour
 const kudosLog = new Map<string, number>();
@@ -39,8 +40,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "path required" }, { status: 400 });
   }
 
-  // Simple rate limit
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  // Rate limit: 1 kudos per bucket per path per hour. The bucket key honours
+  // X-Forwarded-For only when TRUSTED_PROXY=true; otherwise all requests share a
+  // single "default" bucket so a spoofed XFF can't mint unlimited buckets and
+  // defeat the limit. (Per-visitor kudos therefore require TRUSTED_PROXY=true
+  // behind a trusted reverse proxy; otherwise it's one kudos per path per hour.)
+  const ip = rateLimitKey(req);
   const key = `${ip}:${path}`;
   const lastKudos = kudosLog.get(key);
   if (lastKudos && Date.now() - lastKudos < KUDOS_TTL) {
