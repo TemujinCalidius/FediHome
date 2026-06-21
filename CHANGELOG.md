@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 1.4.0 (2026-06-22)
+
+**Federation & maintenance release.** Shared posts now unfurl with a real preview card (image + summary) instead of a bare title+link, and the ActivityPub post object is unified across every publish path (#96); plus a five-major dependency refresh — TypeScript 6, marked 18, @atproto 0.20, @types/node 26, ESLint 10 (#100). Backward-compatible — upgrade with the usual `npm run update`.
 
 ### Changed
 - **Dependency refresh — five major bumps, all backward-compatible.** TypeScript `5.9 → 6.0`, `marked` `17 → 18` (markdown→HTML output verified unchanged on representative posts), `@types/node` `25 → 26`, `@atproto/api` `0.19 → 0.20` (Bluesky SDK), and ESLint `9 → 10`, plus in-range patch/minor updates (Next 16.2.9, React 19.2.7, `pg`, `tailwindcss`, `fast-xml-parser`, `music-metadata`, `@fedify/next`). Verified with tsc / 77 tests / build / lint (0 errors) / `npm audit` (unchanged at 3 moderate — the parked postcss advisory). The ESLint 9→10 bump installs with peer warnings (`@next/eslint-plugin-next` and `eslint-plugin-react-hooks` still declare `eslint ^9`); lint runs clean regardless — to be tidied once those plugins ship eslint-10 peers.
