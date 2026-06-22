@@ -1,6 +1,7 @@
 import webpush from "web-push";
 import { prisma } from "./db";
 import { siteConfig } from "@/../site.config";
+import { computeNotifications } from "./notifications";
 
 /**
  * Web Push (PWA notifications) for the single site owner.
@@ -49,6 +50,7 @@ export interface PushPayload {
   tag?: string; // collapse key — a new push with the same tag replaces the old
   icon?: string; // small icon (default app icon)
   type?: string; // category, e.g. "like" | "follow" — for click routing/analytics
+  count?: number; // authoritative unread total; if omitted, computed from the bell
 }
 
 const FAILURE_PRUNE_THRESHOLD = 8;
@@ -66,6 +68,16 @@ export async function sendPushToOwner(payload: PushPayload): Promise<void> {
     const subs = await prisma.pushSubscription.findMany();
     if (subs.length === 0) return;
 
+    // Authoritative unread total so the service worker sets the badge to the real
+    // bell count instead of blind-incrementing per push (#103). Best-effort: if it
+    // can't be computed, leave it undefined and sw.js keeps its +1 fallback.
+    const count =
+      typeof payload.count === "number"
+        ? payload.count
+        : await computeNotifications()
+            .then((r) => r.count)
+            .catch(() => undefined);
+
     const body = JSON.stringify({
       title: payload.title,
       body: payload.body,
@@ -74,6 +86,7 @@ export async function sendPushToOwner(payload: PushPayload): Promise<void> {
       icon: payload.icon || "/icons/icon-192.png",
       badge: "/icons/icon-192.png",
       type: payload.type || null,
+      count,
     });
 
     await Promise.all(
