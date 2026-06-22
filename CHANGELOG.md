@@ -5,6 +5,9 @@
 ### Security
 - **Kudos rate-limiting no longer trusts a spoofable `X-Forwarded-For`.** The guest "kudos" endpoint keyed its one-per-hour limit on the raw `X-Forwarded-For` header, so a scripted client could rotate it to inflate a post's kudos count without limit. It now uses the shared `rateLimitKey()` helper, which honours forwarded headers only when `TRUSTED_PROXY=true`; otherwise all requests share a single bucket per path (a spoofed header can't mint unlimited buckets). Per-visitor kudos therefore require a trusted reverse proxy. Also removed the now-unused `clientIp()` helper. (#93)
 
+### Fixed
+- **Notification badge stays in sync with the bell, boost counts decrement on un-boost, and like/boost notifications deep-link to the post.** Part of #103: (1) the app-icon badge now derives from the authoritative unread total (the same count the bell computes, extracted into a shared `computeNotifications()` and sent with every push) instead of a blind per-push `+1`, so it no longer climbs out of sync while the app is closed; (2) a new Undo-Announce handler decrements boost counts and removes the stored boost when a boost is retracted (previously boost rows only ever accumulated); (3) like/boost push notifications now open the relevant post instead of always `/timeline`. (The remaining parts of #103 — realigning the push gate to the bell and the inverse "silently-dropped reply" cases — are deferred to a dedicated change.) (#103)
+
 ## 1.4.0 (2026-06-22)
 
 **Federation & maintenance release.** Shared posts now unfurl with a real preview card (image + summary) instead of a bare title+link, and the ActivityPub post object is unified across every publish path (#96); plus a five-major dependency refresh — TypeScript 6, marked 18, @atproto 0.20, @types/node 26, ESLint 10 (#100). Backward-compatible — upgrade with the usual `npm run update`.
