@@ -10,6 +10,7 @@
 
 ### Fixed
 - **Likes, boosts, and replies now reach FediHome (and other non-Mastodon) servers.** Outbound delivery built the target inbox from Mastodon's convention `https://{domain}/users/{name}/inbox`, so it silently 404'd to FediHome (whose inbox is `/ap/inbox`) and any server with a different inbox path — meaning FediHome↔FediHome likes/boosts/replies never actually arrived. The inbox is now resolved server-side from the target actor's advertised/stored value — a cached follower/following record, else a live actor fetch — via a shared `resolveActorInbox()` helper; Mastodon targets are unaffected (they still resolve to their advertised `/users/<name>/inbox`). (#110)
+- **Likes and boosts no longer double-deliver, inflating a follower's counts.** A `Like` was broadcast to all followers *and* sent to the post author, and a boost (`Announce`) was sent to followers *and* directly to the author — so a post author who also follows you received the activity twice, double-counting the like/boost (and the matching `Undo` only decremented once, leaving the count stuck). Likes now go only to the author (the standard target — they aren't broadcast to followers); boosts go to followers plus the author, but the direct author send is skipped when they already follow you (`deliverToFollowers` already reaches them). The same dedup applies to the `Undo` on un-like / un-boost. (#119)
 
 ## 1.4.1 (2026-06-23)
 
