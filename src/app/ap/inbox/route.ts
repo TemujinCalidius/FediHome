@@ -77,6 +77,8 @@ export async function POST(req: NextRequest) {
         await handleUnfollow(actorUri);
       } else if (activity.object?.type === "Like") {
         await handleUndoLike(actorUri, activity.object);
+      } else if (activity.object?.type === "Announce") {
+        await handleUndoBoost(actorUri, activity.object);
       }
       break;
 
@@ -224,7 +226,7 @@ async function handleLike(actorUri: string, activity: Record<string, unknown>) {
   void sendPushToOwner({
     title: "New like",
     body: `${actorLabel(info)} liked your post`,
-    url: "/timeline",
+    url: await localUrlForApId(targetApId),
     type: "like",
     icon: info.avatarUrl || undefined,
   }).catch(() => {});
@@ -251,6 +253,52 @@ async function handleUndoLike(actorUri: string, likeActivity: Record<string, unk
       data: { likeCount: { decrement: 1 } },
     });
   }
+}
+
+async function handleUndoBoost(actorUri: string, announceActivity: Record<string, unknown>) {
+  const targetApId = typeof announceActivity.object === "string"
+    ? announceActivity.object
+    : (announceActivity.object as Record<string, unknown>)?.id as string;
+
+  if (!targetApId) return;
+
+  const deleted = await prisma.fediInteraction.deleteMany({
+    where: { actorUri, targetApId, type: "boost" },
+  });
+
+  if (deleted.count > 0) {
+    await prisma.post.updateMany({
+      where: { apId: targetApId },
+      data: { boostCount: { decrement: 1 } },
+    });
+    await prisma.photo.updateMany({
+      where: { apId: targetApId },
+      data: { boostCount: { decrement: 1 } },
+    });
+  }
+
+  // Drop the stored boosted post from our feed (handleBoost stores it for
+  // followed boosters under this synthetic apId).
+  await prisma.fediPost
+    .deleteMany({ where: { apId: `boost:${actorUri}:${targetApId}` } })
+    .catch(() => {});
+}
+
+/**
+ * Resolve a target's apId to a local post/photo URL for push deep-linking
+ * (else /timeline). Never throws — a DB hiccup degrades to /timeline rather than
+ * suppressing the notification.
+ */
+async function localUrlForApId(targetApId: string): Promise<string> {
+  try {
+    const post = await prisma.post.findFirst({ where: { apId: targetApId }, select: { slug: true } });
+    if (post) return `/post/${post.slug}`;
+    const photo = await prisma.photo.findFirst({ where: { apId: targetApId }, select: { slug: true } });
+    if (photo) return `/photography/${photo.slug}`;
+  } catch {
+    // fall through to /timeline
+  }
+  return "/timeline";
 }
 
 async function handleBoost(actorUri: string, activity: Record<string, unknown>) {
@@ -288,7 +336,7 @@ async function handleBoost(actorUri: string, activity: Record<string, unknown>) 
   void sendPushToOwner({
     title: "New boost",
     body: `${actorLabel(info)} boosted your post`,
-    url: "/timeline",
+    url: await localUrlForApId(targetApId),
     type: "boost",
     icon: info.avatarUrl || undefined,
   }).catch(() => {});
