@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { Prisma } from "@/generated/prisma/client";
 import { deliverActivity, verifyIncomingSignature, actorMatchesSigner } from "@/lib/http-signatures";
 import { processAttachments, fetchLinkEmbed } from "@/lib/fedi-media";
 import { sanitizeHtml } from "@/lib/sanitize";
@@ -414,6 +413,12 @@ async function handleBoost(actorUri: string, activity: Record<string, unknown>) 
  * The note's own apId is the right key: keying on (actorUri, targetApId) like
  * like/boost would wrongly collapse *distinct* replies from the same person to
  * the same post. A Note with no id keeps the old behaviour (no key → no dedup).
+ *
+ * Dedup is enforced here in app code rather than via a DB unique constraint:
+ * AP redelivery is sequential (retries are spaced out), so by the time a
+ * redelivery arrives the first row is committed and the lookup below finds it.
+ * (`prisma db push` — FediHome's upgrade path — refuses to add a unique index
+ * without --accept-data-loss, which would break `npm run update` for everyone.)
  */
 async function recordIncomingReply(opts: {
   noteApId: string | null;
@@ -436,30 +441,22 @@ async function recordIncomingReply(opts: {
     if (already) return;
   }
 
-  try {
-    await prisma.fediInteraction.create({
-      data: {
-        type: "reply",
-        actorUri,
-        targetApId,
-        sourceApId: noteApId,
-        content,
-        username: info.username,
-        domain: info.domain,
-        displayName: info.displayName,
-        avatarUrl: info.avatarUrl,
-      },
-    });
-  } catch (err) {
-    // Concurrent redelivery: the unique `sourceApId` index rejects the second
-    // insert (P2002). The row already exists, so just skip the push — don't
-    // double-notify. Re-throw any other write error so the inbox 500s and the
-    // sender retries, rather than silently acking 202 and dropping the reply.
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-      return;
-    }
-    throw err;
-  }
+  // No try/catch: a genuine write failure should propagate (the inbox 500s and
+  // the sender retries) rather than be silently swallowed into a 202 that drops
+  // the reply.
+  await prisma.fediInteraction.create({
+    data: {
+      type: "reply",
+      actorUri,
+      targetApId,
+      sourceApId: noteApId,
+      content,
+      username: info.username,
+      domain: info.domain,
+      displayName: info.displayName,
+      avatarUrl: info.avatarUrl,
+    },
+  });
 
   void sendPushToOwner({
     title: "New reply",

@@ -1,9 +1,12 @@
 -- Dedup incoming Fediverse replies on redelivery (#121).
 --
 -- Adds FediInteraction.sourceApId: the interacting activity's own apId (a reply
--- Note's id). It dedups a redelivered Create(Note) so it doesn't produce a
--- second bell entry / push. Null for like/boost rows (which dedup elsewhere);
--- Postgres treats NULLs as distinct, so the unique index tolerates many nulls.
+-- Note's id). The inbox dedups a redelivered Create(Note) on this value so it
+-- doesn't produce a second bell entry / push. Null for like/boost rows.
+--
+-- A plain (non-unique) index — NOT a unique constraint — because `prisma db
+-- push` (the upgrade path) refuses to add a unique index without
+-- --accept-data-loss; dedup is enforced in app code (handleNote) instead.
 --
 -- Additive and non-destructive — existing rows get NULL.
 --
@@ -15,5 +18,5 @@
 ALTER TABLE "FediInteraction"
   ADD COLUMN IF NOT EXISTS "sourceApId" TEXT;
 
-CREATE UNIQUE INDEX IF NOT EXISTS "FediInteraction_sourceApId_key"
+CREATE INDEX IF NOT EXISTS "FediInteraction_sourceApId_idx"
   ON "FediInteraction"("sourceApId");
