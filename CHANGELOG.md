@@ -5,6 +5,9 @@
 ### Security
 - **Rate-limit keying now uses Cloudflare's authoritative client IP behind a trusted proxy.** With `TRUSTED_PROXY=true`, `rateLimitKey()` keyed on the leftmost `X-Forwarded-For` hop — but Cloudflare *appends* to `X-Forwarded-For`, so that hop is client-supplied and spoofable, letting an attacker rotate it to evade the admin-login / guest-comment / XML-RPC / kudos rate limits. It now prefers `CF-Connecting-IP` (set by Cloudflare, not client-overridable), falling back to `X-Forwarded-For` / `X-Real-IP` for non-Cloudflare proxies. The default (`TRUSTED_PROXY` unset → one shared bucket) is unchanged. This makes it safe to enable `TRUSTED_PROXY` behind Cloudflare for genuine per-visitor limiting. (#109)
 
+### Fixed
+- **Likes, boosts, and replies now reach FediHome (and other non-Mastodon) servers.** Outbound delivery built the target inbox from Mastodon's convention `https://{domain}/users/{name}/inbox`, so it silently 404'd to FediHome (whose inbox is `/ap/inbox`) and any server with a different inbox path — meaning FediHome↔FediHome likes/boosts/replies never actually arrived. The inbox is now resolved server-side from the target actor's advertised/stored value — a cached follower/following record, else a live actor fetch — via a shared `resolveActorInbox()` helper; Mastodon targets are unaffected (they still resolve to their advertised `/users/<name>/inbox`). (#110)
+
 ## 1.4.1 (2026-06-23)
 
 **Fix release.** Hardens the kudos rate-limiter against a spoofable `X-Forwarded-For` (#93), and fixes the notification badge/bell desync — the badge now tracks the real unread count, boost counts decrement on un-boost, and like/boost notifications deep-link to the post (#103, partial). Backward-compatible — `npm run update`.

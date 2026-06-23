@@ -1,10 +1,31 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { deliverActivity, deliverToFollowers } from "@/lib/http-signatures";
+import { resolveActorInbox } from "@/lib/fedi-resolve";
 import { siteConfig } from "@/../site.config";
 import type { AdminBody } from "./types";
 
 const siteUrl = siteConfig.url;
+
+/**
+ * The target post author's real inbox, resolved server-side from the stored
+ * FediPost's actorUri (#110). Falls back to the client-supplied inbox only if
+ * the actor can't be resolved — the client value hardcodes Mastodon's
+ * /users/<name>/inbox, which 404s to FediHome and other non-Mastodon servers.
+ */
+async function targetAuthorInbox(postApId: string, clientInbox: unknown): Promise<string | null> {
+  const fallback = typeof clientInbox === "string" ? clientInbox : null;
+  try {
+    const post = await prisma.fediPost.findUnique({
+      where: { apId: postApId },
+      select: { actorUri: true },
+    });
+    const resolved = post ? await resolveActorInbox(post.actorUri) : null;
+    return resolved || fallback;
+  } catch {
+    return fallback;
+  }
+}
 
 export async function like(body: AdminBody): Promise<NextResponse> {
   // Like a fedi post
@@ -21,8 +42,9 @@ export async function like(body: AdminBody): Promise<NextResponse> {
     object: postApId,
   };
 
-  if (likeInbox) {
-    await deliverActivity(likeInbox, likeActivity).catch(() => {});
+  const likeTarget = await targetAuthorInbox(postApId, likeInbox);
+  if (likeTarget) {
+    await deliverActivity(likeTarget, likeActivity).catch(() => {});
   }
   await deliverToFollowers(likeActivity).catch(() => {});
 
@@ -50,8 +72,9 @@ export async function boost(body: AdminBody): Promise<NextResponse> {
     cc: [`${siteUrl}/ap/followers`],
   };
 
-  if (boostInbox) {
-    await deliverActivity(boostInbox, announceActivity).catch(() => {});
+  const boostTarget = await targetAuthorInbox(boostApId, boostInbox);
+  if (boostTarget) {
+    await deliverActivity(boostTarget, announceActivity).catch(() => {});
   }
   await deliverToFollowers(announceActivity).catch(() => {});
 
