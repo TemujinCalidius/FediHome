@@ -295,6 +295,7 @@ model FediInteraction {
   type      String   // like, boost, reply
   actorUri  String
   targetApId String  // the AP ID of the post/photo being interacted with
+  sourceApId String? @unique // the interacting activity's own apId (a reply Note's id); dedups redelivered replies. Null for like/boost.
   content   String?  // for replies
   username  String
   domain    String
