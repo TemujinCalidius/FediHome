@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 1.4.1 (2026-06-23)
+
+**Fix release.** Hardens the kudos rate-limiter against a spoofable `X-Forwarded-For` (#93), and fixes the notification badge/bell desync — the badge now tracks the real unread count, boost counts decrement on un-boost, and like/boost notifications deep-link to the post (#103, partial). Backward-compatible — `npm run update`.
 
 ### Security
 - **Kudos rate-limiting no longer trusts a spoofable `X-Forwarded-For`.** The guest "kudos" endpoint keyed its one-per-hour limit on the raw `X-Forwarded-For` header, so a scripted client could rotate it to inflate a post's kudos count without limit. It now uses the shared `rateLimitKey()` helper, which honours forwarded headers only when `TRUSTED_PROXY=true`; otherwise all requests share a single bucket per path (a spoofed header can't mint unlimited buckets). Per-visitor kudos therefore require a trusted reverse proxy. Also removed the now-unused `clientIp()` helper. (#93)
