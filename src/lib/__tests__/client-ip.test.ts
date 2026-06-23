@@ -43,4 +43,22 @@ describe("rateLimitKey", () => {
     process.env.TRUSTED_PROXY = "true";
     expect(rateLimitKey(reqWith({ "x-forwarded-for": "   " }))).toBe("default");
   });
+
+  it("prefers CF-Connecting-IP when TRUSTED_PROXY=true", () => {
+    process.env.TRUSTED_PROXY = "true";
+    expect(rateLimitKey(reqWith({ "cf-connecting-ip": "203.0.113.7" }))).toBe("203.0.113.7");
+  });
+
+  it("uses CF-Connecting-IP over a spoofed X-Forwarded-For (CF appends, so XFF[0] is client-controlled)", () => {
+    process.env.TRUSTED_PROXY = "true";
+    expect(
+      rateLimitKey(
+        reqWith({ "cf-connecting-ip": "203.0.113.7", "x-forwarded-for": "9.9.9.9, 203.0.113.7" })
+      )
+    ).toBe("203.0.113.7");
+  });
+
+  it("ignores CF-Connecting-IP when TRUSTED_PROXY is unset", () => {
+    expect(rateLimitKey(reqWith({ "cf-connecting-ip": "203.0.113.7" }))).toBe("default");
+  });
 });
