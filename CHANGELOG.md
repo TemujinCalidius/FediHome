@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Added
+- **Un-like and un-boost from the timeline.** The like and boost buttons are now toggles — clicking a lit one sends an `Undo(Like)` / `Undo(Announce)` to the post author's real inbox (resolved server-side, per #110) and clears the local state, so a mis-click is reversible. (#111)
+
 ### Security
 - **Rate-limit keying now uses Cloudflare's authoritative client IP behind a trusted proxy.** With `TRUSTED_PROXY=true`, `rateLimitKey()` keyed on the leftmost `X-Forwarded-For` hop — but Cloudflare *appends* to `X-Forwarded-For`, so that hop is client-supplied and spoofable, letting an attacker rotate it to evade the admin-login / guest-comment / XML-RPC / kudos rate limits. It now prefers `CF-Connecting-IP` (set by Cloudflare, not client-overridable), falling back to `X-Forwarded-For` / `X-Real-IP` for non-Cloudflare proxies. The default (`TRUSTED_PROXY` unset → one shared bucket) is unchanged. This makes it safe to enable `TRUSTED_PROXY` behind Cloudflare for genuine per-visitor limiting. (#109)
 
