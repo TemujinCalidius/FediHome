@@ -303,22 +303,22 @@ function PostCard({
   const inbox = `https://${post.domain}/users/${post.username}/inbox`;
 
   const handleLike = async () => {
-    if (liked) return;
-    setLiked(true);
+    const next = !liked;
+    setLiked(next);
     await fetch("/api/admin", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "like", postApId: post.apId, targetInbox: inbox }),
+      body: JSON.stringify({ action: next ? "like" : "unlike", postApId: post.apId, targetInbox: inbox }),
     });
   };
 
   const handleBoost = async () => {
-    if (boosted) return;
-    setBoosted(true);
+    const next = !boosted;
+    setBoosted(next);
     await fetch("/api/admin", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "boost", postApId: post.apId, targetInbox: inbox }),
+      body: JSON.stringify({ action: next ? "boost" : "unboost", postApId: post.apId, targetInbox: inbox }),
     });
   };
 
@@ -812,7 +812,7 @@ function ThreadActions({ post }: { post: FediPostItem }) {
   const [boosted, setBoosted] = useState(post.boostedByMe ?? false);
   const inbox = `https://${post.domain}/users/${post.username}/inbox`;
 
-  const react = (action: "like" | "boost") => {
+  const react = (action: "like" | "boost" | "unlike" | "unboost") => {
     fetch("/api/admin", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -823,7 +823,7 @@ function ThreadActions({ post }: { post: FediPostItem }) {
   return (
     <div className="flex items-center gap-3">
       <button
-        onClick={() => { if (!liked) { setLiked(true); react("like"); } }}
+        onClick={() => { setLiked(!liked); react(liked ? "unlike" : "like"); }}
         title="Like"
         aria-label="Like"
         className={`transition-colors ${liked ? "text-red-400" : "text-gray-500 hover:text-red-400"}`}
@@ -833,7 +833,7 @@ function ThreadActions({ post }: { post: FediPostItem }) {
         </svg>
       </button>
       <button
-        onClick={() => { if (!boosted) { setBoosted(true); react("boost"); } }}
+        onClick={() => { setBoosted(!boosted); react(boosted ? "unboost" : "boost"); }}
         title="Boost"
         aria-label="Boost"
         className={`transition-colors ${boosted ? "text-green-400" : "text-gray-500 hover:text-green-400"}`}

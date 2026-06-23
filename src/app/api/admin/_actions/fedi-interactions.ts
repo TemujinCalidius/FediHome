@@ -83,3 +83,53 @@ export async function boost(body: AdminBody): Promise<NextResponse> {
 
   return NextResponse.json({ success: true });
 }
+
+export async function unlike(body: AdminBody): Promise<NextResponse> {
+  const { postApId, targetInbox: likeInbox } = body;
+  if (!postApId) {
+    return NextResponse.json({ error: "postApId required" }, { status: 400 });
+  }
+
+  const undoActivity = {
+    "@context": "https://www.w3.org/ns/activitystreams",
+    id: `${siteUrl}/ap/undo/${Date.now()}`,
+    type: "Undo",
+    actor: `${siteUrl}/ap/actor`,
+    object: { type: "Like", actor: `${siteUrl}/ap/actor`, object: postApId },
+  };
+
+  const target = await targetAuthorInbox(postApId, likeInbox);
+  if (target) {
+    await deliverActivity(target, undoActivity).catch(() => {});
+  }
+  await deliverToFollowers(undoActivity).catch(() => {});
+
+  await prisma.fediPost.updateMany({ where: { apId: postApId }, data: { likedByMe: false } });
+
+  return NextResponse.json({ success: true });
+}
+
+export async function unboost(body: AdminBody): Promise<NextResponse> {
+  const { postApId: boostApId, targetInbox: boostInbox } = body;
+  if (!boostApId) {
+    return NextResponse.json({ error: "postApId required" }, { status: 400 });
+  }
+
+  const undoActivity = {
+    "@context": "https://www.w3.org/ns/activitystreams",
+    id: `${siteUrl}/ap/undo/${Date.now()}`,
+    type: "Undo",
+    actor: `${siteUrl}/ap/actor`,
+    object: { type: "Announce", actor: `${siteUrl}/ap/actor`, object: boostApId },
+  };
+
+  const target = await targetAuthorInbox(boostApId, boostInbox);
+  if (target) {
+    await deliverActivity(target, undoActivity).catch(() => {});
+  }
+  await deliverToFollowers(undoActivity).catch(() => {});
+
+  await prisma.fediPost.updateMany({ where: { apId: boostApId }, data: { boostedByMe: false } });
+
+  return NextResponse.json({ success: true });
+}
