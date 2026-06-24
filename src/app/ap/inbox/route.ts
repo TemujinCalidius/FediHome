@@ -198,6 +198,19 @@ async function handleLike(actorUri: string, activity: Record<string, unknown>) {
 
   if (!targetApId) return;
 
+  // Idempotency guard (#118): a Like is unique per (actor, target) — an actor
+  // can only like a post once, and re-liking after an un-like makes a fresh row
+  // (the Undo deleted the old one). So a redelivered Like (AP retries /
+  // shared-inbox fan-out) must be a no-op, not a second row (→ duplicate bell),
+  // a double-incremented count, and a duplicate push. Enforced in app code, not
+  // a DB unique constraint, since `prisma db push` won't add one flaglessly
+  // (see the reply guard, #121).
+  const existingLike = await prisma.fediInteraction.findFirst({
+    where: { actorUri, targetApId, type: "like" },
+    select: { id: true },
+  });
+  if (existingLike) return;
+
   const info = await fetchActorInfo(actorUri);
   if (!info) return;
 
@@ -308,38 +321,51 @@ async function handleBoost(actorUri: string, activity: Record<string, unknown>) 
 
   if (!targetApId) return;
 
+  // Idempotency guard (#118): a boost is unique per (actor, target). Only record
+  // the interaction / bump the count / push for a not-already-seen boost, so a
+  // redelivered Announce (AP retries / shared-inbox fan-out) doesn't create a
+  // second row (→ duplicate bell), double-increment the count, or re-notify.
+  // We still fall through to the feed-store block below — it has its own dedup
+  // and a redelivery can complete a remote fetch an earlier delivery missed.
+  const alreadyBoosted = await prisma.fediInteraction.findFirst({
+    where: { actorUri, targetApId, type: "boost" },
+    select: { id: true },
+  });
+
   const info = await fetchActorInfo(actorUri);
   if (!info) return;
 
-  // Record interaction and increment counters (existing behavior)
-  await prisma.fediInteraction.create({
-    data: {
+  if (!alreadyBoosted) {
+    // Record interaction and increment counters (existing behavior)
+    await prisma.fediInteraction.create({
+      data: {
+        type: "boost",
+        actorUri,
+        targetApId,
+        username: info.username,
+        domain: info.domain,
+        displayName: info.displayName,
+        avatarUrl: info.avatarUrl,
+      },
+    });
+
+    await prisma.post.updateMany({
+      where: { apId: targetApId },
+      data: { boostCount: { increment: 1 } },
+    });
+    await prisma.photo.updateMany({
+      where: { apId: targetApId },
+      data: { boostCount: { increment: 1 } },
+    });
+
+    void sendPushToOwner({
+      title: "New boost",
+      body: `${actorLabel(info)} boosted your post`,
+      url: await localUrlForApId(targetApId),
       type: "boost",
-      actorUri,
-      targetApId,
-      username: info.username,
-      domain: info.domain,
-      displayName: info.displayName,
-      avatarUrl: info.avatarUrl,
-    },
-  });
-
-  await prisma.post.updateMany({
-    where: { apId: targetApId },
-    data: { boostCount: { increment: 1 } },
-  });
-  await prisma.photo.updateMany({
-    where: { apId: targetApId },
-    data: { boostCount: { increment: 1 } },
-  });
-
-  void sendPushToOwner({
-    title: "New boost",
-    body: `${actorLabel(info)} boosted your post`,
-    url: await localUrlForApId(targetApId),
-    type: "boost",
-    icon: info.avatarUrl || undefined,
-  }).catch(() => {});
+      icon: info.avatarUrl || undefined,
+    }).catch(() => {});
+  }
 
   // If the booster is someone we follow, store the boosted post for our feed
   const isFollowed = await prisma.fediFollowing.findUnique({ where: { actorUri } });
