@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.5.0 (2026-06-24)
 
 ### Added
 - **Un-like and un-boost from the timeline.** The like and boost buttons are now toggles — clicking a lit one sends an `Undo(Like)` / `Undo(Announce)` to the post author's real inbox (resolved server-side, per #110) and clears the local state, so a mis-click is reversible. (#111)
