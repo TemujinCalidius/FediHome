@@ -4,6 +4,7 @@
 
 ### Added
 - **Bluesky interactions now reach your notification bell.** Likes, reposts, replies, mentions, quotes, and follows on your crossposted Bluesky posts are pulled in from Bluesky's notification feed (`listNotifications`) and shown in the bell alongside Fediverse activity — previously only the per-post reply poll ran (on page render), so likes/reposts were never recorded and nothing surfaced in the bell. Ingestion is incremental (resumes from a watermark), de-duplicated by each notification's own id (so a re-sync never double-counts), and the very first sync backfills history silently (no notification storm). The "Sync Bluesky" admin button and the scheduled Bluesky sync both run it. (#134)
+- **Post pages show who liked and reposted on Bluesky, not just a count.** The interaction strip now renders the actual liker/reposter avatars from both Fediverse and Bluesky (source-tinted rings), using the per-actor data from the new Bluesky ingestion. (#135)
 
 ### Schema
 - New `BlueskyInteraction` table holding per-actor Bluesky likes/reposts/mentions/quotes/follows on your posts (#134). Additive and non-destructive (a brand-new table). **After upgrading, run `npx prisma db push`** (or apply `prisma/manual-migrations/2026-06-25-bluesky-interaction.sql`).

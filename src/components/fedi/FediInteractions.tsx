@@ -1,35 +1,59 @@
-interface Interaction {
+export interface InteractionAvatar {
   id: string;
-  username: string;
-  domain: string;
-  displayName: string | null;
+  label: string; // hover title, e.g. @user@domain (fedi) or @handle (bluesky)
   avatarUrl: string | null;
+  source: "fedi" | "bluesky";
+}
+
+// Up to 5 overlapping avatars with a source-colored ring (fedi = accent, bsky =
+// blue), then a +N overflow. Used for both likers and reposters.
+function AvatarStack({ people }: { people: InteractionAvatar[] }) {
+  if (people.length === 0) return null;
+  return (
+    <div className="flex -space-x-1">
+      {people.slice(0, 5).map((p) => {
+        const ring = p.source === "bluesky" ? "ring-blue-500/60" : "ring-accent-500/60";
+        return (
+          <div key={p.id} title={p.label}>
+            {p.avatarUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={p.avatarUrl} alt="" className={`w-5 h-5 rounded-full ring-1 ${ring}`} />
+            ) : (
+              <div className={`w-5 h-5 rounded-full bg-surface-700 ring-1 ${ring}`} />
+            )}
+          </div>
+        );
+      })}
+      {people.length > 5 && (
+        <div className="w-5 h-5 rounded-full bg-surface-700 ring-1 ring-surface-950 flex items-center justify-center text-[8px] text-gray-500">
+          +{people.length - 5}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function FediInteractions({
-  likes,
-  boosts,
-  replies,
+  likeAvatars,
+  repostAvatars,
   likeCount,
   boostCount,
   bskyLikeCount = 0,
   bskyRepostCount = 0,
-  blueskyReplyCount = 0,
+  replyCount = 0,
 }: {
-  likes: Interaction[];
-  boosts: Interaction[];
-  replies: Interaction[];
+  likeAvatars: InteractionAvatar[];
+  repostAvatars: InteractionAvatar[];
   likeCount: number;
   boostCount: number;
   bskyLikeCount?: number;
   bskyRepostCount?: number;
-  blueskyReplyCount?: number;
+  replyCount?: number;
 }) {
   const totalLikes = likeCount + bskyLikeCount;
   const totalBoosts = boostCount + bskyRepostCount;
-  const totalReplies = replies.length + blueskyReplyCount;
 
-  if (totalLikes === 0 && totalBoosts === 0 && totalReplies === 0) return null;
+  if (totalLikes === 0 && totalBoosts === 0 && replyCount === 0) return null;
 
   return (
     <div className="mt-8 pt-6 border-t border-surface-700">
@@ -49,27 +73,8 @@ export default function FediInteractions({
                 ({likeCount} fedi, {bskyLikeCount} bsky)
               </span>
             )}
-            {/* Show avatars of who liked (fedi only — Bluesky doesn't give us individual likers) */}
-            <div className="flex -space-x-1">
-              {likes.slice(0, 5).map((like) => (
-                <div key={like.id} title={`@${like.username}@${like.domain}`}>
-                  {like.avatarUrl ? (
-                    <img
-                      src={like.avatarUrl}
-                      alt=""
-                      className="w-5 h-5 rounded-full ring-1 ring-surface-950"
-                    />
-                  ) : (
-                    <div className="w-5 h-5 rounded-full bg-surface-700 ring-1 ring-surface-950" />
-                  )}
-                </div>
-              ))}
-              {likes.length > 5 && (
-                <div className="w-5 h-5 rounded-full bg-surface-700 ring-1 ring-surface-950 flex items-center justify-center text-[8px] text-gray-500">
-                  +{likes.length - 5}
-                </div>
-              )}
-            </div>
+            {/* Who liked — fedi + Bluesky (per-actor data from the notification sync, #134) */}
+            <AvatarStack people={likeAvatars} />
           </div>
         )}
 
@@ -87,16 +92,18 @@ export default function FediInteractions({
                 ({boostCount} fedi, {bskyRepostCount} bsky)
               </span>
             )}
+            {/* Who reposted — fedi + Bluesky */}
+            <AvatarStack people={repostAvatars} />
           </div>
         )}
 
         {/* Reply count */}
-        {totalReplies > 0 && (
+        {replyCount > 0 && (
           <span className="fedi-badge">
             <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clipRule="evenodd" />
             </svg>
-            {totalReplies} {totalReplies === 1 ? "reply" : "replies"}
+            {replyCount} {replyCount === 1 ? "reply" : "replies"}
           </span>
         )}
       </div>
