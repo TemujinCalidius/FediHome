@@ -206,6 +206,76 @@ export async function computeNotifications(): Promise<NotificationResult> {
     });
   }
 
+  // 6. Bluesky interactions on OUR content — likes, reposts, mentions, quotes,
+  // follows ingested by syncBlueskyNotifications (#134). Replies are section 7.
+  const ourBskyPosts = await prisma.post.findMany({
+    where: { blueskyUri: { not: null } },
+    select: { blueskyUri: true, slug: true, title: true },
+  });
+  const bskyUriToPost = new Map<string, { url: string; name: string }>();
+  for (const p of ourBskyPosts) {
+    if (p.blueskyUri) bskyUriToPost.set(p.blueskyUri, { url: `/post/${p.slug}`, name: p.title || p.slug });
+  }
+
+  const bskyInteractions = await prisma.blueskyInteraction.findMany({
+    orderBy: { createdAt: "desc" },
+  });
+
+  for (const i of bskyInteractions) {
+    const target = i.subjectUri ? bskyUriToPost.get(i.subjectUri) : null;
+    const handleUrl = `https://bsky.app/profile/${i.authorHandle}`;
+    const bskyPostUrl = i.postUri
+      ? `https://bsky.app/profile/${i.authorHandle}/post/${i.postUri.split("/").pop()}`
+      : null;
+    // Map onto the bell's closed type union: repost→boost, mention/quote→reply.
+    const type: NotificationItem["type"] =
+      i.type === "repost" ? "boost" : i.type === "mention" || i.type === "quote" ? "reply" : i.type === "like" ? "like" : "follow";
+
+    let summary: string;
+    let targetUrl: string;
+    if (i.type === "like") { summary = `liked "${target?.name ?? "your post"}"`; targetUrl = target?.url ?? handleUrl; }
+    else if (i.type === "repost") { summary = `reposted "${target?.name ?? "your post"}"`; targetUrl = target?.url ?? handleUrl; }
+    else if (i.type === "quote") { summary = `quoted "${target?.name ?? "your post"}"`; targetUrl = target?.url ?? bskyPostUrl ?? handleUrl; }
+    else if (i.type === "mention") { summary = "mentioned you in a post"; targetUrl = bskyPostUrl ?? handleUrl; }
+    else { summary = "followed you"; targetUrl = handleUrl; }
+
+    items.push({
+      id: `bsky-${i.id}`,
+      type,
+      source: "bluesky",
+      actor: i.displayName || i.authorHandle,
+      actorUrl: handleUrl,
+      avatarUrl: i.avatarUrl,
+      summary,
+      targetUrl,
+      maintenanceId: null,
+      createdAt: i.createdAt.toISOString(),
+    });
+  }
+
+  // 7. Bluesky replies on OUR posts (recent, bounded — replies can be high
+  // volume). Surfaces ingested replies in the bell, not just on the post page.
+  const bskyReplies = await prisma.blueskyReply.findMany({
+    orderBy: { createdAt: "desc" },
+    take: 100,
+    include: { post: { select: { slug: true, title: true } } },
+  });
+
+  for (const r of bskyReplies) {
+    items.push({
+      id: `bskyreply-${r.id}`,
+      type: "reply",
+      source: "bluesky",
+      actor: r.displayName || r.authorHandle,
+      actorUrl: `https://bsky.app/profile/${r.authorHandle}`,
+      avatarUrl: r.avatarUrl,
+      summary: `replied to "${r.post.title || r.post.slug}"`,
+      targetUrl: `/post/${r.post.slug}`,
+      maintenanceId: null,
+      createdAt: r.createdAt.toISOString(),
+    });
+  }
+
   // Sort all items by date
   items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 

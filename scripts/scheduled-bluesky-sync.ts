@@ -24,6 +24,7 @@
  */
 import { syncBlueskyGraph } from "../src/lib/bluesky-graph";
 import { pollBlueskyDMs } from "../src/lib/bluesky-dm-poll";
+import { syncBlueskyNotifications } from "../src/lib/bluesky-notifications";
 
 async function main() {
   const startedAt = new Date().toISOString();
@@ -41,6 +42,13 @@ async function main() {
     console.log(`  dms:   ${dms.convos} convos, ${dms.messages} messages`);
   } catch (err) {
     console.error("  dms poll failed:", err);
+  }
+
+  try {
+    const n = await syncBlueskyNotifications();
+    console.log(`  notifs: ${n.likes} likes, ${n.reposts} reposts, ${n.replies} replies, ${n.mentions} mentions, ${n.quotes} quotes, ${n.follows} follows (${n.pushed} pushed)`);
+  } catch (err) {
+    console.error("  notifications sync failed:", err);
   }
 
   console.log(`[${new Date().toISOString()}] scheduled-bluesky-sync done`);

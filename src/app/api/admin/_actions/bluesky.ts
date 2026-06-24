@@ -8,6 +8,7 @@ import {
   unfollowBlueskyAccount,
   resolveBlueskyActor,
 } from "@/lib/bluesky-graph";
+import { syncBlueskyNotifications } from "@/lib/bluesky-notifications";
 import type { AdminBody } from "./types";
 
 const siteUrl = siteConfig.url;
@@ -109,7 +110,14 @@ export async function bskyReply(body: AdminBody): Promise<NextResponse> {
 export async function syncGraph(): Promise<NextResponse> {
   try {
     const counts = await syncBlueskyGraph();
-    return NextResponse.json({ success: true, ...counts });
+    // The "Sync Bluesky" button also pulls in interaction notifications (likes,
+    // reposts, replies, mentions, quotes, follows) into the bell (#134) — keep
+    // it best-effort so a notifications hiccup doesn't fail the graph sync.
+    const notifications = await syncBlueskyNotifications().catch((err) => {
+      console.error("Bluesky notifications sync failed:", err);
+      return null;
+    });
+    return NextResponse.json({ success: true, ...counts, notifications });
   } catch (err) {
     console.error("Bluesky graph sync failed:", err);
     return NextResponse.json({ error: "Bluesky graph sync failed" }, { status: 500 });
