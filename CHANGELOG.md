@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- **An incoming like or boost is no longer counted twice when redelivered.** The inbox recorded every incoming `Like` / `Announce` unconditionally — bumping the post's like/boost count, adding a notification, and firing a push — so a redelivered activity (federation retries / shared-inbox fan-out) double-counted, duplicated the bell entry, and re-notified. The matching `Undo` only decremented once, leaving a permanent residue on the count. Incoming likes/boosts are now de-duplicated per `(actor, post, type)`, so a redelivery is a no-op; a genuine re-like after an un-like still counts (the un-like removed the earlier record first). (#118)
+
 ## 1.5.0 (2026-06-24)
 
 ### Added
