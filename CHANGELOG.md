@@ -7,6 +7,7 @@
 
 ### Fixed
 - **An incoming like or boost is no longer counted twice when redelivered.** The inbox recorded every incoming `Like` / `Announce` unconditionally — bumping the post's like/boost count, adding a notification, and firing a push — so a redelivered activity (federation retries / shared-inbox fan-out) double-counted, duplicated the bell entry, and re-notified. The matching `Undo` only decremented once, leaving a permanent residue on the count. Incoming likes/boosts are now de-duplicated per `(actor, post, type)`, so a redelivery is a no-op; a genuine re-like after an un-like still counts (the un-like removed the earlier record first). (#118)
+- **`npm run update` no longer breaks on schema changes that add a unique constraint.** `update.sh` runs `prisma db push`, which refuses to add a unique index without `--accept-data-loss` (even a provably safe additive one) and bailed the whole upgrade. The updater now applies the idempotent `prisma/manual-migrations/*.sql` files (via `prisma db execute`) **before** `db push`, so a unique index can be pre-created and `db push` then sees no diff. Self-hosters don't need `--accept-data-loss`; the safety stance against genuine data loss is unchanged. (#124)
 
 ## 1.5.0 (2026-06-24)
 

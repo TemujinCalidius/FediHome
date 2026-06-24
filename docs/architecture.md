@@ -229,6 +229,7 @@ Here is the full lifecycle of a post:
 2. Run `npx prisma db push` to sync your local database (FediHome doesn't track migration files; the schema is the source of truth)
 3. Run `npx prisma generate` if your editor's typed client doesn't auto-update
 4. Document the change in `CHANGELOG.md` under a "Schema" heading so operators know to run `db push` when upgrading
+5. If the change adds a **unique constraint** to an existing table, `db push` can't apply it flaglessly (it demands `--accept-data-loss`). Either enforce uniqueness in app code, or add an idempotent `prisma/manual-migrations/<date>-<name>.sql` (`CREATE UNIQUE INDEX IF NOT EXISTS …`) — `update.sh` applies these before `db push` on upgrade, so `db push` then sees no diff. (A new *table* or *nullable column* needs no SQL file; `db push` adds those without warning.)
 
 ### Adding a New Crosspost Target
 

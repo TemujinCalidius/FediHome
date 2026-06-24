@@ -156,6 +156,21 @@ ok "Dependencies in sync"
 # Step 4: Database schema
 # ---------------------------------------------------------------------------
 header "Step 4 of 5 — Applying database changes"
+# Apply hand-written, idempotent migrations BEFORE `db push`. `prisma db push`
+# refuses to add a unique constraint without --accept-data-loss — even a safe
+# additive one — so changes that need one ship as prisma/manual-migrations/*.sql
+# (CREATE ... IF NOT EXISTS). Pre-applying them here means the `db push` below
+# sees no diff and never trips the data-loss guard. They're idempotent (and the
+# DB already exists on an upgrade), so re-running every update is a no-op. (#124)
+if [ -d prisma/manual-migrations ]; then
+  for migration in prisma/manual-migrations/*.sql; do
+    [ -e "$migration" ] || continue   # no .sql files yet → skip the glob literal
+    echo "  Applying $(basename "$migration")…"
+    if ! npx prisma db execute --file "$migration"; then
+      echo "  ⚠️  Could not apply $(basename "$migration") — continuing; the 'db push' below will reconcile or report the cause."
+    fi
+  done
+fi
 # Prisma db push refuses by default if a change would drop data — that's the
 # right safety stance. If it fails, we bail and tell the user.
 if ! npx prisma db push; then
