@@ -53,6 +53,7 @@ Thanks for your interest in contributing to FediHome! This guide will help you g
 - **TypeScript** with strict mode enabled. All new code should be fully typed.
 - **Tailwind CSS** for styling. Use utility classes and the existing design tokens defined in `src/app/globals.css` (surface colors, accent colors, font families).
 - **Prisma** for all database access. The schema is in `prisma/schema.prisma`. FediHome doesn't track migration files — after changing the schema, run `npx prisma db push` to sync your local database, and document the change in the changelog under a "Schema" heading so operators know to run `db push` after upgrading.
+  - **Adding a `@unique`/`@@unique` to an existing table?** `prisma db push` refuses to add a unique constraint without `--accept-data-loss`, even when it's provably safe — so it can't run flaglessly on an upgrade. Either enforce uniqueness in app code (a `findFirst` guard, as the federation handlers do), or ship an idempotent `prisma/manual-migrations/<date>-<name>.sql` (`CREATE UNIQUE INDEX IF NOT EXISTS …`). `update.sh` applies every `manual-migrations/*.sql` **before** `db push`, so a pre-created index means `db push` sees no diff and never trips the data-loss guard.
 - **Next.js App Router** conventions. Pages go in `src/app/`, API routes use `route.ts` files, and shared components live in `src/components/`.
 - Prefer named exports for components and utility functions.
 - Keep files focused: one component per file, one API route per file.
