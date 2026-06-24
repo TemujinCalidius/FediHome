@@ -403,6 +403,70 @@ async function handleBoost(actorUri: string, activity: Record<string, unknown>) 
   }
 }
 
+/**
+ * Record an incoming reply to our content as a FediInteraction and buzz the
+ * owner — de-duplicated on the reply Note's own apId so a redelivered
+ * `Create(Note)` (AP retries / shared-inbox fan-out) doesn't create a second
+ * bell entry or fire a second push. A reply has no counter to desync (unlike
+ * like/boost), so redelivery's only symptom is the duplicate notification.
+ *
+ * The note's own apId is the right key: keying on (actorUri, targetApId) like
+ * like/boost would wrongly collapse *distinct* replies from the same person to
+ * the same post. A Note with no id keeps the old behaviour (no key → no dedup).
+ *
+ * Dedup is enforced here in app code rather than via a DB unique constraint:
+ * AP redelivery is sequential (retries are spaced out), so by the time a
+ * redelivery arrives the first row is committed and the lookup below finds it.
+ * (`prisma db push` — FediHome's upgrade path — refuses to add a unique index
+ * without --accept-data-loss, which would break `npm run update` for everyone.)
+ */
+async function recordIncomingReply(opts: {
+  noteApId: string | null;
+  actorUri: string;
+  targetApId: string;
+  content: string; // stored on the FediInteraction (sanitized note body)
+  pushBodyHtml: string; // rendered into the push body
+  info: { displayName?: string | null; username: string; domain: string; avatarUrl: string | null };
+}): Promise<void> {
+  const { noteApId, actorUri, targetApId, content, pushBodyHtml, info } = opts;
+
+  // Redelivery guard: skip the row + push if we've already recorded this exact
+  // reply. Only when we have an apId — querying `sourceApId: null` would match
+  // every other null-keyed (like/boost) row.
+  if (noteApId) {
+    const already = await prisma.fediInteraction.findFirst({
+      where: { sourceApId: noteApId },
+      select: { id: true },
+    });
+    if (already) return;
+  }
+
+  // No try/catch: a genuine write failure should propagate (the inbox 500s and
+  // the sender retries) rather than be silently swallowed into a 202 that drops
+  // the reply.
+  await prisma.fediInteraction.create({
+    data: {
+      type: "reply",
+      actorUri,
+      targetApId,
+      sourceApId: noteApId,
+      content,
+      username: info.username,
+      domain: info.domain,
+      displayName: info.displayName,
+      avatarUrl: info.avatarUrl,
+    },
+  });
+
+  void sendPushToOwner({
+    title: "New reply",
+    body: replyPushBody(info, pushBodyHtml),
+    url: "/timeline",
+    type: "reply",
+    icon: info.avatarUrl || undefined,
+  }).catch(() => {});
+}
+
 async function handleNote(actorUri: string, note: Record<string, unknown>) {
   const inReplyTo = (note.inReplyTo as string) || null;
 
@@ -510,25 +574,14 @@ async function handleNote(actorUri: string, note: Record<string, unknown>) {
         (await prisma.photo.findFirst({ where: { apId: inReplyTo } })) ||
         (await prisma.fediPost.findFirst({ where: { apId: inReplyTo, isOutgoing: true } }));
       if (isOurPost) {
-        await prisma.fediInteraction.create({
-          data: {
-            type: "reply",
-            actorUri,
-            targetApId: inReplyTo,
-            content: sanitizeHtml((note.content as string) || ""),
-            username: info.username,
-            domain: info.domain,
-            displayName: info.displayName,
-            avatarUrl: info.avatarUrl,
-          },
+        await recordIncomingReply({
+          noteApId: (note.id as string) || null,
+          actorUri,
+          targetApId: inReplyTo,
+          content: sanitizeHtml((note.content as string) || ""),
+          pushBodyHtml: content,
+          info,
         });
-        void sendPushToOwner({
-          title: "New reply",
-          body: replyPushBody(info, content),
-          url: "/timeline",
-          type: "reply",
-          icon: info.avatarUrl || undefined,
-        }).catch(() => {});
       }
     }
   } else if (inReplyTo) {
@@ -539,24 +592,13 @@ async function handleNote(actorUri: string, note: Record<string, unknown>) {
       (await prisma.fediPost.findFirst({ where: { apId: inReplyTo, isOutgoing: true } }));
     if (!isOurContent) return;
     const replyHtml = sanitizeHtml((note.content as string) || "");
-    await prisma.fediInteraction.create({
-      data: {
-        type: "reply",
-        actorUri,
-        targetApId: inReplyTo,
-        content: replyHtml,
-        username: info.username,
-        domain: info.domain,
-        displayName: info.displayName,
-        avatarUrl: info.avatarUrl,
-      },
+    await recordIncomingReply({
+      noteApId: (note.id as string) || null,
+      actorUri,
+      targetApId: inReplyTo,
+      content: replyHtml,
+      pushBodyHtml: replyHtml,
+      info,
     });
-    void sendPushToOwner({
-      title: "New reply",
-      body: replyPushBody(info, replyHtml),
-      url: "/timeline",
-      type: "reply",
-      icon: info.avatarUrl || undefined,
-    }).catch(() => {});
   }
 }

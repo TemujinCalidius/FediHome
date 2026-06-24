@@ -295,6 +295,7 @@ model FediInteraction {
   type      String   // like, boost, reply
   actorUri  String
   targetApId String  // the AP ID of the post/photo being interacted with
+  sourceApId String? // the interacting activity's own apId (a reply Note's id); dedups redelivered replies. Null for like/boost. NOT @unique on purpose — `prisma db push` (the update path) refuses to add a unique constraint without --accept-data-loss, so dedup is enforced in app code (handleNote) instead.
   content   String?  // for replies
   username  String
   domain    String
@@ -304,6 +305,7 @@ model FediInteraction {
 
   @@index([targetApId])
   @@index([type])
+  @@index([sourceApId])
 }
 
 // === Auth (for Micropub) ===

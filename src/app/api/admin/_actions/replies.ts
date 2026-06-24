@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { deliverActivity, deliverToFollowers } from "@/lib/http-signatures";
 import { siteConfig } from "@/../site.config";
 import { parseMentions, linkMentions, buildApMentionTags, collectMentionInboxes } from "@/lib/mentions";
+import { resolveActorInbox } from "@/lib/fedi-resolve";
 import type { AdminBody } from "./types";
 
 const siteUrl = siteConfig.url;
@@ -83,14 +84,19 @@ export async function reply(body: AdminBody): Promise<NextResponse> {
     },
   };
 
-  // Deliver to the specific inbox + all followers
-  if (targetInbox) {
-    await deliverActivity(targetInbox, activity).catch(() => {});
+  // Deliver to the reply target + all followers. Resolve the target's real inbox
+  // server-side (#110) — the client-sent targetInbox hardcodes Mastodon's
+  // /users/<name>/inbox, which 404s to FediHome and other servers — falling back
+  // to the client value only if the actor can't be resolved.
+  const directInbox =
+    (replyActorUri ? await resolveActorInbox(replyActorUri) : null) || targetInbox;
+  if (directInbox) {
+    await deliverActivity(directInbox, activity).catch(() => {});
   }
   await deliverToFollowers(activity).catch(() => {});
   // Direct-deliver to mentioned actors' inboxes
   for (const inbox of collectMentionInboxes(replyMentions)) {
-    if (inbox === targetInbox) continue;
+    if (inbox === directInbox) continue;
     deliverActivity(inbox, activity).catch((err) =>
       console.error(`Failed to deliver mention to ${inbox}:`, err)
     );
@@ -252,9 +258,14 @@ export async function backfillReplies(): Promise<NextResponse> {
   let created = 0;
   for (const reply of recentReplies) {
     if (!reply.inReplyTo) continue;
-    // Check if we already have this interaction
+    // Dedup on the reply's own apId (the FediPost.apId is the reply Note's id),
+    // the same key the live inbox uses (#121) — so backfill and the inbox can't
+    // double-record a reply, and distinct replies from one actor to one post
+    // aren't collapsed. Fall back to the weak key only for the rare apId-less row.
     const existing = await prisma.fediInteraction.findFirst({
-      where: { actorUri: reply.actorUri, targetApId: reply.inReplyTo, type: "reply" },
+      where: reply.apId
+        ? { sourceApId: reply.apId }
+        : { actorUri: reply.actorUri, targetApId: reply.inReplyTo, type: "reply" },
     });
     if (!existing) {
       await prisma.fediInteraction.create({
@@ -262,6 +273,7 @@ export async function backfillReplies(): Promise<NextResponse> {
           type: "reply",
           actorUri: reply.actorUri,
           targetApId: reply.inReplyTo,
+          sourceApId: reply.apId || null,
           content: reply.content,
           username: reply.username,
           domain: reply.domain,

@@ -4,7 +4,7 @@ import { approveComment, rejectComment } from "./_actions/comments";
 import { reply, editReply, backfillReplies } from "./_actions/replies";
 import { fediDm, bskyDm, markDmRead, markAllDmsRead } from "./_actions/dms";
 import { follow, unfollow, unfollowByUri, block } from "./_actions/fedi-graph";
-import { like, boost } from "./_actions/fedi-interactions";
+import { like, boost, unlike, unboost } from "./_actions/fedi-interactions";
 import { bskyReply, syncGraph, bskyFollow, bskyUnfollow } from "./_actions/bluesky";
 
 // Admin actions, extracted from a single 1,000+ line `switch` (#11) into the
@@ -43,7 +43,9 @@ export async function POST(req: NextRequest) {
     case "unfollow_by_uri": return unfollowByUri(body);
     case "block": return block(body);
     case "like": return like(body);
+    case "unlike": return unlike(body);
     case "boost": return boost(body);
+    case "unboost": return unboost(body);
     case "bsky_reply": return bskyReply(body);
     case "sync_bluesky_graph": return syncGraph();
     case "bsky_follow": return bskyFollow(body);

@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.5.0 (2026-06-24)
+
+### Added
+- **Un-like and un-boost from the timeline.** The like and boost buttons are now toggles — clicking a lit one sends an `Undo(Like)` / `Undo(Announce)` to the post author's real inbox (resolved server-side, per #110) and clears the local state, so a mis-click is reversible. (#111)
+
+### Security
+- **Rate-limit keying now uses Cloudflare's authoritative client IP behind a trusted proxy.** With `TRUSTED_PROXY=true`, `rateLimitKey()` keyed on the leftmost `X-Forwarded-For` hop — but Cloudflare *appends* to `X-Forwarded-For`, so that hop is client-supplied and spoofable, letting an attacker rotate it to evade the admin-login / guest-comment / XML-RPC / kudos rate limits. It now prefers `CF-Connecting-IP` (set by Cloudflare, not client-overridable), falling back to `X-Forwarded-For` / `X-Real-IP` for non-Cloudflare proxies. The default (`TRUSTED_PROXY` unset → one shared bucket) is unchanged. This makes it safe to enable `TRUSTED_PROXY` behind Cloudflare for genuine per-visitor limiting. (#109)
+
+### Fixed
+- **Likes, boosts, and replies now reach FediHome (and other non-Mastodon) servers.** Outbound delivery built the target inbox from Mastodon's convention `https://{domain}/users/{name}/inbox`, so it silently 404'd to FediHome (whose inbox is `/ap/inbox`) and any server with a different inbox path — meaning FediHome↔FediHome likes/boosts/replies never actually arrived. The inbox is now resolved server-side from the target actor's advertised/stored value — a cached follower/following record, else a live actor fetch — via a shared `resolveActorInbox()` helper; Mastodon targets are unaffected (they still resolve to their advertised `/users/<name>/inbox`). (#110)
+- **Likes and boosts no longer double-deliver, inflating a follower's counts.** A `Like` was broadcast to all followers *and* sent to the post author, and a boost (`Announce`) was sent to followers *and* directly to the author — so a post author who also follows you received the activity twice, double-counting the like/boost (and the matching `Undo` only decremented once, leaving the count stuck). Likes now go only to the author (the standard target — they aren't broadcast to followers); boosts go to followers plus the author, but the direct author send is skipped when they already follow you (`deliverToFollowers` already reaches them). The same dedup applies to the `Undo` on un-like / un-boost. (#119)
+- **A redelivered reply no longer shows up twice in notifications.** Incoming replies to your posts were recorded without a dedup guard, so when a federated server redelivered the same `Create(Note)` (retries / shared-inbox fan-out) you got a duplicate bell entry and a duplicate push. Replies are now de-duplicated on the reply's own ActivityPub id (a new `sourceApId` on the interaction record), so a redelivered reply is recognised and skipped — while genuinely distinct replies from the same person to the same post are still each kept. (#121)
+
+### Schema
+- `FediInteraction.sourceApId` — new nullable, **indexed** column holding the interacting activity's own apId (a reply Note's id), used to dedup redelivered replies (#121). Additive and non-destructive (existing rows get `NULL`). Deliberately **not** a unique constraint — `prisma db push` refuses to add a unique index without `--accept-data-loss`, so dedup is enforced in app code. **After upgrading, run `npx prisma db push`** (or apply `prisma/manual-migrations/2026-06-23-fediinteraction-sourceapid.sql`).
+
 ## 1.4.1 (2026-06-23)
 
 **Fix release.** Hardens the kudos rate-limiter against a spoofable `X-Forwarded-For` (#93), and fixes the notification badge/bell desync — the badge now tracks the real unread count, boost counts decrement on un-boost, and like/boost notifications deep-link to the post (#103, partial). Backward-compatible — `npm run update`.

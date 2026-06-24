@@ -1,4 +1,5 @@
 import { assertPublicHost } from "./url-guard";
+import { prisma } from "./db";
 
 export interface ResolvedFediActor {
   actorUri: string;
@@ -72,6 +73,36 @@ export async function resolveFediActorByUri(
       displayName: actor.name || null,
       avatarUrl: actor.icon?.url || null,
     };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Best delivery inbox for an actor URI: a cached FediFollower/FediFollowing's
+ * `sharedInbox`→`inbox`, else a live actor fetch. Returns null if unresolvable.
+ *
+ * Outbound like/boost/reply delivery must use this rather than constructing an
+ * inbox from a handle — the inbox path is per-implementation (Mastodon uses
+ * `/users/<name>/inbox`, FediHome uses `/ap/inbox`, …), so it has to come from
+ * the actor's advertised/stored value or delivery 404s. (#110)
+ */
+export async function resolveActorInbox(actorUri: string): Promise<string | null> {
+  try {
+    const follower = await prisma.fediFollower.findUnique({
+      where: { actorUri },
+      select: { inbox: true, sharedInbox: true },
+    });
+    if (follower) return follower.sharedInbox || follower.inbox;
+
+    const following = await prisma.fediFollowing.findUnique({
+      where: { actorUri },
+      select: { inbox: true },
+    });
+    if (following) return following.inbox;
+
+    const live = await resolveFediActorByUri(actorUri);
+    return live ? live.sharedInbox || live.inbox : null;
   } catch {
     return null;
   }
