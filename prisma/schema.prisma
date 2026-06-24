@@ -80,6 +80,32 @@ model BlueskyReply {
   @@index([postId])
 }
 
+// Per-actor Bluesky interactions on our posts (likes, reposts, mentions,
+// quotes, follows), ingested from app.bsky.notification.listNotifications into
+// the notification bell + push. Replies stay in BlueskyReply (the post page
+// already renders them). Deduped by the notification's own at:// uri, since
+// listNotifications is at-least-once. (#134)
+model BlueskyInteraction {
+  id           String   @id @default(cuid())
+  type         String   // "like" | "repost" | "mention" | "quote" | "follow"
+  notifUri     String   @unique // the notification's own at:// uri — dedup key
+  notifCid     String
+  authorDid    String
+  authorHandle String
+  displayName  String?
+  avatarUrl    String?
+  subjectUri   String?  // our Post.blueskyUri (like/repost/quote); null for mention/follow
+  postUri      String?  // the actor's own bsky post uri (mention/quote) for deep-linking
+  content      String?  // record.text (mention/quote)
+  reason       String   // raw notification.reason (forward-compat / debug)
+  createdAt    DateTime // record.createdAt, falling back to indexedAt
+  fetchedAt    DateTime @default(now())
+
+  @@index([type])
+  @@index([subjectUri])
+  @@index([createdAt])
+}
+
 // === Photography ===
 
 model Photo {
