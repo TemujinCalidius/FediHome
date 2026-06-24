@@ -54,6 +54,11 @@ export default async function PhotoPage({
   const likes = fediInteractions.filter((i) => i.type === "like");
   const boosts = fediInteractions.filter((i) => i.type === "boost");
   const replies = fediInteractions.filter((i) => i.type === "reply");
+
+  // Photos aren't crossposted to Bluesky, so these are fedi-only avatar lists
+  // for the shared FediInteractions component (#135).
+  const likeAvatars = likes.map((l) => ({ id: l.id, label: `@${l.username}@${l.domain}`, avatarUrl: l.avatarUrl, source: "fedi" as const }));
+  const repostAvatars = boosts.map((b) => ({ id: b.id, label: `@${b.username}@${b.domain}`, avatarUrl: b.avatarUrl, source: "fedi" as const }));
   const exif = photo.exifData as Record<string, string> | null;
 
   return (
@@ -116,11 +121,11 @@ export default async function PhotoPage({
           )}
 
           <FediInteractions
-            likes={likes}
-            boosts={boosts}
-            replies={replies}
+            likeAvatars={likeAvatars}
+            repostAvatars={repostAvatars}
             likeCount={photo.likeCount}
             boostCount={photo.boostCount}
+            replyCount={replies.length}
           />
 
           {/* Comments */}
