@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.5.1 (2026-06-25)
 
 ### Changed
 - Bumped `@atproto/api` 0.20.16 → 0.20.19 (patch).
