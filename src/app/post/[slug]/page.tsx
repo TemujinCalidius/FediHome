@@ -107,6 +107,27 @@ export default async function PostPage({
   const boosts = fediInteractions.filter((i) => i.type === "boost");
   const incomingReplies = fediInteractions.filter((i) => i.type === "reply");
 
+  // Bluesky per-actor likers/reposters — recorded by syncBlueskyNotifications
+  // (#134), so the post page can show their avatars, not just the aggregate count.
+  const bskyInteractions = post.blueskyUri
+    ? await prisma.blueskyInteraction.findMany({
+        where: { subjectUri: post.blueskyUri, type: { in: ["like", "repost"] } },
+        orderBy: { createdAt: "asc" },
+      })
+    : [];
+  const likeAvatars = [
+    ...likes.map((l) => ({ id: l.id, label: `@${l.username}@${l.domain}`, avatarUrl: l.avatarUrl, source: "fedi" as const })),
+    ...bskyInteractions
+      .filter((i) => i.type === "like")
+      .map((b) => ({ id: b.id, label: `@${b.authorHandle}`, avatarUrl: b.avatarUrl, source: "bluesky" as const })),
+  ];
+  const repostAvatars = [
+    ...boosts.map((b) => ({ id: b.id, label: `@${b.username}@${b.domain}`, avatarUrl: b.avatarUrl, source: "fedi" as const })),
+    ...bskyInteractions
+      .filter((i) => i.type === "repost")
+      .map((b) => ({ id: b.id, label: `@${b.authorHandle}`, avatarUrl: b.avatarUrl, source: "bluesky" as const })),
+  ];
+
   // Fetch our own outgoing replies to this post
   const outgoingReplies = post.apId
     ? await prisma.fediPost.findMany({
@@ -330,14 +351,13 @@ export default async function PostPage({
 
       {/* Fedi interactions */}
       <FediInteractions
-        likes={likes}
-        boosts={boosts}
-        replies={replies}
+        likeAvatars={likeAvatars}
+        repostAvatars={repostAvatars}
         likeCount={post.likeCount}
         boostCount={post.boostCount}
         bskyLikeCount={post.bskyLikeCount}
         bskyRepostCount={post.bskyRepostCount}
-        blueskyReplyCount={blueskyReplies.length}
+        replyCount={replies.length + blueskyReplies.length}
       />
 
       {/* Comments section */}
