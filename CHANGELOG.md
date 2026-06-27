@@ -1,6 +1,9 @@
 # Changelog
 
-## 1.6.0 (2026-06-27)
+## Unreleased
+
+### Fixed
+- **No more phantom badge counts from likes/boosts on posts you don't own.** An incoming Fediverse `Like` or `Announce` was always recorded + pushed + counted toward the app badge, even when its target wasn't your content — but the notification bell only ever lists interactions on *your* posts, so the badge would climb with a push that had no matching bell entry (e.g. someone likes a post that's in your feed because you follow the booster). Incoming likes/boosts are now gated on an ownership check (`resolveOwnedTarget`, the same test the bell uses), so they only notify when they're genuinely on your content; the boosted-post-into-your-feed behaviour is unchanged. (#103)
 
 ### Added
 - **Bluesky interactions now reach your notification bell.** Likes, reposts, replies, mentions, quotes, and follows on your crossposted Bluesky posts are pulled in from Bluesky's notification feed (`listNotifications`) and shown in the bell alongside Fediverse activity — previously only the per-post reply poll ran (on page render), so likes/reposts were never recorded and nothing surfaced in the bell. Ingestion is incremental (resumes from a watermark), de-duplicated by each notification's own id (so a re-sync never double-counts), and the very first sync backfills history silently (no notification storm). The "Sync Bluesky" admin button and the scheduled Bluesky sync both run it. (#134)

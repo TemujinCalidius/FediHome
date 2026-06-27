@@ -5,6 +5,7 @@ import { processAttachments, fetchLinkEmbed } from "@/lib/fedi-media";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { assertPublicHost } from "@/lib/url-guard";
 import { sendPushToOwner } from "@/lib/push";
+import { resolveOwnedTarget } from "@/lib/notifications";
 import { htmlToText } from "@/lib/html-text";
 
 const siteUrl = process.env.SITE_URL || "http://localhost:3000";
@@ -198,6 +199,13 @@ async function handleLike(actorUri: string, activity: Record<string, unknown>) {
 
   if (!targetApId) return;
 
+  // Ownership gate (#103): only record + notify a Like on OUR content. The bell
+  // lists interactions on owned targets only, so an ungated Like on a feed post
+  // we don't own would fire a push and climb the app badge while never showing
+  // in the bell. `resolveOwnedTarget` is the same ownership test the bell uses.
+  const target = await resolveOwnedTarget(targetApId);
+  if (!target) return;
+
   // Idempotency guard (#118): a Like is unique per (actor, target) — an actor
   // can only like a post once, and re-liking after an un-like makes a fresh row
   // (the Undo deleted the old one). So a redelivered Like (AP retries /
@@ -239,7 +247,7 @@ async function handleLike(actorUri: string, activity: Record<string, unknown>) {
   void sendPushToOwner({
     title: "New like",
     body: `${actorLabel(info)} liked your post`,
-    url: await localUrlForApId(targetApId),
+    url: target.url,
     type: "like",
     icon: info.avatarUrl || undefined,
   }).catch(() => {});
@@ -297,23 +305,6 @@ async function handleUndoBoost(actorUri: string, announceActivity: Record<string
     .catch(() => {});
 }
 
-/**
- * Resolve a target's apId to a local post/photo URL for push deep-linking
- * (else /timeline). Never throws — a DB hiccup degrades to /timeline rather than
- * suppressing the notification.
- */
-async function localUrlForApId(targetApId: string): Promise<string> {
-  try {
-    const post = await prisma.post.findFirst({ where: { apId: targetApId }, select: { slug: true } });
-    if (post) return `/post/${post.slug}`;
-    const photo = await prisma.photo.findFirst({ where: { apId: targetApId }, select: { slug: true } });
-    if (photo) return `/photography/${photo.slug}`;
-  } catch {
-    // fall through to /timeline
-  }
-  return "/timeline";
-}
-
 async function handleBoost(actorUri: string, activity: Record<string, unknown>) {
   const targetApId = typeof activity.object === "string"
     ? activity.object
@@ -335,7 +326,14 @@ async function handleBoost(actorUri: string, activity: Record<string, unknown>) 
   const info = await fetchActorInfo(actorUri);
   if (!info) return;
 
-  if (!alreadyBoosted) {
+  // Ownership gate (#103): only record the interaction / bump the count / push
+  // when the boosted post is OURS — an ungated boost of a non-owned feed post
+  // would fire a push and climb the app badge while never showing in the bell.
+  // The feed-store block below still runs regardless: a followed account's boost
+  // of someone else's post is feed content, not a notification. (`ownedTarget` is
+  // null on a redelivered boost too, so we skip the lookup entirely then — #118.)
+  const ownedTarget = alreadyBoosted ? null : await resolveOwnedTarget(targetApId);
+  if (ownedTarget) {
     // Record interaction and increment counters (existing behavior)
     await prisma.fediInteraction.create({
       data: {
@@ -361,7 +359,7 @@ async function handleBoost(actorUri: string, activity: Record<string, unknown>) 
     void sendPushToOwner({
       title: "New boost",
       body: `${actorLabel(info)} boosted your post`,
-      url: await localUrlForApId(targetApId),
+      url: ownedTarget.url,
       type: "boost",
       icon: info.avatarUrl || undefined,
     }).catch(() => {});
