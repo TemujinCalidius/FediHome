@@ -20,6 +20,38 @@ export interface NotificationResult {
   categoryCounts: Record<string, number>;
 }
 
+export interface OwnedTarget {
+  url: string; // local deep-link to the target
+  name: string; // display name (post/photo title, or reply snippet)
+}
+
+/**
+ * Resolve an ActivityPub apId to one of OUR addressable targets — a Post, a
+ * Photo, or our own outgoing FediPost (a reply we sent) — returning its local
+ * URL + display name, or `null` if it isn't ours.
+ *
+ * This is the ownership test the inbox uses to gate which incoming likes/boosts
+ * get recorded + pushed (#103): the bell only ever lists interactions on owned
+ * content, so an ungated like/boost on a feed post we don't own would fire a
+ * push and climb the app badge while never appearing in the bell. The owned set
+ * here MUST match the bell's `ourApIds` build in `computeNotifications` below
+ * (Post.apId ∪ Photo.apId ∪ FediPost where isOutgoing) — keep the two in sync.
+ */
+export async function resolveOwnedTarget(apId: string): Promise<OwnedTarget | null> {
+  if (!apId) return null;
+
+  const [post, photo, reply] = await Promise.all([
+    prisma.post.findFirst({ where: { apId }, select: { slug: true, title: true } }),
+    prisma.photo.findFirst({ where: { apId }, select: { slug: true, title: true } }),
+    prisma.fediPost.findFirst({ where: { apId, isOutgoing: true }, select: { content: true } }),
+  ]);
+
+  if (post) return { url: `/post/${post.slug}`, name: post.title || post.slug };
+  if (photo) return { url: `/photography/${photo.slug}`, name: photo.title || photo.slug };
+  if (reply) return { url: "/timeline", name: htmlToText(reply.content, 50) };
+  return null;
+}
+
 /**
  * Build the owner's notification list + unread totals. The single source of
  * truth for both the bell (`GET /api/notifications`) and the push badge count
