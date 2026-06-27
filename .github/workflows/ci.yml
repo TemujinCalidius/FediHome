@@ -36,6 +36,12 @@ jobs:
       - name: Typecheck
         run: npx tsc --noEmit
 
+      # Gate on lint *errors* only (eslint exits non-zero on errors, not
+      # warnings) so a regression like a broken `<Link>`/hook rule fails CI,
+      # while the existing warning backlog (#83) is burned down separately.
+      - name: Lint
+        run: npx eslint .
+
       - name: Test
         run: npm test
 
