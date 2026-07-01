@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyMicropubToken, verifyAdmin } from "@/lib/auth";
+import { authenticateApiRequest, verifyOrigin } from "@/lib/auth";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import sharp from "sharp";
@@ -14,10 +14,16 @@ const WEBP_QUALITY = 85;
 const MAX_AUDIO_SIZE = 100 * 1024 * 1024; // 100 MB
 
 export async function POST(req: NextRequest) {
-  // Accept either Micropub token or admin cookie
-  const auth = await verifyMicropubToken(req.headers.get("authorization"));
-  if (!auth.valid && !(await verifyAdmin(req))) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  // A `media`-scoped bearer (Micropub tokens carry it) OR the owner cookie.
+  const auth = await authenticateApiRequest(req, "media");
+  if (!auth.ok) {
+    return auth.via === "bearer"
+      ? NextResponse.json({ error: "insufficient_scope" }, { status: 403 })
+      : NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+  // The cookie is ambient → the web path still needs CSRF; a bearer isn't.
+  if (auth.via === "cookie" && !verifyOrigin(req)) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
   const form = await req.formData();
