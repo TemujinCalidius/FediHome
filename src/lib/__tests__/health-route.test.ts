@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("@/lib/db", () => ({ prisma: { $queryRaw: vi.fn() } }));
+vi.mock("@/lib/db", () => ({
+  prisma: { $queryRaw: vi.fn(), authToken: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) } },
+}));
 
 import { GET } from "@/app/api/health/route";
 import { prisma } from "@/lib/db";
