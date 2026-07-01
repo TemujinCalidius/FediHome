@@ -5,6 +5,7 @@ vi.mock("@/lib/db", () => ({
   prisma: {
     authToken: { findUnique: vi.fn(), update: vi.fn() },
     adminSession: { findUnique: vi.fn(), delete: vi.fn(), update: vi.fn() },
+    appTokenUsage: { create: vi.fn() },
   },
 }));
 
@@ -13,7 +14,7 @@ import { prisma } from "@/lib/db";
 
 const ADMIN_SECRET = "test-admin-secret";
 
-function req(opts: { bearer?: string; cookie?: string }) {
+function req(opts: { bearer?: string; cookie?: string; method?: string }) {
   const headers = new Map<string, string>();
   if (opts.bearer) headers.set("authorization", `Bearer ${opts.bearer}`);
   return {
@@ -21,6 +22,8 @@ function req(opts: { bearer?: string; cookie?: string }) {
     cookies: {
       get: (n: string) => (n === "sl_admin" && opts.cookie ? { value: opts.cookie } : undefined),
     },
+    method: opts.method,
+    nextUrl: { pathname: "/api/test" },
   };
 }
 
@@ -35,6 +38,7 @@ beforeEach(() => {
   process.env.ADMIN_SECRET = ADMIN_SECRET;
   vi.mocked(prisma.authToken.update).mockResolvedValue({} as never);
   vi.mocked(prisma.adminSession.update).mockResolvedValue({} as never);
+  vi.mocked(prisma.appTokenUsage.create).mockResolvedValue({} as never);
 });
 
 describe("authenticateApiRequest (#app-api unified auth)", () => {
@@ -81,5 +85,19 @@ describe("authenticateApiRequest (#app-api unified auth)", () => {
     const r = await authenticateApiRequest(req({ bearer: "abc", cookie: validAdminCookie() }), "read");
     expect(r.via).toBe("bearer");
     expect(prisma.adminSession.findUnique).not.toHaveBeenCalled();
+  });
+
+  it("audits a NON-GET bearer request (write/action)", async () => {
+    vi.mocked(prisma.authToken.findUnique).mockResolvedValue(
+      { id: "t1", scope: "read create", expiresAt: null, clientId: "fedihome-macos", label: "mac" } as never,
+    );
+    await authenticateApiRequest(req({ bearer: "abc", method: "POST" }), "create");
+    expect(prisma.appTokenUsage.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("does NOT audit a GET bearer request (read poll)", async () => {
+    vi.mocked(prisma.authToken.findUnique).mockResolvedValue({ id: "t1", scope: "read", expiresAt: null } as never);
+    await authenticateApiRequest(req({ bearer: "abc", method: "GET" }), "read");
+    expect(prisma.appTokenUsage.create).not.toHaveBeenCalled();
   });
 });

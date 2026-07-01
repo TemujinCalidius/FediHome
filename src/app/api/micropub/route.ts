@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyMicropubToken, hasScope } from "@/lib/auth";
+import { recordTokenUse } from "@/lib/audit";
 import { prisma } from "@/lib/db";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { marked } from "marked";
@@ -67,6 +68,8 @@ export async function POST(req: NextRequest) {
   if (!auth.valid) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+  // Micropub is always a write (create/update/delete) — audit it. Best-effort.
+  void recordTokenUse(auth, req);
 
   const contentType = req.headers.get("content-type") || "";
 

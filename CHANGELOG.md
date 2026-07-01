@@ -11,6 +11,7 @@
 - **A write API for connected apps.** With the right scope, an app token can now drive the same actions the web timeline does: `POST /api/admin` gates each of its actions on its own least-privilege scope — `interact` (like/boost/reply/follow), `dm` (read + send direct messages), `manage` (comment moderation, backfill, sync, and `block` — which is destructive, since it deletes the blocked actor's posts) — and `POST /api/media` now requires the `media` scope (which Micropub tokens already carry, so existing clients are unaffected). A token missing an action's scope gets `403 insufficient_scope`. The web UI is unchanged: cookie requests still require a matching origin (CSRF); only the token path skips it. (#158)
 - **Search your own posts and photos.** A new `/search` page and a `GET /api/search` endpoint find your content by title, body text, or tag across posts and photos. Read-scoped (owner cookie OR a `read` app token, so the native app can search too), rate-limited, and strictly published-only — drafts never appear.
 - **Optional expiry for app tokens.** Set `APP_TOKEN_TTL_DAYS` to auto-expire OAuth app tokens after N days (default: no expiry — long-lived + revocable, unchanged). Expired tokens are rejected on use and swept from the table automatically (piggybacked on the health check). (#158)
+- **An "App activity" log.** Write actions made by connected apps (posting, likes/boosts/follows, DMs, media, scope changes) are recorded — which app, which endpoint, and when — and shown at `/admin/audit` (linked from the timeline header). Read polls aren't logged (high signal, low noise); it's coarse (method + path — no request bodies or token secrets are stored), kept for 30 days, and pruned automatically. (#158)
 
 ### Changed
 - Refreshed dependencies: `@fedify/fedify` & `@fedify/next` 2.3.0 → 2.3.1, `@atproto/api` 0.20.22 → 0.20.23, `nodemailer` 9.0.1 → 9.0.3, `tailwindcss` & `@tailwindcss/postcss` 4.3.1 → 4.3.2, `postcss` 8.5.15 → 8.5.16.
@@ -22,6 +23,7 @@
 
 ### Schema
 - Groundwork for the token-authenticated app API (#158): `AuthToken` gains `clientId` / `createdVia` / `expiresAt` columns, and a new `AuthorizationCode` table holds short-lived single-use OAuth/PKCE codes. Additive and non-destructive (existing tokens are unaffected). **After upgrading, run `npx prisma db push`** (or apply `prisma/manual-migrations/2026-07-01-app-auth-tokens.sql`).
+- New `AppTokenUsage` table backing the App-activity audit log (#158). Additive and non-destructive (a brand-new table). **After upgrading, run `npx prisma db push`** (or apply `prisma/manual-migrations/2026-07-01-app-token-usage.sql`).
 
 ## 1.6.1 (2026-07-01)
 
