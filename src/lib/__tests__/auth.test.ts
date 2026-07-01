@@ -142,4 +142,11 @@ describe("verifyOrigin", () => {
   it("rejects when both origin and referer are absent", () => {
     expect(verifyOrigin(req(null, null))).toBe(false);
   });
+
+  it("rejects a same-host request on a different port", () => {
+    process.env.SITE_URL = "https://example.com:8443";
+    expect(verifyOrigin(req("https://example.com:8443"))).toBe(true);
+    expect(verifyOrigin(req("https://example.com:9443"))).toBe(false);
+    expect(verifyOrigin(req("https://example.com"))).toBe(false); // implicit :443 ≠ :8443
+  });
 });

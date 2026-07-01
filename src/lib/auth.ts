@@ -233,7 +233,14 @@ export function verifyOrigin(req: { headers: { get(name: string): string | null 
   const matches = (urlStr: string): boolean => {
     try {
       const u = new URL(urlStr);
-      return u.hostname === expected.hostname && u.protocol === expected.protocol;
+      // Compare port too: a different port is a distinct origin, so an attacker
+      // page on the same host:otherPort must not pass the CSRF check. WHATWG URL
+      // normalises the default port away, so "" === "" holds for the common case.
+      return (
+        u.hostname === expected.hostname &&
+        u.protocol === expected.protocol &&
+        u.port === expected.port
+      );
     } catch {
       return false;
     }

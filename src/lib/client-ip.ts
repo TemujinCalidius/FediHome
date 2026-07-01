@@ -13,12 +13,15 @@
  */
 export function rateLimitKey(req: { headers: { get(name: string): string | null } }): string {
   if (process.env.TRUSTED_PROXY === "true") {
-    const cf = req.headers.get("cf-connecting-ip");
-    if (cf) return cf.trim() || "default";
-    const xff = req.headers.get("x-forwarded-for");
-    if (xff) return xff.split(",")[0].trim() || "default";
-    const xrip = req.headers.get("x-real-ip");
-    if (xrip) return xrip.trim() || "default";
+    // Fall THROUGH to the next header when one is present but blank after trim —
+    // a whitespace-only value must not early-return "default" and skip the rest,
+    // which would collapse those requests into one shared bucket.
+    const cf = req.headers.get("cf-connecting-ip")?.trim();
+    if (cf) return cf;
+    const xff = req.headers.get("x-forwarded-for")?.split(",")[0].trim();
+    if (xff) return xff;
+    const xrip = req.headers.get("x-real-ip")?.trim();
+    if (xrip) return xrip;
   }
   return "default";
 }
