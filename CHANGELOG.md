@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.6.1 (2026-07-01)
 
 ### Changed
 - Refreshed dependencies: `@fedify/fedify` & `@fedify/next` 2.2.5 → 2.3.0, `@atproto/api` 0.20.19 → 0.20.22, `@types/node` 26.0.0 → 26.0.1, `eslint` 10.5.0 → 10.6.0.
