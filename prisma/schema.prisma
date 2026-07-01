@@ -337,12 +337,31 @@ model FediInteraction {
 // === Auth (for Micropub) ===
 
 model AuthToken {
-  id         String   @id @default(cuid())
-  tokenHash  String   @unique
-  label      String   // e.g. "iA Writer", "Quill"
-  scope      String   @default("create update delete media")
-  createdAt  DateTime @default(now())
+  id         String    @id @default(cuid())
+  tokenHash  String    @unique
+  label      String    // e.g. "iA Writer", "Quill", "FediHome for macOS"
+  scope      String    @default("create update delete media")
+  clientId   String?   // the OAuth client that minted this; null for hand-issued Micropub tokens
+  createdVia String    @default("micropub") // "micropub" | "oauth"
+  expiresAt  DateTime? // null = no expiry (revocable); set for expiring app tokens
+  createdAt  DateTime  @default(now())
   lastUsedAt DateTime?
+}
+
+// Short-lived, single-use OAuth 2.0 / IndieAuth authorization codes. Issued by
+// /api/oauth/authorize, exchanged ONCE (PKCE-verified) at /api/oauth/token, then
+// deleted. Bound to the client + redirect + scope + PKCE challenge that created it.
+model AuthorizationCode {
+  id            String   @id @default(cuid())
+  codeHash      String   @unique // SHA-256 of the authorization code
+  clientId      String
+  redirectUri   String
+  scope         String
+  codeChallenge String            // PKCE S256 challenge (base64url)
+  expiresAt     DateTime          // short TTL (~60s)
+  createdAt     DateTime @default(now())
+
+  @@index([expiresAt])
 }
 
 // Persisted admin login sessions. The cookie is "<id>.<HMAC(ADMIN_SECRET, id)>";

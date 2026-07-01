@@ -2,7 +2,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { NextRequest } from "next/server";
 
 const { verify, del } = vi.hoisted(() => ({ verify: vi.fn(), del: vi.fn() }));
-vi.mock("@/lib/auth", () => ({ verifyMicropubToken: verify }));
+vi.mock("@/lib/auth", () => ({
+  verifyMicropubToken: verify,
+  // the route now imports hasScope from auth too — keep the real (pure) impl
+  hasScope: (scope: string | undefined, required: string) => (scope ?? "").split(/\s+/).includes(required),
+}));
 vi.mock("@/lib/delete-post", () => ({ deletePostWithFederation: del }));
 vi.mock("@/lib/db", () => ({ prisma: { post: { findUnique: vi.fn() } } }));
 

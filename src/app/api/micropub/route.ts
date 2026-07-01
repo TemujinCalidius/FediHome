@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyMicropubToken } from "@/lib/auth";
+import { verifyMicropubToken, hasScope } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { marked } from "marked";
@@ -7,11 +7,6 @@ import { buildPostObject } from "@/lib/ap-post";
 import { deletePostWithFederation } from "@/lib/delete-post";
 
 const DEBUG = process.env.FEDIHOME_DEBUG === "true";
-
-/** Micropub scopes are a space-separated string, e.g. "create update delete media". */
-function hasScope(scope: string | undefined, required: string): boolean {
-  return (scope ?? "").split(/\s+/).includes(required);
-}
 
 function slugify(text: string): string {
   return text
