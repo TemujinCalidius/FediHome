@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { sweepExpiredAuthTokens } from "@/lib/auth";
+import { pruneTokenUsage } from "@/lib/audit";
 import { log } from "@/lib/log";
 import pkg from "@/../package.json";
 
@@ -26,7 +27,10 @@ export async function GET() {
 
   // Piggyback token hygiene on the regularly-polled health check (throttled to
   // once / 5 min internally; only deletes already-expired tokens). Fire-and-forget.
-  if (healthy) void sweepExpiredAuthTokens();
+  if (healthy) {
+    void sweepExpiredAuthTokens();
+    void pruneTokenUsage();
+  }
 
   return NextResponse.json(
     {

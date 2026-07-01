@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { prisma } from "./db";
+import { recordTokenUse } from "./audit";
 
 export function safeCompare(a: string, b: string): boolean {
   if (!a || !b) return false;
@@ -21,7 +22,7 @@ export function hasScope(scope: string | undefined, required: string): boolean {
 
 export async function verifyMicropubToken(
   authHeader: string | null
-): Promise<{ valid: boolean; scope?: string }> {
+): Promise<{ valid: boolean; scope?: string; tokenId?: string; clientId?: string | null; label?: string }> {
   if (!authHeader?.startsWith("Bearer ")) {
     return { valid: false };
   }
@@ -49,7 +50,13 @@ export async function verifyMicropubToken(
     data: { lastUsedAt: new Date() },
   });
 
-  return { valid: true, scope: authToken.scope };
+  return {
+    valid: true,
+    scope: authToken.scope,
+    tokenId: authToken.id,
+    clientId: authToken.clientId,
+    label: authToken.label,
+  };
 }
 
 export async function generateToken(
@@ -116,6 +123,8 @@ export async function authenticateApiRequest(
   req: {
     headers: { get(name: string): string | null };
     cookies: { get(name: string): { value: string } | undefined };
+    method?: string;
+    nextUrl?: { pathname: string };
   },
   requiredScope?: string
 ): Promise<ApiAuth> {
@@ -126,6 +135,8 @@ export async function authenticateApiRequest(
     if (requiredScope && !hasScope(token.scope, requiredScope)) {
       return { ok: false, via: "bearer", scope: token.scope ?? "" };
     }
+    // Audit write/action requests (not read polls) — best-effort, non-blocking.
+    if (req.method && req.method !== "GET") void recordTokenUse(token, req);
     return { ok: true, via: "bearer", scope: token.scope ?? "" };
   }
   if (await verifyAdmin(req)) {
