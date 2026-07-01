@@ -44,6 +44,13 @@ describe("rateLimitKey", () => {
     expect(rateLimitKey(reqWith({ "x-forwarded-for": "   " }))).toBe("default");
   });
 
+  it("falls through a blank CF-Connecting-IP to the next header (no bucket collapse)", () => {
+    process.env.TRUSTED_PROXY = "true";
+    expect(
+      rateLimitKey(reqWith({ "cf-connecting-ip": "   ", "x-forwarded-for": "1.2.3.4" })),
+    ).toBe("1.2.3.4");
+  });
+
   it("prefers CF-Connecting-IP when TRUSTED_PROXY=true", () => {
     process.env.TRUSTED_PROXY = "true";
     expect(rateLimitKey(reqWith({ "cf-connecting-ip": "203.0.113.7" }))).toBe("203.0.113.7");
