@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- Refreshed dependencies: `@fedify/fedify` & `@fedify/next` 2.3.0 → 2.3.1, `@atproto/api` 0.20.22 → 0.20.23, `nodemailer` 9.0.1 → 9.0.3, `tailwindcss` & `@tailwindcss/postcss` 4.3.1 → 4.3.2, `postcss` 8.5.15 → 8.5.16.
+
 ## 1.6.1 (2026-07-01)
 
 ### Changed
