@@ -9,6 +9,9 @@
 ### Changed
 - Refreshed dependencies: `@fedify/fedify` & `@fedify/next` 2.3.0 → 2.3.1, `@atproto/api` 0.20.22 → 0.20.23, `nodemailer` 9.0.1 → 9.0.3, `tailwindcss` & `@tailwindcss/postcss` 4.3.1 → 4.3.2, `postcss` 8.5.15 → 8.5.16.
 
+### Schema
+- Groundwork for the token-authenticated app API (#158): `AuthToken` gains `clientId` / `createdVia` / `expiresAt` columns, and a new `AuthorizationCode` table holds short-lived single-use OAuth/PKCE codes. Additive and non-destructive (existing tokens are unaffected). **After upgrading, run `npx prisma db push`** (or apply `prisma/manual-migrations/2026-07-01-app-auth-tokens.sql`).
+
 ## 1.6.1 (2026-07-01)
 
 ### Changed

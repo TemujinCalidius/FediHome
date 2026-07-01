@@ -14,6 +14,11 @@ export function hashToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
+/** Micropub / OAuth scopes are a space-separated string, e.g. "read create dm". */
+export function hasScope(scope: string | undefined, required: string): boolean {
+  return (scope ?? "").split(/\s+/).includes(required);
+}
+
 export async function verifyMicropubToken(
   authHeader: string | null
 ): Promise<{ valid: boolean; scope?: string }> {
@@ -32,6 +37,12 @@ export async function verifyMicropubToken(
     return { valid: false };
   }
 
+  // Reject expired tokens. OAuth app tokens may set `expiresAt`; hand-issued
+  // Micropub tokens leave it null (no expiry, revocable via the row).
+  if (authToken.expiresAt && authToken.expiresAt.getTime() < Date.now()) {
+    return { valid: false };
+  }
+
   // Update last used
   await prisma.authToken.update({
     where: { id: authToken.id },
@@ -41,15 +52,65 @@ export async function verifyMicropubToken(
   return { valid: true, scope: authToken.scope };
 }
 
-export async function generateToken(label: string): Promise<string> {
+export async function generateToken(
+  label: string,
+  opts?: { scope?: string; clientId?: string | null; createdVia?: string; expiresAt?: Date | null }
+): Promise<string> {
   const token = crypto.randomBytes(32).toString("hex");
   const hash = hashToken(token);
 
   await prisma.authToken.create({
-    data: { tokenHash: hash, label },
+    data: {
+      tokenHash: hash,
+      label,
+      ...(opts?.scope ? { scope: opts.scope } : {}),
+      clientId: opts?.clientId ?? null,
+      createdVia: opts?.createdVia ?? "micropub",
+      expiresAt: opts?.expiresAt ?? null,
+    },
   });
 
   return token;
+}
+
+export interface ApiAuth {
+  ok: boolean;
+  via: "bearer" | "cookie" | null;
+  /** Granted scopes (space-separated) for a bearer token; "*" for the owner cookie. */
+  scope: string;
+}
+
+/**
+ * Unified auth for API routes that should accept EITHER a scoped bearer token
+ * (a native app / Micropub client) OR the owner's admin session cookie. Tries
+ * the bearer token first (stateless), then falls back to the cookie.
+ *
+ * SECURITY: a bearer token in the `Authorization` header is not an ambient
+ * browser credential, so it needs no CSRF check. A COOKIE-authenticated
+ * state-changing request must STILL pass `verifyOrigin()` — the caller is
+ * responsible for that when `via === "cookie"`. The owner cookie satisfies any
+ * `requiredScope` (the owner has full rights); bearer tokens are gated on scope.
+ */
+export async function authenticateApiRequest(
+  req: {
+    headers: { get(name: string): string | null };
+    cookies: { get(name: string): { value: string } | undefined };
+  },
+  requiredScope?: string
+): Promise<ApiAuth> {
+  const authHeader = req.headers.get("authorization");
+  if (authHeader?.startsWith("Bearer ")) {
+    const token = await verifyMicropubToken(authHeader);
+    if (!token.valid) return { ok: false, via: null, scope: "" };
+    if (requiredScope && !hasScope(token.scope, requiredScope)) {
+      return { ok: false, via: "bearer", scope: token.scope ?? "" };
+    }
+    return { ok: true, via: "bearer", scope: token.scope ?? "" };
+  }
+  if (await verifyAdmin(req)) {
+    return { ok: true, via: "cookie", scope: "*" };
+  }
+  return { ok: false, via: null, scope: "" };
 }
 
 /**
