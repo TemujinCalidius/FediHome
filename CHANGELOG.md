@@ -6,6 +6,7 @@
 - Refreshed dependencies: `@fedify/fedify` & `@fedify/next` 2.2.5 → 2.3.0, `@atproto/api` 0.20.19 → 0.20.22, `@types/node` 26.0.0 → 26.0.1, `eslint` 10.5.0 → 10.6.0.
 
 ### Fixed
+- **The timeline admin tab bar is reachable on narrow phones.** With seven tabs (feed…analytics) in one row, the trailing tabs were clipped off-screen on small viewports with no way to reach them. The row now scrolls horizontally. (#147)
 - **No more phantom badge counts from likes/boosts on posts you don't own.** An incoming Fediverse `Like` or `Announce` was always recorded + pushed + counted toward the app badge, even when its target wasn't your content — but the notification bell only ever lists interactions on *your* posts, so the badge would climb with a push that had no matching bell entry (e.g. someone likes a post that's in your feed because you follow the booster). Incoming likes/boosts are now gated on an ownership check (`resolveOwnedTarget`, the same test the bell uses), so they only notify when they're genuinely on your content; the boosted-post-into-your-feed behaviour is unchanged. (#103)
 
 ## 1.6.0 (2026-06-27)
