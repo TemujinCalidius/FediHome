@@ -73,6 +73,27 @@ export async function generateToken(
   return token;
 }
 
+let lastTokenSweep = 0;
+
+/**
+ * Delete expired app tokens (a past `expiresAt`). Best-effort table hygiene —
+ * expired tokens are already rejected by `verifyMicropubToken`, so this just
+ * keeps the row count bounded. Non-expiring rows (null `expiresAt`) are left
+ * untouched. Throttled to once / 5 min per process so it's cheap to call from a
+ * frequently-polled path (the health check); pass `force` to bypass the throttle.
+ */
+export async function sweepExpiredAuthTokens(force = false): Promise<number> {
+  const now = Date.now();
+  if (!force && now - lastTokenSweep < 5 * 60 * 1000) return 0;
+  lastTokenSweep = now;
+  try {
+    const res = await prisma.authToken.deleteMany({ where: { expiresAt: { lt: new Date() } } });
+    return res.count;
+  } catch {
+    return 0;
+  }
+}
+
 export interface ApiAuth {
   ok: boolean;
   via: "bearer" | "cookie" | null;

@@ -12,7 +12,7 @@ vi.mock("@/lib/db", () => ({
 import { POST as tokenPOST } from "@/app/api/oauth/token/route";
 import { POST as revokePOST } from "@/app/api/oauth/revoke/route";
 import { prisma } from "@/lib/db";
-import { hashToken } from "@/lib/auth";
+import { hashToken, sweepExpiredAuthTokens } from "@/lib/auth";
 
 function pkcePair() {
   const verifier = crypto.randomBytes(32).toString("base64url");
@@ -56,6 +56,7 @@ function exchange(fields: Partial<Record<string, string>> = {}, verifier = "v") 
 beforeEach(() => {
   vi.clearAllMocks();
   process.env.SITE_URL = "https://demo.example";
+  delete process.env.APP_TOKEN_TTL_DAYS;
   vi.mocked(prisma.authorizationCode.deleteMany).mockResolvedValue({ count: 1 } as never);
   vi.mocked(prisma.authToken.create).mockResolvedValue({} as never);
   vi.mocked(prisma.authToken.deleteMany).mockResolvedValue({ count: 1 } as never);
@@ -167,6 +168,24 @@ describe("POST /api/oauth/token", () => {
     expect(res.status).toBe(413);
     expect((await res.json()).error).toBe("invalid_request");
     expect(prisma.authorizationCode.findUnique).not.toHaveBeenCalled();
+  });
+  it("sets expiresAt when APP_TOKEN_TTL_DAYS is configured", async () => {
+    process.env.APP_TOKEN_TTL_DAYS = "30";
+    const { verifier, challenge } = pkcePair();
+    vi.mocked(prisma.authorizationCode.findUnique).mockResolvedValue(validRecord(challenge) as never);
+    await tokenPOST(exchange({}, verifier));
+    const data = vi.mocked(prisma.authToken.create).mock.calls[0]?.[0]?.data as
+      | { expiresAt?: unknown }
+      | undefined;
+    expect(data?.expiresAt).toBeInstanceOf(Date);
+  });
+
+  it("sweepExpiredAuthTokens deletes rows whose expiry has passed", async () => {
+    vi.mocked(prisma.authToken.deleteMany).mockResolvedValue({ count: 2 } as never);
+    const n = await sweepExpiredAuthTokens(true);
+    expect(n).toBe(2);
+    const arg = vi.mocked(prisma.authToken.deleteMany).mock.calls.at(-1)?.[0];
+    expect(arg?.where?.expiresAt).toHaveProperty("lt");
   });
 });
 
