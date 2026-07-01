@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { verifyAdmin } from "@/lib/auth";
+import { authenticateApiRequest } from "@/lib/auth";
 import { sanitizeHtml } from "@/lib/sanitize";
 
 const PAGE_SIZE = 20;
 
 export async function GET(req: NextRequest) {
-  // Admin-only
-  if (!(await verifyAdmin(req))) {
+  // Owner cookie OR a `read`-scoped bearer token (a native app). Read-only → no CSRF.
+  if (!(await authenticateApiRequest(req, "read")).ok) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
