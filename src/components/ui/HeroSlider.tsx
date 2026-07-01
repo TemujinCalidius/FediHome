@@ -36,6 +36,7 @@ export default function HeroSlider({
   // Honor user's prefers-reduced-motion setting
   useEffect(() => {
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync reduced-motion state from the browser media query on mount
     setReducedMotion(mq.matches);
     const handler = (e: MediaQueryListEvent) => setReducedMotion(e.matches);
     mq.addEventListener("change", handler);

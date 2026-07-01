@@ -12,6 +12,7 @@
 
 ### Changed
 - Refreshed dependencies: `@fedify/fedify` & `@fedify/next` 2.3.0 → 2.3.1, `@atproto/api` 0.20.22 → 0.20.23, `nodemailer` 9.0.1 → 9.0.3, `tailwindcss` & `@tailwindcss/postcss` 4.3.1 → 4.3.2, `postcss` 8.5.15 → 8.5.16.
+- Internal: cleared the remaining 29 ESLint warnings with scoped `eslint-disable` + justifications — federated `<img>` (avatars/media from unbounded remote hosts, where `next/image` doesn't fit) and legitimate mount/prop-sync effect patterns. No behaviour change. (#83)
 
 ### Security
 - **The CSRF origin check now also compares the port.** `verifyOrigin()` — which guards every state-changing admin (and now OAuth consent) POST — matched only host + protocol, so a page served from the *same host on a different port* (a distinct origin under the same-origin policy) would have passed. It now requires the port to match as well. Default-port deployments are unaffected (browsers omit the default port, so `""` still matches `""`). Surfaced by the app-auth security audit. (#158)

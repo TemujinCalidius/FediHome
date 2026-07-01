@@ -25,6 +25,7 @@ export default function ReplyToBlueskyComment({ blueskyUri, authorHandle }: { bl
 
   const autoSuggestFedi = useMemo(() => containsFediMention(content), [content]);
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- auto-enable the crosspost toggle once when a mention is detected, unless the user already set it
     if (autoSuggestFedi && !userTouchedToggle) setCrosspostFedi(true);
   }, [autoSuggestFedi, userTouchedToggle]);
 

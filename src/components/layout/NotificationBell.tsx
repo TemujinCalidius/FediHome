@@ -152,6 +152,7 @@ export default function NotificationBell() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial fetch + polling setup on mount; fetchNotifications updates state internally
     fetchNotifications();
     // Live: poll while visible and refresh instantly when the app regains focus
     // (the common case for an always-open Dock/home-screen PWA). Paused while
@@ -230,6 +231,7 @@ export default function NotificationBell() {
       return;
     }
     if (item.targetUrl) {
+      // eslint-disable-next-line react-hooks/immutability -- intentional navigation via window.location
       window.location.href = item.targetUrl;
     }
   };
@@ -329,6 +331,7 @@ export default function NotificationBell() {
                   >
                     <div className="flex-shrink-0 mt-0.5">
                       {item.avatarUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element -- federated actor avatar from an arbitrary instance; next/image impractical for unbounded hosts
                         <img src={item.avatarUrl} alt="" className="w-8 h-8 rounded-full" />
                       ) : (
                         <div className="w-8 h-8 rounded-full bg-surface-700 flex items-center justify-center text-sm">
