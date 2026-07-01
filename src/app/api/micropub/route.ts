@@ -4,8 +4,14 @@ import { prisma } from "@/lib/db";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { marked } from "marked";
 import { buildPostObject } from "@/lib/ap-post";
+import { deletePostWithFederation } from "@/lib/delete-post";
 
 const DEBUG = process.env.FEDIHOME_DEBUG === "true";
+
+/** Micropub scopes are a space-separated string, e.g. "create update delete media". */
+function hasScope(scope: string | undefined, required: string): boolean {
+  return (scope ?? "").split(/\s+/).includes(required);
+}
 
 function slugify(text: string): string {
   return text
@@ -69,22 +75,18 @@ export async function POST(req: NextRequest) {
 
   const contentType = req.headers.get("content-type") || "";
 
-  let properties: Record<string, string[]>;
+  let properties: Record<string, string[]> = {};
+  let action: string | undefined;
+  let url: string | undefined;
 
   if (contentType.includes("application/json")) {
     const body = await req.json();
     properties = body.properties || {};
-
-    // Handle delete
-    if (body.action === "delete" && body.url) {
-      const slug = body.url.split("/").pop();
-      await prisma.post.delete({ where: { slug: slug || "" } }).catch(() => {});
-      return new NextResponse(null, { status: 204 });
-    }
+    action = body.action;
+    url = body.url;
   } else {
     // Form-encoded
     const form = await req.formData();
-    properties = {};
     for (const [key, value] of form.entries()) {
       if (typeof value === "string") {
         properties[key] = properties[key] || [];
@@ -93,6 +95,24 @@ export async function POST(req: NextRequest) {
     }
     // Normalize h-entry properties
     if (properties.h) delete properties.h;
+    action = properties.action?.[0];
+    url = properties.url?.[0];
+  }
+
+  // Handle delete (Micropub §7.3) — form-encoded or JSON. Requires the `delete`
+  // scope; federates the removal + cleans up child rows (via the shared helper).
+  if (action === "delete") {
+    if (!hasScope(auth.scope, "delete")) {
+      return NextResponse.json({ error: "insufficient_scope", scope: "delete" }, { status: 403 });
+    }
+    if (!url) {
+      return NextResponse.json({ error: "url required" }, { status: 400 });
+    }
+    const slug = url.split("/").filter(Boolean).pop();
+    const post = await prisma.post.findUnique({ where: { slug: slug || "" } });
+    if (!post) return NextResponse.json({ error: "not found" }, { status: 404 });
+    await deletePostWithFederation(post);
+    return new NextResponse(null, { status: 204 });
   }
 
   const title = properties.name?.[0] || null;

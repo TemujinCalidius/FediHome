@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- **Micropub clients can now delete posts.** The Micropub endpoint handles `action=delete` (form-encoded and JSON), gated on the token's `delete` scope. Deleting a published post now federates an ActivityPub `Delete` to your followers (so Mastodon etc. drop their cached copy) and cleanly removes the post's replies/comments — previously the delete was JSON-only, unscoped, silent-on-failure, and left remote copies + could fail outright on posts that had comments. The XML-RPC `deletePost` path shares the same behaviour now. (#16)
 - **A `/api/health` endpoint for uptime monitoring.** Returns the app version and a live database round-trip check (`200` when healthy, `503` when the DB is unreachable) — handy for uptime monitors and post-update smoke checks. Public and read-only. Ships alongside a small structured (JSON-line) logger for new server code. (#17)
 
 ### Changed
