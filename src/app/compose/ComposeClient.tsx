@@ -465,6 +465,7 @@ export default function ComposeClient({ editingPostId = null, initialValues = nu
           >
             {photos.map((photo, i) => (
               <div key={i} className="relative">
+                {/* eslint-disable-next-line @next/next/no-img-element -- local object-URL preview of a user-selected upload */}
                 <img
                   src={photo.preview}
                   alt=""

@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable @next/next/no-img-element -- this timeline renders avatars, media and link-embed thumbnails sourced from arbitrary federated instances; next/image can't enumerate unbounded remote hosts, and the CSP already restricts img-src */
+
 import { useState, useEffect, useCallback, useRef } from "react";
 import { LightboxGallery } from "@/components/ui/Lightbox";
 import EditReplyForm from "@/components/fedi/EditReplyForm";
@@ -1871,6 +1873,7 @@ export default function TimelineClient({
   // Lazy-load replies the first time the tab is opened.
   useEffect(() => {
     if (tab === "replies" && replies === null && !repliesLoading) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time lazy load on first open; loadReplies is memoized and guarded by the null/loading checks
       loadReplies();
     }
   }, [tab, replies, repliesLoading, loadReplies]);

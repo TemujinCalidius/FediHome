@@ -16,6 +16,7 @@ export default function MobileMenu({
   const pathname = usePathname();
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- close the menu on route change
     setOpen(false);
   }, [pathname]);
 

@@ -99,6 +99,7 @@ export default function SetupWizard() {
   // Domain from current URL
   const [domain, setDomain] = useState("yourdomain.com");
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time init of the domain from the browser location on mount
     setDomain(window.location.hostname);
   }, []);
 
@@ -110,6 +111,7 @@ export default function SetupWizard() {
       const hex = Array.from(bytes)
         .map((b) => b.toString(16).padStart(2, "0"))
         .join("");
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- generate the admin secret once when reaching step 5
       setAdminSecret(hex);
     }
   }, [step, adminSecret]);

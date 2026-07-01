@@ -45,6 +45,7 @@ export default function ReplyToComment({
   // Auto-flip the toggle on when a Bluesky mention is detected, unless the user already touched it
   useEffect(() => {
     if (autoSuggestBluesky && !userTouchedToggle) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- auto-enable the crosspost toggle once when a mention is detected, unless the user already set it
       setCrosspostBluesky(true);
     }
   }, [autoSuggestBluesky, userTouchedToggle]);
