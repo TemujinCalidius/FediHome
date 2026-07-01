@@ -6,7 +6,7 @@ const { verifyAdmin, verifyOrigin } = vi.hoisted(() => ({
   verifyOrigin: vi.fn(),
 }));
 vi.mock("@/lib/auth", () => ({ verifyAdmin, verifyOrigin }));
-vi.mock("@/lib/db", () => ({ prisma: { authToken: { deleteMany: vi.fn() } } }));
+vi.mock("@/lib/db", () => ({ prisma: { authToken: { deleteMany: vi.fn(), updateMany: vi.fn() } } }));
 
 import { POST } from "@/app/api/admin/apps/route";
 import { prisma } from "@/lib/db";
@@ -22,6 +22,7 @@ function req(body: unknown): NextRequest {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(prisma.authToken.deleteMany).mockResolvedValue({ count: 1 } as never);
+  vi.mocked(prisma.authToken.updateMany).mockResolvedValue({ count: 1 } as never);
   verifyOrigin.mockReturnValue(true);
   verifyAdmin.mockResolvedValue(true);
 });
@@ -64,5 +65,34 @@ describe("POST /api/admin/apps", () => {
   it("400 on an unknown action", async () => {
     const res = await POST(req({ action: "nope" }));
     expect(res.status).toBe(400);
+  });
+
+  it("edit_scopes persists a valid scope subset", async () => {
+    const res = await POST(req({ action: "edit_scopes", id: "clx1", scope: "read interact" }));
+    expect(res.status).toBe(200);
+    expect(prisma.authToken.updateMany).toHaveBeenCalledWith({
+      where: { id: "clx1" },
+      data: { scope: "read interact" },
+    });
+  });
+
+  it("edit_scopes keeps only recognised scopes (drops junk)", async () => {
+    await POST(req({ action: "edit_scopes", id: "clx1", scope: "read bogus interact" }));
+    expect(prisma.authToken.updateMany).toHaveBeenCalledWith({
+      where: { id: "clx1" },
+      data: { scope: "read interact" },
+    });
+  });
+
+  it("edit_scopes 400s when nothing valid is left", async () => {
+    const res = await POST(req({ action: "edit_scopes", id: "clx1", scope: "bogus junk" }));
+    expect(res.status).toBe(400);
+    expect(prisma.authToken.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("edit_scopes 400s with no id", async () => {
+    const res = await POST(req({ action: "edit_scopes", scope: "read" }));
+    expect(res.status).toBe(400);
+    expect(prisma.authToken.updateMany).not.toHaveBeenCalled();
   });
 });
