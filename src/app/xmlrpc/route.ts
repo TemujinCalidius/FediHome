@@ -6,6 +6,7 @@ import { marked } from "marked";
 import { extractParam, extractStruct, between } from "@/lib/xmlrpc";
 import { rateLimitKey } from "@/lib/client-ip";
 import { buildPostObject } from "@/lib/ap-post";
+import { deletePostWithFederation } from "@/lib/delete-post";
 
 /**
  * XML-RPC endpoint (MetaWeblog API) for compatibility with micro.blog app
@@ -224,7 +225,11 @@ export async function POST(req: NextRequest) {
 
     case "metaWeblog.deletePost": {
       const postId = extractParam(body, 0);
-      await prisma.post.delete({ where: { id: postId } }).catch(() => {});
+      // Route through the shared helper so XML-RPC deletes federate + clean up
+      // child rows exactly like Micropub does (#16), instead of the old naive
+      // delete that silently failed on posts with replies/comments.
+      const post = postId ? await prisma.post.findUnique({ where: { id: postId } }) : null;
+      if (post) await deletePostWithFederation(post);
       return xmlResponse(methodResponse(`<param><value><boolean>1</boolean></value></param>`));
     }
 
