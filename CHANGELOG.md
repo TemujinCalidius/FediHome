@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Added
+- **A `/api/health` endpoint for uptime monitoring.** Returns the app version and a live database round-trip check (`200` when healthy, `503` when the DB is unreachable) — handy for uptime monitors and post-update smoke checks. Public and read-only. Ships alongside a small structured (JSON-line) logger for new server code. (#17)
+
 ### Changed
 - Refreshed dependencies: `@fedify/fedify` & `@fedify/next` 2.3.0 → 2.3.1, `@atproto/api` 0.20.22 → 0.20.23, `nodemailer` 9.0.1 → 9.0.3, `tailwindcss` & `@tailwindcss/postcss` 4.3.1 → 4.3.2, `postcss` 8.5.15 → 8.5.16.
 
