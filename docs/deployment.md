@@ -146,11 +146,20 @@ The `ecosystem.config.cjs` file is included in the repo and configures PM2 with:
 - Auto-restart on crash (up to 10 restarts)
 - 5-second restart delay
 
+It starts **two** processes:
+- **`fedihome`** — the web app.
+- **`fedihome-scheduler`** — a background worker that publishes **scheduled posts** at
+  their time and runs the Bluesky sync. It starts automatically here, so no separate
+  cron is needed. (It replaces the old `scripts/scheduled-bluesky-sync.ts` cron — if you
+  had that in crontab/PM2, you can remove it.) Cadences are configurable via the
+  `SCHEDULER_*` env vars (see `.env.example`).
+
 Check status:
 
 ```bash
-pm2 status
+pm2 status                 # both fedihome + fedihome-scheduler should be "online"
 pm2 logs fedihome
+pm2 logs fedihome-scheduler
 ```
 
 ## Option 3: Docker Deployment

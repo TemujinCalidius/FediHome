@@ -16,7 +16,8 @@
 
 ### Changed
 - Documented previously-undocumented optional env vars in `.env.example`: `TRUSTED_PROXY` (per-IP rate limiting behind a proxy), `FEDIHOME_DEBUG` (verbose AP/Micropub logging), and the `PODCAST_*` audio-feed overrides.
-- Internal: extracted post federation + crosspost into a reusable `publishPost()` (`src/lib/publish-post.ts`), shared by Micropub and the upcoming scheduler — groundwork for scheduled posts (#183). No behaviour change.
+- Internal: extracted post federation + crosspost into a reusable `publishPost()` (`src/lib/publish-post.ts`), shared by Micropub and the scheduler — groundwork for scheduled posts (#183). No behaviour change.
+- **A single background scheduler** (`fedihome-scheduler`, added to `ecosystem.config.cjs`) now runs FediHome's periodic jobs — publishing due scheduled posts (#183) and the Bluesky sync — in one process that **starts automatically** with `pm2 start ecosystem.config.cjs` (no hand-rolled cron). It supersedes the standalone `scripts/scheduled-bluesky-sync.ts` cron. Cadences/toggles are env-configurable (`SCHEDULER_*`, see `.env.example`) via a `getSchedulerConfig()` indirection a future admin backend can make editable in-app.
 
 ### Schema
 - New `BlockedActor` table backing the block list + unblock (#180). Additive and non-destructive (a brand-new table). **After upgrading, run `npx prisma db push`** (or apply `prisma/manual-migrations/2026-07-02-blocked-actor.sql`).
