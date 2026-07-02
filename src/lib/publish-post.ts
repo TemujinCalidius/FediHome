@@ -1,4 +1,5 @@
 import type { Post } from "@/generated/prisma/client";
+import { prisma } from "./db";
 import { buildPostObject } from "./ap-post";
 import { deliverToFollowers } from "./http-signatures";
 import { crosspostToBluesky, crosspostToThreads } from "./crosspost";
@@ -45,4 +46,38 @@ export async function publishPost(post: Post): Promise<void> {
       else if (!r.success) console.error("Threads crosspost failed:", r.error);
     })
     .catch((err) => console.error("Threads crosspost error:", err));
+}
+
+/**
+ * Publish every post whose scheduled time has passed (#183). Called by the
+ * scheduler. Each post is claimed atomically (only the run that flips
+ * published false→true proceeds), so overlapping runs can't double-federate.
+ * Also flips any gallery rows (Photo/Video/Audio) created for a scheduled compose
+ * post, keyed by the `<slug>-photo|video|audio-N` naming. Returns the count published.
+ */
+export async function publishDueScheduledPosts(now: Date = new Date()): Promise<number> {
+  const due = await prisma.post.findMany({
+    where: { published: false, scheduledFor: { lte: now } },
+    orderBy: { scheduledFor: "asc" },
+    take: 50,
+  });
+
+  let published = 0;
+  for (const post of due) {
+    const claim = await prisma.post.updateMany({
+      where: { id: post.id, published: false },
+      data: { published: true },
+    });
+    if (claim.count !== 1) continue; // another run already took it
+
+    await Promise.all([
+      prisma.photo.updateMany({ where: { slug: { startsWith: `${post.slug}-photo-` }, published: false }, data: { published: true } }),
+      prisma.video.updateMany({ where: { slug: { startsWith: `${post.slug}-video-` }, published: false }, data: { published: true } }),
+      prisma.audio.updateMany({ where: { slug: { startsWith: `${post.slug}-audio-` }, published: false }, data: { published: true } }),
+    ]).catch(() => {});
+
+    await publishPost(post);
+    published++;
+  }
+  return published;
 }
