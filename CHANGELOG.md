@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Added
+- **Micropub can set an article excerpt.** `POST /api/micropub` now reads the standard `summary` property into `Post.excerpt` (and echoes it back in `q=source`), so a token-authenticated app can give an article a short description/excerpt under its title. (#181)
+
 ### Fixed
 - **Tinylytics analytics now actually collects data.** The site read Tinylytics stats (analytics dashboard, footer hit counter, per-post view counts) but never embedded the **tracking script**, so no pageviews were ever recorded and everything showed empty. FediHome now loads the Tinylytics embed on every page when configured — keyed by your `TINYLYTICS_SITE_ID` (or `TINYLYTICS_EMBED_ID` if your embed code differs) — and the CSP is opened for `tinylytics.app` only when it's set. Note: the tracking embed needs `TINYLYTICS_SITE_ID`; the in-app dashboard additionally needs `TINYLYTICS_API_KEY`. (#170)
 - **IndieAuth/OAuth discovery link tags now point at the real OAuth endpoints.** The homepage `<link rel="token_endpoint">` / `authorization_endpoint` still advertised `/api/micropub` (from before the app API shipped); they now point to `/api/oauth/token` and `/api/oauth/authorize`, plus a new `rel="indieauth-metadata"` link to the discovery document — so IndieAuth/OAuth clients that use HTML link-rel discovery reach the right endpoints. The token-revocation endpoint also sends `Cache-Control: no-store` now, matching the token endpoint.
