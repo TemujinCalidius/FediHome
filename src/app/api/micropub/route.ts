@@ -52,6 +52,7 @@ export async function GET(req: NextRequest) {
       properties: {
         name: post.title ? [post.title] : [],
         content: [post.content],
+        summary: post.excerpt ? [post.excerpt] : [],
         published: [post.publishedAt.toISOString()],
         category: post.tags,
         "post-status": [post.published ? "published" : "draft"],
@@ -120,6 +121,8 @@ export async function POST(req: NextRequest) {
     : properties.category?.[0] || (title ? "article" : "note");
   const tags = properties.category || [];
   const photos = properties.photo || [];
+  // Micropub `summary` is the standard field for an article excerpt/description.
+  const excerpt = properties.summary?.[0] || null;
 
   if (!content && !photos.length) {
     return NextResponse.json({ error: "content required" }, { status: 400 });
@@ -135,6 +138,7 @@ export async function POST(req: NextRequest) {
       title,
       content,
       contentHtml,
+      excerpt,
       category,
       tags,
       photos,
