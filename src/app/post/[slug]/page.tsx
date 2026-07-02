@@ -412,6 +412,7 @@ export default async function PostPage({
               <div key={reply.id} className={`glass-card p-4 ${reply.isOwn ? "border-l-2 border-accent-400/40" : ""}`}>
                 <div className="flex items-center gap-2 mb-2">
                   {reply.avatarUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- federated reply avatar from an arbitrary instance; next/image impractical for unbounded hosts
                     <img src={reply.avatarUrl} alt="" className="w-6 h-6 rounded-full" />
                   ) : (
                     <div className="w-6 h-6 rounded-full bg-surface-700" />
@@ -452,6 +453,7 @@ export default async function PostPage({
               <div key={reply.id} className="glass-card p-4">
                 <div className="flex items-center gap-2 mb-2">
                   {reply.avatarUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element -- federated Bluesky reply avatar; next/image impractical for unbounded hosts
                     <img
                       src={reply.avatarUrl}
                       alt=""

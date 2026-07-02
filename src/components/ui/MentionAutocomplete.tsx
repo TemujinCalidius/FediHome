@@ -55,6 +55,7 @@ export function useMentionAutocomplete(
   useEffect(() => {
     const detected = detectQuery();
     if (!detected || detected.query.length < 1) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear autocomplete state synchronously when the query becomes invalid
       setOpen(false);
       setResults([]);
       queryRangeRef.current = null;
@@ -85,6 +86,7 @@ export function useMentionAutocomplete(
   // Position the dropdown below the caret (approximate — fall back to input bottom)
   useEffect(() => {
     if (!open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset the dropdown anchor when the autocomplete is closed
       setAnchor(null);
       return;
     }

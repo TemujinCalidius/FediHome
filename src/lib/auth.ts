@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { prisma } from "./db";
+import { recordTokenUse } from "./audit";
 
 export function safeCompare(a: string, b: string): boolean {
   if (!a || !b) return false;
@@ -14,9 +15,14 @@ export function hashToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
+/** Micropub / OAuth scopes are a space-separated string, e.g. "read create dm". */
+export function hasScope(scope: string | undefined, required: string): boolean {
+  return (scope ?? "").split(/\s+/).includes(required);
+}
+
 export async function verifyMicropubToken(
   authHeader: string | null
-): Promise<{ valid: boolean; scope?: string }> {
+): Promise<{ valid: boolean; scope?: string; tokenId?: string; clientId?: string | null; label?: string }> {
   if (!authHeader?.startsWith("Bearer ")) {
     return { valid: false };
   }
@@ -32,24 +38,111 @@ export async function verifyMicropubToken(
     return { valid: false };
   }
 
+  // Reject expired tokens. OAuth app tokens may set `expiresAt`; hand-issued
+  // Micropub tokens leave it null (no expiry, revocable via the row).
+  if (authToken.expiresAt && authToken.expiresAt.getTime() < Date.now()) {
+    return { valid: false };
+  }
+
   // Update last used
   await prisma.authToken.update({
     where: { id: authToken.id },
     data: { lastUsedAt: new Date() },
   });
 
-  return { valid: true, scope: authToken.scope };
+  return {
+    valid: true,
+    scope: authToken.scope,
+    tokenId: authToken.id,
+    clientId: authToken.clientId,
+    label: authToken.label,
+  };
 }
 
-export async function generateToken(label: string): Promise<string> {
+export async function generateToken(
+  label: string,
+  opts?: { scope?: string; clientId?: string | null; createdVia?: string; expiresAt?: Date | null }
+): Promise<string> {
   const token = crypto.randomBytes(32).toString("hex");
   const hash = hashToken(token);
 
   await prisma.authToken.create({
-    data: { tokenHash: hash, label },
+    data: {
+      tokenHash: hash,
+      label,
+      ...(opts?.scope ? { scope: opts.scope } : {}),
+      clientId: opts?.clientId ?? null,
+      createdVia: opts?.createdVia ?? "micropub",
+      expiresAt: opts?.expiresAt ?? null,
+    },
   });
 
   return token;
+}
+
+let lastTokenSweep = 0;
+
+/**
+ * Delete expired app tokens (a past `expiresAt`). Best-effort table hygiene —
+ * expired tokens are already rejected by `verifyMicropubToken`, so this just
+ * keeps the row count bounded. Non-expiring rows (null `expiresAt`) are left
+ * untouched. Throttled to once / 5 min per process so it's cheap to call from a
+ * frequently-polled path (the health check); pass `force` to bypass the throttle.
+ */
+export async function sweepExpiredAuthTokens(force = false): Promise<number> {
+  const now = Date.now();
+  if (!force && now - lastTokenSweep < 5 * 60 * 1000) return 0;
+  lastTokenSweep = now;
+  try {
+    const res = await prisma.authToken.deleteMany({ where: { expiresAt: { lt: new Date() } } });
+    return res.count;
+  } catch {
+    return 0;
+  }
+}
+
+export interface ApiAuth {
+  ok: boolean;
+  via: "bearer" | "cookie" | null;
+  /** Granted scopes (space-separated) for a bearer token; "*" for the owner cookie. */
+  scope: string;
+}
+
+/**
+ * Unified auth for API routes that should accept EITHER a scoped bearer token
+ * (a native app / Micropub client) OR the owner's admin session cookie. Tries
+ * the bearer token first (stateless), then falls back to the cookie.
+ *
+ * SECURITY: a bearer token in the `Authorization` header is not an ambient
+ * browser credential, so it needs no CSRF check. A COOKIE-authenticated
+ * state-changing request must STILL pass `verifyOrigin()` — the caller is
+ * responsible for that when `via === "cookie"`. The owner cookie satisfies any
+ * `requiredScope` (the owner has full rights); bearer tokens are gated on scope.
+ */
+export async function authenticateApiRequest(
+  req: {
+    headers: { get(name: string): string | null };
+    cookies: { get(name: string): { value: string } | undefined };
+    method?: string;
+    nextUrl?: { pathname: string };
+  },
+  requiredScope?: string
+): Promise<ApiAuth> {
+  const authHeader = req.headers.get("authorization");
+  if (authHeader?.startsWith("Bearer ")) {
+    const token = await verifyMicropubToken(authHeader);
+    if (!token.valid) return { ok: false, via: null, scope: "" };
+    if (requiredScope && !hasScope(token.scope, requiredScope)) {
+      return { ok: false, via: "bearer", scope: token.scope ?? "" };
+    }
+    // Audit write/action requests (not read polls) — best-effort, non-blocking.
+    if (req.method && req.method !== "GET") void recordTokenUse(token, req);
+    return { ok: true, via: "bearer", scope: token.scope ?? "" };
+  }
+  if (await verifyAdmin(req)) {
+    return { ok: true, via: "cookie", scope: "*" };
+  }
+  return { ok: false, via: null, scope: "" };
 }
 
 /**
@@ -172,7 +265,14 @@ export function verifyOrigin(req: { headers: { get(name: string): string | null 
   const matches = (urlStr: string): boolean => {
     try {
       const u = new URL(urlStr);
-      return u.hostname === expected.hostname && u.protocol === expected.protocol;
+      // Compare port too: a different port is a distinct origin, so an attacker
+      // page on the same host:otherPort must not pass the CSRF check. WHATWG URL
+      // normalises the default port away, so "" === "" holds for the common case.
+      return (
+        u.hostname === expected.hostname &&
+        u.protocol === expected.protocol &&
+        u.port === expected.port
+      );
     } catch {
       return false;
     }

@@ -128,6 +128,7 @@ export function Lightbox({ images, startIndex = 0, onClose }: LightboxProps) {
         className={`flex flex-col items-center ${animClass}`}
         onClick={(e) => e.stopPropagation()}
       >
+        {/* eslint-disable-next-line @next/next/no-img-element -- user/federated image source; next/image impractical for unbounded hosts */}
         <img
           src={images[index].src}
           alt={images[index].alt || ""}

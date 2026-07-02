@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { verifyAdmin, verifyOrigin } from "@/lib/auth";
+import { authenticateApiRequest, verifyOrigin } from "@/lib/auth";
 import { assertPublicHost } from "@/lib/url-guard";
 import { signedGet } from "@/lib/http-signatures";
 
@@ -17,10 +17,13 @@ interface CountsResult extends Counts {
 }
 
 export async function POST(req: NextRequest) {
-  if (!(await verifyAdmin(req))) {
+  // Effectively a read (fetch + cache counts) — cookie OR a `read` bearer. The
+  // cookie path keeps CSRF; a bearer isn't an ambient credential, so it skips it.
+  const auth = await authenticateApiRequest(req, "read");
+  if (!auth.ok) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  if (!verifyOrigin(req)) {
+  if (auth.via === "cookie" && !verifyOrigin(req)) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 

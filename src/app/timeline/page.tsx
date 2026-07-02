@@ -159,6 +159,18 @@ export default async function TimelinePage() {
             Sessions
           </a>
           <a
+            href="/admin/apps"
+            className="text-xs text-gray-500 hover:text-white transition-colors"
+          >
+            Apps
+          </a>
+          <a
+            href="/admin/audit"
+            className="text-xs text-gray-500 hover:text-white transition-colors"
+          >
+            Activity
+          </a>
+          <a
             href="/compose"
             className="btn-primary text-xs !py-1.5"
           >
