@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
 
   const sp = req.nextUrl.searchParams;
   const cursor = sp.get("cursor"); // publishedAt ISO
-  const status = sp.get("status") || "all"; // all | published | draft
+  const status = sp.get("status") || "all"; // all | published | draft | scheduled
   const type = sp.get("type"); // note | article | journal | photo | video | audio
   const limitRaw = Number(sp.get("limit"));
   const limit =
@@ -28,7 +28,8 @@ export async function GET(req: NextRequest) {
   const where: Record<string, unknown> = {};
   if (cursor) where.publishedAt = { lt: new Date(cursor) };
   if (status === "published") where.published = true;
-  else if (status === "draft") where.published = false;
+  else if (status === "scheduled") { where.published = false; where.scheduledFor = { not: null }; }
+  else if (status === "draft") { where.published = false; where.scheduledFor = null; }
   if (type === "photo") where.photos = { isEmpty: false };
   else if (type === "video") where.videos = { isEmpty: false };
   else if (type === "audio") where.audioPaths = { isEmpty: false };
@@ -41,7 +42,7 @@ export async function GET(req: NextRequest) {
     select: {
       slug: true, title: true, excerpt: true, category: true,
       photos: true, videos: true, audioPaths: true,
-      published: true, publishedAt: true, updatedAt: true,
+      published: true, publishedAt: true, updatedAt: true, scheduledFor: true,
       likeCount: true, boostCount: true,
     },
   });
@@ -55,6 +56,7 @@ export async function GET(req: NextRequest) {
     const audio = p.audioPaths.length;
     // Derived kind for the app: media takes precedence, else the text category.
     const kind = photos ? "photo" : videos ? "video" : audio ? "audio" : p.category;
+    const status = p.published ? "published" : p.scheduledFor ? "scheduled" : "draft";
     return {
       slug: p.slug,
       url: `/post/${p.slug}`,
@@ -62,9 +64,11 @@ export async function GET(req: NextRequest) {
       excerpt: p.excerpt,
       category: p.category,
       type: kind,
+      status,
       published: p.published,
       publishedAt: p.publishedAt.toISOString(),
       updatedAt: p.updatedAt.toISOString(),
+      scheduledFor: p.scheduledFor ? p.scheduledFor.toISOString() : null,
       counts: { likes: p.likeCount, boosts: p.boostCount },
       media: { photos, videos, audio },
     };

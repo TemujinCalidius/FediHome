@@ -122,6 +122,13 @@ export async function POST(req: NextRequest) {
   // Micropub `summary` is the standard field for an article excerpt/description.
   const excerpt = properties.summary?.[0] || null;
 
+  // Schedule for later: a future `mp-scheduled` (or `published`) datetime creates
+  // the post unpublished; the scheduler federates it at that time. (#183)
+  const scheduledRaw = properties["mp-scheduled"]?.[0] || properties.published?.[0];
+  const scheduledForDate = scheduledRaw ? new Date(scheduledRaw) : null;
+  const isScheduled =
+    !!scheduledForDate && !isNaN(scheduledForDate.getTime()) && scheduledForDate.getTime() > Date.now();
+
   if (!content && !photos.length) {
     return NextResponse.json({ error: "content required" }, { status: 400 });
   }
@@ -140,7 +147,8 @@ export async function POST(req: NextRequest) {
       category,
       tags,
       photos,
-      published: properties["post-status"]?.[0] !== "draft",
+      published: properties["post-status"]?.[0] !== "draft" && !isScheduled,
+      ...(isScheduled ? { publishedAt: scheduledForDate!, scheduledFor: scheduledForDate! } : {}),
       apId: `${siteUrl}/post/${slug}`,
     },
   });

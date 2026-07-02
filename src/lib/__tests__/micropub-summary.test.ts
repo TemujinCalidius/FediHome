@@ -12,6 +12,7 @@ vi.mock("@/lib/db", () => ({ prisma: { post: { create: vi.fn() } } }));
 
 import { POST } from "@/app/api/micropub/route";
 import { prisma } from "@/lib/db";
+import { publishPost } from "@/lib/publish-post";
 
 function jsonReq(body: unknown): NextRequest {
   return new Request("https://x/api/micropub", {
@@ -56,5 +57,28 @@ describe("Micropub create — summary → excerpt (#181)", () => {
     expect(prisma.post.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ excerpt: null }) }),
     );
+  });
+
+  it("schedules (unpublished, no immediate federation) for a FUTURE published date (#183)", async () => {
+    vi.mocked(prisma.post.create).mockResolvedValue({ id: "p1", slug: "hello", published: false } as never);
+    const future = new Date(Date.now() + 86_400_000).toISOString();
+    const res = await POST(jsonReq({ type: ["h-entry"], properties: { content: ["later"], published: [future] } }));
+    expect(res.status).toBe(201);
+    expect(prisma.post.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ published: false, scheduledFor: expect.any(Date) }),
+      }),
+    );
+    expect(publishPost).not.toHaveBeenCalled();
+  });
+
+  it("publishes immediately (no scheduledFor) when the date is in the past", async () => {
+    vi.mocked(prisma.post.create).mockResolvedValue({ id: "p2", slug: "now", published: true } as never);
+    const past = new Date(Date.now() - 86_400_000).toISOString();
+    await POST(jsonReq({ type: ["h-entry"], properties: { content: ["now"], published: [past] } }));
+    const data = vi.mocked(prisma.post.create).mock.calls[0]?.[0]?.data as { published?: boolean; scheduledFor?: unknown };
+    expect(data.published).toBe(true);
+    expect(data.scheduledFor).toBeUndefined();
+    expect(publishPost).toHaveBeenCalled();
   });
 });
