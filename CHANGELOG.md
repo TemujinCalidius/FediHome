@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- **Tinylytics analytics now actually collects data.** The site read Tinylytics stats (analytics dashboard, footer hit counter, per-post view counts) but never embedded the **tracking script**, so no pageviews were ever recorded and everything showed empty. FediHome now loads the Tinylytics embed on every page when configured — keyed by your `TINYLYTICS_SITE_ID` (or `TINYLYTICS_EMBED_ID` if your embed code differs) — and the CSP is opened for `tinylytics.app` only when it's set. Note: the tracking embed needs `TINYLYTICS_SITE_ID`; the in-app dashboard additionally needs `TINYLYTICS_API_KEY`. (#170)
+
 ## 1.7.0 (2026-07-01)
 
 ### Added

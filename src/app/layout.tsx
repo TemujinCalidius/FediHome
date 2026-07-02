@@ -4,6 +4,7 @@ import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
 import ScrollToTop from "@/components/ui/ScrollToTop";
 import PullToRefresh from "@/components/ui/PullToRefresh";
+import Tinylytics from "@/components/analytics/Tinylytics";
 import { siteConfig } from "@/../site.config";
 
 export const metadata: Metadata = {
@@ -81,6 +82,7 @@ export default function RootLayout({
         <main className="flex-1">{children}</main>
         <Footer />
         <ScrollToTop />
+        <Tinylytics />
       </body>
     </html>
   );

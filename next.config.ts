@@ -30,6 +30,10 @@ const nextConfig: NextConfig = {
   },
   async headers() {
     const frameSrc = ["'self'", ...PEERTUBE_HOSTS.map((h) => `https://${h}`)].join(" ");
+    // Allow the Tinylytics tracking embed + its beacons ONLY when configured, so
+    // the CSP stays tight for sites that don't use it (#170).
+    const tinylytics =
+      process.env.TINYLYTICS_SITE_ID || process.env.TINYLYTICS_EMBED_ID ? " https://tinylytics.app" : "";
     // NOTE: 'unsafe-inline' on script-src is still required for Next.js App Router
     // hydration data scripts. Tightening to nonces is tracked separately and needs
     // every <Script> usage updated to read a nonce from middleware.
@@ -41,12 +45,12 @@ const nextConfig: NextConfig = {
             key: "Content-Security-Policy",
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-inline'",
+              `script-src 'self' 'unsafe-inline'${tinylytics}`,
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' https: data:",
               "media-src 'self' https:",
               "font-src 'self'",
-              "connect-src 'self'",
+              `connect-src 'self'${tinylytics}`,
               `frame-src ${frameSrc}`,
               "frame-ancestors 'none'",
               "object-src 'none'",
