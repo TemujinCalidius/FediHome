@@ -12,12 +12,21 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const [following, followers, bskyFollowers, bskyFollowing] = await Promise.all([
+  const [following, followers, bskyFollowers, bskyFollowing, blockedRows] = await Promise.all([
     prisma.fediFollowing.findMany({ orderBy: { createdAt: "desc" } }),
     prisma.fediFollower.findMany({ orderBy: { createdAt: "desc" } }),
     prisma.blueskyFollower.findMany({ orderBy: { createdAt: "desc" } }),
     prisma.blueskyFollowing.findMany({ orderBy: { createdAt: "desc" } }),
+    prisma.blockedActor.findMany({ orderBy: { createdAt: "desc" } }),
   ]);
+
+  const blocked = blockedRows.map((b) => ({
+    actorUri: b.actorUri,
+    handle: b.handle,
+    displayName: b.displayName,
+    avatarUrl: b.avatarUrl,
+    createdAt: b.createdAt,
+  }));
 
   const mergedFollowers = [
     ...followers.map((f) => ({
@@ -67,9 +76,11 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     followers: mergedFollowers,
     following: mergedFollowing,
+    blocked,
     counts: {
       followers: followers.length + bskyFollowers.length,
       following: following.length + bskyFollowing.length,
+      blocked: blocked.length,
     },
   });
 }

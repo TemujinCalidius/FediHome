@@ -9,6 +9,7 @@ vi.mock("@/lib/db", () => ({
     fediFollowing: { findMany: vi.fn(), count: vi.fn() },
     blueskyFollower: { findMany: vi.fn(), count: vi.fn() },
     blueskyFollowing: { findMany: vi.fn(), count: vi.fn() },
+    blockedActor: { findMany: vi.fn() },
     directMessage: { findMany: vi.fn() },
     dmConversationRead: { findMany: vi.fn() },
     post: { count: vi.fn() },
@@ -26,6 +27,7 @@ const no = { ok: false, via: null, scope: "" };
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(prisma.blockedActor.findMany).mockResolvedValue([] as never);
 });
 
 describe("GET /api/graph (read)", () => {
@@ -46,9 +48,24 @@ describe("GET /api/graph (read)", () => {
     ] as never);
     vi.mocked(prisma.blueskyFollowing.findMany).mockResolvedValue([] as never);
     const body = await (await graphGET(req)).json();
-    expect(body.counts).toEqual({ followers: 1, following: 1 });
+    expect(body.counts).toMatchObject({ followers: 1, following: 1 });
     expect(body.following[0].source).toBe("fedi");
     expect(body.followers[0].source).toBe("bsky");
+  });
+
+  it("includes the block list (#180)", async () => {
+    authenticateApiRequest.mockResolvedValue(ok);
+    vi.mocked(prisma.fediFollowing.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.fediFollower.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.blueskyFollower.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.blueskyFollowing.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.blockedActor.findMany).mockResolvedValue([
+      { actorUri: "https://x/users/bob", handle: "@bob@x", displayName: "Bob", avatarUrl: null, createdAt: new Date() },
+    ] as never);
+    const body = await (await graphGET(req)).json();
+    expect(body.blocked).toHaveLength(1);
+    expect(body.blocked[0].handle).toBe("@bob@x");
+    expect(body.counts.blocked).toBe(1);
   });
 });
 
