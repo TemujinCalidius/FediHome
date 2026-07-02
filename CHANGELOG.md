@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- **A "My Posts" API for connected apps.** New `GET /api/posts` (read-scoped) lists the owner's *own* content — notes, articles, journal, photo/video/audio posts, including drafts — with slug, relative URL, title, excerpt, a derived `type`, published state, interaction counts, and media counts. Filter by `?status=published|draft` and `?type=…`; paginate with `?cursor=`/`?limit=`. Backs a native content-manager view (edit/delete via the existing Micropub endpoints). (#182)
 - **Micropub can set an article excerpt.** `POST /api/micropub` now reads the standard `summary` property into `Post.excerpt` (and echoes it back in `q=source`), so a token-authenticated app can give an article a short description/excerpt under its title. (#181)
 
 ### Fixed
