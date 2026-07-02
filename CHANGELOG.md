@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- **Blocks are now listable and reversible.** Blocking a Fediverse actor used to unfollow + purge their content but record nothing, so you couldn't see who you'd blocked or undo it. `block` now records the actor; `GET /api/graph` returns a `blocked` list (read scope); and a new `unblock` action (manage scope) removes the block and delivers an `Undo Block`. Backs a native block-list/unblock screen. (#180)
 - **A "My Posts" API for connected apps.** New `GET /api/posts` (read-scoped) lists the owner's *own* content — notes, articles, journal, photo/video/audio posts, including drafts — with slug, relative URL, title, excerpt, a derived `type`, published state, interaction counts, and media counts. Filter by `?status=published|draft` and `?type=…`; paginate with `?cursor=`/`?limit=`. Backs a native content-manager view (edit/delete via the existing Micropub endpoints). (#182)
 - **Micropub can set an article excerpt.** `POST /api/micropub` now reads the standard `summary` property into `Post.excerpt` (and echoes it back in `q=source`), so a token-authenticated app can give an article a short description/excerpt under its title. (#181)
 
@@ -13,6 +14,9 @@
 
 ### Changed
 - Documented previously-undocumented optional env vars in `.env.example`: `TRUSTED_PROXY` (per-IP rate limiting behind a proxy), `FEDIHOME_DEBUG` (verbose AP/Micropub logging), and the `PODCAST_*` audio-feed overrides.
+
+### Schema
+- New `BlockedActor` table backing the block list + unblock (#180). Additive and non-destructive (a brand-new table). **After upgrading, run `npx prisma db push`** (or apply `prisma/manual-migrations/2026-07-02-blocked-actor.sql`).
 
 ## 1.7.0 (2026-07-01)
 

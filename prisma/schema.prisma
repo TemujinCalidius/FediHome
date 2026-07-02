@@ -245,6 +245,20 @@ model FediFollowing {
   createdAt DateTime @default(now())
 }
 
+// Actors the owner has blocked (#180). `block` records a row here (in addition to
+// its unfollow + Block delivery + content purge) so the block list is listable
+// and reversible; `unblock` deletes the row + delivers Undo Block. `inbox` is
+// cached so unblock can deliver without re-resolving.
+model BlockedActor {
+  id          String   @id @default(cuid())
+  actorUri    String   @unique
+  handle      String?  // @user@domain
+  displayName String?
+  avatarUrl   String?
+  inbox       String?
+  createdAt   DateTime @default(now())
+}
+
 model BlueskyFollower {
   id          String   @id @default(cuid())
   did         String   @unique
