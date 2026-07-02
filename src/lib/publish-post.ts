@@ -74,7 +74,7 @@ export async function publishDueScheduledPosts(now: Date = new Date()): Promise<
       prisma.photo.updateMany({ where: { slug: { startsWith: `${post.slug}-photo-` }, published: false }, data: { published: true } }),
       prisma.video.updateMany({ where: { slug: { startsWith: `${post.slug}-video-` }, published: false }, data: { published: true } }),
       prisma.audio.updateMany({ where: { slug: { startsWith: `${post.slug}-audio-` }, published: false }, data: { published: true } }),
-    ]).catch(() => {});
+    ]).catch((err) => console.error(`failed to publish gallery rows for ${post.slug}:`, err));
 
     await publishPost(post);
     published++;
