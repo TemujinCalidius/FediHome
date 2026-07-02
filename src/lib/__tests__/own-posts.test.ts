@@ -19,6 +19,7 @@ const row = (over: Record<string, unknown> = {}) => ({
   slug: "hello", title: "Hello", excerpt: "x", category: "article",
   photos: [], videos: [], audioPaths: [],
   published: true, publishedAt: new Date("2026-01-02"), updatedAt: new Date("2026-01-03"),
+  scheduledFor: null,
   likeCount: 2, boostCount: 1, ...over,
 });
 
@@ -46,10 +47,32 @@ describe("GET /api/posts (My Posts)", () => {
     expect(body.posts[1]).toMatchObject({ type: "photo", media: { photos: 2, videos: 0, audio: 0 } });
   });
 
-  it("status=draft filters to unpublished", async () => {
+  it("status=draft filters to unpublished with NO scheduledFor", async () => {
     authenticateApiRequest.mockResolvedValue(ok);
     await GET(req({ status: "draft" }));
-    expect(vi.mocked(prisma.post.findMany).mock.calls[0][0]?.where).toMatchObject({ published: false });
+    expect(vi.mocked(prisma.post.findMany).mock.calls[0][0]?.where).toMatchObject({
+      published: false,
+      scheduledFor: null,
+    });
+  });
+
+  it("status=scheduled filters to unpublished WITH a scheduledFor set (#183)", async () => {
+    authenticateApiRequest.mockResolvedValue(ok);
+    await GET(req({ status: "scheduled" }));
+    expect(vi.mocked(prisma.post.findMany).mock.calls[0][0]?.where).toMatchObject({
+      published: false,
+      scheduledFor: { not: null },
+    });
+  });
+
+  it("exposes scheduledFor + a derived 'scheduled' status (#183)", async () => {
+    authenticateApiRequest.mockResolvedValue(ok);
+    vi.mocked(prisma.post.findMany).mockResolvedValue([
+      row({ slug: "later", published: false, scheduledFor: new Date("2026-09-01") }),
+    ] as never);
+    const body = await (await GET(req())).json();
+    expect(body.posts[0].status).toBe("scheduled");
+    expect(body.posts[0].scheduledFor).toBe(new Date("2026-09-01").toISOString());
   });
 
   it("type=photo filters on a non-empty photos array; cursor paginates", async () => {

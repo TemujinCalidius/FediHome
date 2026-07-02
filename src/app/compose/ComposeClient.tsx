@@ -77,10 +77,11 @@ export default function ComposeClient({ editingPostId = null, initialValues = nu
   const [videoCategory, setVideoCategory] = useState("general");
   const [addToAudio, setAddToAudio] = useState(false);
   const [audioCategory, setAudioCategory] = useState("general");
+  const [scheduledFor, setScheduledFor] = useState("");
   const [uploading, setUploading] = useState(false);
   const [audioUploading, setAudioUploading] = useState(false);
   const [posting, setPosting] = useState(false);
-  const [result, setResult] = useState<{ success: boolean; url?: string; error?: string } | null>(null);
+  const [result, setResult] = useState<{ success: boolean; url?: string; error?: string; scheduled?: boolean } | null>(null);
   const [videoModalOpen, setVideoModalOpen] = useState(false);
   const [videoUrlInput, setVideoUrlInput] = useState("");
   const [videoParsing, setVideoParsing] = useState(false);
@@ -282,6 +283,7 @@ export default function ComposeClient({ editingPostId = null, initialValues = nu
           addToAudio: audios.length > 0 && addToAudio,
           audioCategory: addToAudio ? audioCategory : undefined,
           editingPostId: editingPostId || undefined,
+          scheduledFor: !isEditing && scheduledFor ? new Date(scheduledFor).toISOString() : undefined,
         }),
       });
 
@@ -292,7 +294,7 @@ export default function ComposeClient({ editingPostId = null, initialValues = nu
           window.location.href = data.post.url;
           return;
         }
-        setResult({ success: true, url: data.post.url });
+        setResult({ success: true, url: data.post.url, scheduled: !!data.scheduled });
         // Reset form (create only)
         setTitle("");
         setContent("");
@@ -300,6 +302,7 @@ export default function ComposeClient({ editingPostId = null, initialValues = nu
         setPhotos([]);
         setVideos([]);
         setAudios([]);
+        setScheduledFor("");
       } else {
         setResult({ success: false, error: data.error || "Failed to post" });
       }
@@ -322,12 +325,16 @@ export default function ComposeClient({ editingPostId = null, initialValues = nu
           }`}
         >
           {result.success ? (
-            <>
-              Posted!{" "}
-              <a href={result.url} className="underline">
-                View post
-              </a>
-            </>
+            result.scheduled ? (
+              <>Scheduled ✓ — it&apos;ll publish (and federate) automatically at the chosen time.</>
+            ) : (
+              <>
+                Posted!{" "}
+                <a href={result.url} className="underline">
+                  View post
+                </a>
+              </>
+            )
           ) : (
             result.error
           )}
@@ -788,13 +795,28 @@ export default function ComposeClient({ editingPostId = null, initialValues = nu
               ? `Article will be published on your site.${crosspostBluesky || crosspostThreads || crosspostDayOne ? " Crossposts get the description." : ""}`
               : `Note will be sent to ${["Fediverse", crosspostBluesky && "Bluesky", crosspostThreads && "Threads", crosspostDayOne && "DayOne"].filter(Boolean).join(", ")}.`}
         </p>
-        <button
-          onClick={handleSubmit}
-          disabled={!content.trim() || posting}
-          className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {posting ? (isEditing ? "Saving…" : "Posting…") : isEditing ? "Save changes" : "Publish"}
-        </button>
+        <div className="flex items-center gap-3">
+          {!isEditing && (
+            <label className="flex items-center gap-2 text-xs text-gray-500" title="Leave empty to publish now">
+              <span className="whitespace-nowrap">Schedule</span>
+              <input
+                type="datetime-local"
+                value={scheduledFor}
+                onChange={(e) => setScheduledFor(e.target.value)}
+                className="bg-surface-800 border border-surface-700 rounded-md px-2 py-1 text-xs text-white"
+              />
+            </label>
+          )}
+          <button
+            onClick={handleSubmit}
+            disabled={!content.trim() || posting}
+            className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {posting
+              ? isEditing ? "Saving…" : scheduledFor ? "Scheduling…" : "Posting…"
+              : isEditing ? "Save changes" : scheduledFor ? "Schedule" : "Publish"}
+          </button>
+        </div>
       </div>
     </div>
   );
