@@ -1,7 +1,8 @@
 /**
  * FediHome scheduler configuration (#183).
  *
- * The single scheduler process (`scripts/scheduler.ts`) reads its job cadences
+ * The in-app scheduler (`src/lib/scheduler.ts`, started by
+ * `src/instrumentation.ts`) reads its job cadences
  * from here. TODAY these come from env vars with sensible defaults. When the
  * proper admin backend lands (#59), this function can read DB rows instead
  * (falling back to these defaults) so the cadences are editable in-app — the
