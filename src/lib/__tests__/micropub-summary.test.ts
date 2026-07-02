@@ -7,6 +7,7 @@ vi.mock("@/lib/auth", () => ({
   hasScope: (s: string | undefined, r: string) => (s ?? "").split(/\s+/).includes(r),
 }));
 vi.mock("@/lib/audit", () => ({ recordTokenUse: vi.fn() }));
+vi.mock("@/lib/publish-post", () => ({ publishPost: vi.fn() }));
 vi.mock("@/lib/db", () => ({ prisma: { post: { create: vi.fn() } } }));
 
 import { POST } from "@/app/api/micropub/route";
