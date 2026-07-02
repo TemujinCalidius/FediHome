@@ -30,6 +30,10 @@ model Post {
   audioCovers        String[] // parallel array of audio cover image URLs (may be empty strings)
   published   Boolean  @default(true)
   publishedAt DateTime @default(now())
+  // Set when a post is scheduled for future publish: created with published=false
+  // and scheduledFor/publishedAt in the future; the scheduler flips it live at the
+  // time. A plain draft leaves this null (the scheduler ignores it). (#183)
+  scheduledFor DateTime?
   updatedAt   DateTime @updatedAt
 
   // ActivityPub
@@ -60,6 +64,7 @@ model Post {
   @@index([publishedAt])
   @@index([category])
   @@index([inReplyToPostId])
+  @@index([scheduledFor])
 }
 
 // === Bluesky Replies ===

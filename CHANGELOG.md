@@ -16,9 +16,11 @@
 
 ### Changed
 - Documented previously-undocumented optional env vars in `.env.example`: `TRUSTED_PROXY` (per-IP rate limiting behind a proxy), `FEDIHOME_DEBUG` (verbose AP/Micropub logging), and the `PODCAST_*` audio-feed overrides.
+- Internal: extracted post federation + crosspost into a reusable `publishPost()` (`src/lib/publish-post.ts`), shared by Micropub and the upcoming scheduler — groundwork for scheduled posts (#183). No behaviour change.
 
 ### Schema
 - New `BlockedActor` table backing the block list + unblock (#180). Additive and non-destructive (a brand-new table). **After upgrading, run `npx prisma db push`** (or apply `prisma/manual-migrations/2026-07-02-blocked-actor.sql`).
+- New nullable `Post.scheduledFor` column (+ index) — groundwork for scheduled posts (#183). Additive and non-destructive. **After upgrading, run `npx prisma db push`** (or apply `prisma/manual-migrations/2026-07-02-scheduled-posts.sql`).
 
 ## 1.7.0 (2026-07-01)
 
