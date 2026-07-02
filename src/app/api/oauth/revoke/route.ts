@@ -17,6 +17,7 @@ import { makeRateLimiter, bodyTooLarge } from "@/lib/oauth";
  */
 
 const revokeLimiter = makeRateLimiter(20, 60_000);
+const NO_STORE = { "Cache-Control": "no-store", Pragma: "no-cache" };
 
 async function parseBody(req: NextRequest): Promise<Record<string, string>> {
   const ct = req.headers.get("content-type") || "";
@@ -32,10 +33,13 @@ async function parseBody(req: NextRequest): Promise<Record<string, string>> {
 
 export async function POST(req: NextRequest) {
   if (!revokeLimiter.check(rateLimitKey(req), Date.now())) {
-    return NextResponse.json({ error: "temporarily_unavailable" }, { status: 429 });
+    return NextResponse.json(
+      { error: "temporarily_unavailable" },
+      { status: 429, headers: NO_STORE },
+    );
   }
   if (bodyTooLarge(req)) {
-    return new NextResponse(null, { status: 413 });
+    return new NextResponse(null, { status: 413, headers: NO_STORE });
   }
 
   const body = await parseBody(req);
@@ -45,6 +49,7 @@ export async function POST(req: NextRequest) {
       .deleteMany({ where: { tokenHash: hashToken(token) } })
       .catch(() => {});
   }
-  // Always 200 — never reveal whether the token existed.
-  return new NextResponse(null, { status: 200 });
+  // Always 200 — never reveal whether the token existed. No-store: a revocation
+  // response must not be cached (RFC 7009), matching the token endpoint.
+  return new NextResponse(null, { status: 200, headers: NO_STORE });
 }
