@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { verifyAdmin, verifyOrigin } from "@/lib/auth";
+import { authenticateApiRequest, verifyOrigin } from "@/lib/auth";
 import { deliverActivity, deliverToFollowers } from "@/lib/http-signatures";
 import { crosspostToBluesky, crosspostReplyToBluesky, crosspostToThreads, crosspostToDayOne } from "@/lib/crosspost";
 import { sanitizeHtml } from "@/lib/sanitize";
@@ -114,10 +114,16 @@ function renderMarkdown(md: string): string {
 }
 
 export async function POST(req: NextRequest) {
-  if (!(await verifyAdmin(req))) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  // Owner cookie OR a `create`-scoped bearer token, so a native app can use the
+  // rich composer (photo galleries + captions, video, audio) that Micropub can't
+  // express. The cookie path keeps CSRF; a bearer isn't ambient so it skips it.
+  const auth = await authenticateApiRequest(req, "create");
+  if (!auth.ok) {
+    return auth.via === "bearer"
+      ? NextResponse.json({ error: "insufficient_scope" }, { status: 403 })
+      : NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  if (!verifyOrigin(req)) {
+  if (auth.via === "cookie" && !verifyOrigin(req)) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
