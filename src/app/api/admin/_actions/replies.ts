@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { deliverActivity, deliverToFollowers } from "@/lib/http-signatures";
 import { siteConfig } from "@/../site.config";
 import { parseMentions, linkMentions, buildApMentionTags, collectMentionInboxes } from "@/lib/mentions";
-import { resolveActorInbox } from "@/lib/fedi-resolve";
+import { resolveActorInbox, originalApId } from "@/lib/fedi-resolve";
 import type { AdminBody } from "./types";
 
 const siteUrl = siteConfig.url;
@@ -75,7 +75,8 @@ export async function reply(body: AdminBody): Promise<NextResponse> {
       type: "Note",
       id: replyId,
       attributedTo: `${siteUrl}/ap/actor`,
-      inReplyTo,
+      // Federated inReplyTo must be the ORIGINAL post URL, not a synthetic boost: apId.
+      inReplyTo: originalApId(inReplyTo),
       content: contentHtml,
       published: new Date().toISOString(),
       to: ["https://www.w3.org/ns/activitystreams#Public"],

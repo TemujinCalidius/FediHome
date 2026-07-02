@@ -12,6 +12,19 @@ export interface ResolvedFediActor {
 }
 
 /**
+ * Boosted feed rows carry a synthetic apId `boost:<booster>:<originalApId>`.
+ * Return the ORIGINAL post's real apId for use as a federated activity `object`
+ * / `inReplyTo` — remote servers reject the non-URL synthetic form, so without
+ * this a Like/Announce/reply on a boosted post never reaches the original author.
+ * Non-boost apIds pass through unchanged. (Same shape as the strip already used
+ * by /api/fedi-post-counts and /api/conversation.)
+ */
+export function originalApId(apId: string): string {
+  const m = apId.match(/^boost:.*:(https?:\/\/.*)$/);
+  return m ? m[1] : apId;
+}
+
+/**
  * Resolve `@user@domain` (or `user@domain`) to an ActivityPub actor record
  * via WebFinger + actor fetch. Returns null if any lookup fails or the host
  * fails the SSRF guard. Used by the new-DM compose flow so admins can DM any
