@@ -38,11 +38,13 @@ afterEach(() => {
 });
 
 describe("in-app scheduler (#183)", () => {
-  it("is idempotent per process — a second start is a no-op", () => {
+  it("is idempotent per process — a second start is a no-op", async () => {
     expect(startScheduler()).toBe(true);
     expect(startScheduler()).toBe(false);
     // Only one set of intervals: one immediate publish sweep, then one per minute.
-    vi.advanceTimersByTime(60_000);
+    // (async timer API so the startup tick completes — and releases the
+    // in-flight guard — before the interval fires)
+    await vi.advanceTimersByTimeAsync(60_000);
     expect(publishDueScheduledPosts).toHaveBeenCalledTimes(2); // startup + 1 tick
   });
 
@@ -78,6 +80,19 @@ describe("in-app scheduler (#183)", () => {
     startScheduler();
     await vi.advanceTimersByTimeAsync(3_600_000);
     expect(syncBlueskyGraph).not.toHaveBeenCalled();
+  });
+
+  it("publish ticks never overlap in-process (a slow delivery can't race a later tick's retry sweep)", async () => {
+    let release!: () => void;
+    publishDueScheduledPosts.mockReturnValue(new Promise<number>((res) => { release = () => res(0); }));
+    const first = runPublishTick(); // starts, blocks on the pending sweep
+    await runPublishTick(); // fires while the first is in flight → must skip
+    expect(publishDueScheduledPosts).toHaveBeenCalledTimes(1);
+    release();
+    await first;
+    publishDueScheduledPosts.mockResolvedValue(0);
+    await runPublishTick(); // after completion the guard is released
+    expect(publishDueScheduledPosts).toHaveBeenCalledTimes(2);
   });
 
   it("a failing job tick never throws out of the scheduler (web-server safety)", async () => {
