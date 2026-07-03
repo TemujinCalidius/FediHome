@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { verifyAdmin, verifyOrigin } from "@/lib/auth";
+import { authenticateApiRequest, verifyOrigin } from "@/lib/auth";
 import { deliverActivity, deliverToFollowers } from "@/lib/http-signatures";
 import { crosspostToBluesky, crosspostReplyToBluesky, crosspostToThreads, crosspostToDayOne } from "@/lib/crosspost";
 import { sanitizeHtml } from "@/lib/sanitize";
@@ -114,10 +114,16 @@ function renderMarkdown(md: string): string {
 }
 
 export async function POST(req: NextRequest) {
-  if (!(await verifyAdmin(req))) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  // Owner cookie OR a `create`-scoped bearer token, so a native app can use the
+  // rich composer (photo galleries + captions, video, audio) that Micropub can't
+  // express. The cookie path keeps CSRF; a bearer isn't ambient so it skips it.
+  const auth = await authenticateApiRequest(req, "create");
+  if (!auth.ok) {
+    return auth.via === "bearer"
+      ? NextResponse.json({ error: "insufficient_scope" }, { status: 403 })
+      : NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  if (!verifyOrigin(req)) {
+  if (auth.via === "cookie" && !verifyOrigin(req)) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
@@ -152,6 +158,7 @@ async function composeHandler(req: NextRequest) {
     audioCategory,
     inReplyToPostId,
     editingPostId,
+    scheduledFor,
   } = body as {
     title?: string;
     content: string;
@@ -184,6 +191,7 @@ async function composeHandler(req: NextRequest) {
     audioCategory?: string;
     inReplyToPostId?: string;
     editingPostId?: string;
+    scheduledFor?: string; // future ISO datetime → schedule instead of publish now
   };
 
   if (!content?.trim()) {
@@ -256,6 +264,12 @@ async function composeHandler(req: NextRequest) {
     contentHtml = `<p>${linkHashtags(withMentions).replace(/\n/g, "<br>")}</p>`;
   }
 
+  // Schedule for later? A future scheduledFor creates the post unpublished; the
+  // scheduler federates + crossposts it at that time.
+  const scheduledForDate = scheduledFor ? new Date(scheduledFor) : null;
+  const isScheduled =
+    !!scheduledForDate && !isNaN(scheduledForDate.getTime()) && scheduledForDate.getTime() > Date.now();
+
   // Create post
   const post = await prisma.post.create({
     data: {
@@ -274,7 +288,8 @@ async function composeHandler(req: NextRequest) {
       audioPaths,
       audioTitles,
       audioCovers,
-      published: true,
+      published: !isScheduled,
+      ...(isScheduled ? { publishedAt: scheduledForDate!, scheduledFor: scheduledForDate! } : {}),
       apId: `${siteUrl}/post/${slug}`,
       ...(parentPost ? { inReplyToPostId: parentPost.id } : {}),
     },
@@ -292,7 +307,7 @@ async function composeHandler(req: NextRequest) {
           imagePath: photos[i].url,
           category: photoCategory || "general",
           tags,
-          published: true,
+          published: !isScheduled,
           publishedAt: post.publishedAt,
           apId: `${siteUrl}/photography/${photoSlug}`,
         },
@@ -319,7 +334,7 @@ async function composeHandler(req: NextRequest) {
           duration: v.duration || null,
           category: videoCategory || "general",
           tags,
-          published: true,
+          published: !isScheduled,
           publishedAt: post.publishedAt,
           apId: `${siteUrl}/videos/${videoSlug}`,
         },
@@ -344,7 +359,7 @@ async function composeHandler(req: NextRequest) {
           coverImage: a.coverImage || null,
           category: audioCategory || "general",
           tags,
-          published: true,
+          published: !isScheduled,
           publishedAt: post.publishedAt,
           apId: `${siteUrl}/audio/${audioSlug}`,
         },
@@ -352,6 +367,21 @@ async function composeHandler(req: NextRequest) {
         // Ignore duplicate slug errors
       });
     }
+  }
+
+  // Scheduled for later → created unpublished; the scheduler federates + crossposts
+  // it (and flips its gallery rows) at scheduledFor. Skip immediate delivery.
+  if (isScheduled) {
+    return NextResponse.json({
+      success: true,
+      scheduled: true,
+      post: {
+        id: post.id,
+        slug: post.slug,
+        url: `${siteUrl}/post/${post.slug}`,
+        scheduledFor: post.scheduledFor?.toISOString() ?? null,
+      },
+    });
   }
 
   // Build AP content for federation

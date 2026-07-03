@@ -16,7 +16,7 @@ vi.mock("@/lib/auth", () => ({
 vi.mock("@/app/api/admin/_actions/comments", () => ({ approveComment: tag("approveComment"), rejectComment: tag("rejectComment") }));
 vi.mock("@/app/api/admin/_actions/replies", () => ({ reply: tag("reply"), editReply: tag("editReply"), backfillReplies: tag("backfillReplies") }));
 vi.mock("@/app/api/admin/_actions/dms", () => ({ fediDm: tag("fediDm"), bskyDm: tag("bskyDm"), markDmRead: tag("markDmRead"), markAllDmsRead: tag("markAllDmsRead") }));
-vi.mock("@/app/api/admin/_actions/fedi-graph", () => ({ follow: tag("follow"), unfollow: tag("unfollow"), unfollowByUri: tag("unfollowByUri"), block: tag("block") }));
+vi.mock("@/app/api/admin/_actions/fedi-graph", () => ({ follow: tag("follow"), unfollow: tag("unfollow"), unfollowByUri: tag("unfollowByUri"), block: tag("block"), unblock: tag("unblock") }));
 vi.mock("@/app/api/admin/_actions/fedi-interactions", () => ({ like: tag("like"), boost: tag("boost"), unlike: tag("unlike"), unboost: tag("unboost") }));
 vi.mock("@/app/api/admin/_actions/bluesky", () => ({ bskyReply: tag("bskyReply"), syncGraph: tag("syncGraph"), bskyFollow: tag("bskyFollow"), bskyUnfollow: tag("bskyUnfollow") }));
 
@@ -53,6 +53,7 @@ describe("/api/admin — per-action scope map", () => {
     ["backfill_replies", "manage"],
     ["sync_bluesky_graph", "manage"],
     ["block", "manage"], // reclassified: block deletes the actor's posts/interactions
+    ["unblock", "manage"],
   ])("action %s dispatches with %s and 403s without it", async (action, scope) => {
     authenticateApiRequest.mockResolvedValue(bearer(scope));
     expect((await POST(req({ action }))).status).toBe(200);

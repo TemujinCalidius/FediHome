@@ -8,6 +8,8 @@ vi.mock("@/lib/auth", () => ({
   hasScope: (scope: string | undefined, required: string) => (scope ?? "").split(/\s+/).includes(required),
 }));
 vi.mock("@/lib/delete-post", () => ({ deletePostWithFederation: del }));
+vi.mock("@/lib/audit", () => ({ recordTokenUse: vi.fn() }));
+vi.mock("@/lib/publish-post", () => ({ publishPost: vi.fn() }));
 vi.mock("@/lib/db", () => ({ prisma: { post: { findUnique: vi.fn() } } }));
 
 import { POST } from "@/app/api/micropub/route";

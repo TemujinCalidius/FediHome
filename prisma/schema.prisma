@@ -30,6 +30,10 @@ model Post {
   audioCovers        String[] // parallel array of audio cover image URLs (may be empty strings)
   published   Boolean  @default(true)
   publishedAt DateTime @default(now())
+  // Set when a post is scheduled for future publish: created with published=false
+  // and scheduledFor/publishedAt in the future; the scheduler flips it live at the
+  // time. A plain draft leaves this null (the scheduler ignores it). (#183)
+  scheduledFor DateTime?
   updatedAt   DateTime @updatedAt
 
   // ActivityPub
@@ -60,6 +64,7 @@ model Post {
   @@index([publishedAt])
   @@index([category])
   @@index([inReplyToPostId])
+  @@index([scheduledFor])
 }
 
 // === Bluesky Replies ===
@@ -243,6 +248,20 @@ model FediFollowing {
   displayName String?
   avatarUrl String?
   createdAt DateTime @default(now())
+}
+
+// Actors the owner has blocked (#180). `block` records a row here (in addition to
+// its unfollow + Block delivery + content purge) so the block list is listable
+// and reversible; `unblock` deletes the row + delivers Undo Block. `inbox` is
+// cached so unblock can deliver without re-resolving.
+model BlockedActor {
+  id          String   @id @default(cuid())
+  actorUri    String   @unique
+  handle      String?  // @user@domain
+  displayName String?
+  avatarUrl   String?
+  inbox       String?
+  createdAt   DateTime @default(now())
 }
 
 model BlueskyFollower {

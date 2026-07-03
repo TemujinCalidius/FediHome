@@ -27,6 +27,18 @@ export function proxy(req: NextRequest) {
     }
   }
 
+  // The reverse gate: on a CONFIGURED instance the wizard is done — /setup
+  // must not render (for anyone, admin included; re-configuration belongs to
+  // the future admin backend, and an admin-authed wizard completion could
+  // rewrite .env.local). The POST endpoint is separately locked, but the page
+  // itself was reachable. /api/setup stays untouched: it has its own auth and
+  // the no-ADMIN_SECRET recovery path needs it.
+  if (isSetupRoute && process.env.ADMIN_SECRET) {
+    const url = req.nextUrl.clone();
+    url.pathname = "/";
+    return NextResponse.redirect(url);
+  }
+
   // --- Content negotiation for ActivityPub ---
 
   // Content negotiation for AP — rewrite /post/slug to AP JSON endpoint

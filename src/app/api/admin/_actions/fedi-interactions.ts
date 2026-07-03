@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { deliverActivity, deliverToFollowers } from "@/lib/http-signatures";
-import { resolveActorInbox } from "@/lib/fedi-resolve";
+import { resolveActorInbox, originalApId } from "@/lib/fedi-resolve";
 import { siteConfig } from "@/../site.config";
 import type { AdminBody } from "./types";
 
@@ -55,7 +55,8 @@ export async function like(body: AdminBody): Promise<NextResponse> {
     id: `${siteUrl}/ap/like/${Date.now()}`,
     type: "Like",
     actor: `${siteUrl}/ap/actor`,
-    object: postApId,
+    // Federated object must be the ORIGINAL post URL, not a synthetic boost: apId.
+    object: originalApId(postApId),
   };
 
   // A Like is delivered only to the liked post's author — not broadcast to our
@@ -83,7 +84,8 @@ export async function boost(body: AdminBody): Promise<NextResponse> {
     id: `${siteUrl}/ap/announce/${Date.now()}`,
     type: "Announce",
     actor: `${siteUrl}/ap/actor`,
-    object: boostApId,
+    // Federated object must be the ORIGINAL post URL, not a synthetic boost: apId.
+    object: originalApId(boostApId),
     published: new Date().toISOString(),
     to: ["https://www.w3.org/ns/activitystreams#Public"],
     cc: [`${siteUrl}/ap/followers`],
@@ -115,7 +117,7 @@ export async function unlike(body: AdminBody): Promise<NextResponse> {
     id: `${siteUrl}/ap/undo/${Date.now()}`,
     type: "Undo",
     actor: `${siteUrl}/ap/actor`,
-    object: { type: "Like", actor: `${siteUrl}/ap/actor`, object: postApId },
+    object: { type: "Like", actor: `${siteUrl}/ap/actor`, object: originalApId(postApId) },
   };
 
   // Mirror like: the Undo goes only to the author (likes aren't broadcast). (#119)
@@ -140,7 +142,7 @@ export async function unboost(body: AdminBody): Promise<NextResponse> {
     id: `${siteUrl}/ap/undo/${Date.now()}`,
     type: "Undo",
     actor: `${siteUrl}/ap/actor`,
-    object: { type: "Announce", actor: `${siteUrl}/ap/actor`, object: boostApId },
+    object: { type: "Announce", actor: `${siteUrl}/ap/actor`, object: originalApId(boostApId) },
   };
 
   // Mirror boost: tell our followers to drop it, plus the author directly unless

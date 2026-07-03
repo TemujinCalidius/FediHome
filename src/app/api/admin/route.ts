@@ -3,7 +3,7 @@ import { authenticateApiRequest, verifyOrigin, hasScope } from "@/lib/auth";
 import { approveComment, rejectComment } from "./_actions/comments";
 import { reply, editReply, backfillReplies } from "./_actions/replies";
 import { fediDm, bskyDm, markDmRead, markAllDmsRead } from "./_actions/dms";
-import { follow, unfollow, unfollowByUri, block } from "./_actions/fedi-graph";
+import { follow, unfollow, unfollowByUri, block, unblock } from "./_actions/fedi-graph";
 import { like, boost, unlike, unboost } from "./_actions/fedi-interactions";
 import { bskyReply, syncGraph, bskyFollow, bskyUnfollow } from "./_actions/bluesky";
 
@@ -22,6 +22,7 @@ const ACTION_SCOPE: Record<string, string> = {
   backfill_replies: "manage",
   sync_bluesky_graph: "manage",
   block: "manage", // unfollows + deletes the actor's posts/interactions → destructive
+  unblock: "manage", // reverses block: removes the record + delivers Undo Block
   reply: "interact",
   edit_reply: "interact",
   follow: "interact",
@@ -90,6 +91,7 @@ export async function POST(req: NextRequest) {
     case "unfollow": return unfollow(body);
     case "unfollow_by_uri": return unfollowByUri(body);
     case "block": return block(body);
+    case "unblock": return unblock(body);
     case "like": return like(body);
     case "unlike": return unlike(body);
     case "boost": return boost(body);

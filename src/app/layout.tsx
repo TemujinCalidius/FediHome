@@ -4,6 +4,7 @@ import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
 import ScrollToTop from "@/components/ui/ScrollToTop";
 import PullToRefresh from "@/components/ui/PullToRefresh";
+import Tinylytics from "@/components/analytics/Tinylytics";
 import { siteConfig } from "@/../site.config";
 
 export const metadata: Metadata = {
@@ -71,8 +72,10 @@ export default function RootLayout({
     <html lang="en">
       <head>
         <link rel="micropub" href={`${siteConfig.url}/api/micropub`} />
-        <link rel="token_endpoint" href={`${siteConfig.url}/api/micropub`} />
-        <link rel="authorization_endpoint" href={`${siteConfig.url}/api/micropub`} />
+        {/* IndieAuth/OAuth discovery — point at the real OAuth endpoints (not Micropub) */}
+        <link rel="authorization_endpoint" href={`${siteConfig.url}/api/oauth/authorize`} />
+        <link rel="token_endpoint" href={`${siteConfig.url}/api/oauth/token`} />
+        <link rel="indieauth-metadata" href={`${siteConfig.url}/.well-known/oauth-authorization-server`} />
         <link rel="EditURI" type="application/rsd+xml" href={`${siteConfig.url}/rsd.xml`} />
       </head>
       <body className="bg-surface-950 text-gray-200 min-h-screen flex flex-col font-body">
@@ -81,6 +84,7 @@ export default function RootLayout({
         <main className="flex-1">{children}</main>
         <Footer />
         <ScrollToTop />
+        <Tinylytics />
       </body>
     </html>
   );

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { deliverActivity } from "@/lib/http-signatures";
+import { resolveActorInbox } from "@/lib/fedi-resolve";
 import { processAttachments, fetchLinkEmbed } from "@/lib/fedi-media";
 import { assertPublicHost, isPrivateUrl } from "@/lib/url-guard";
 import { sanitizeHtml } from "@/lib/sanitize";
@@ -258,11 +259,60 @@ export async function block(body: AdminBody): Promise<NextResponse> {
     await prisma.fediFollower.delete({ where: { actorUri } });
   }
 
+  // Capture display info (from a follow/follower record, else a stored post)
+  // BEFORE purging content, so the block list can show a name/avatar.
+  const info =
+    follower ??
+    followRecord ??
+    (await prisma.fediPost.findFirst({
+      where: { actorUri },
+      select: { username: true, domain: true, displayName: true, avatarUrl: true },
+    }));
+
   // Delete all their posts from our timeline
   await prisma.fediPost.deleteMany({ where: { actorUri } });
 
   // Delete their interactions
   await prisma.fediInteraction.deleteMany({ where: { actorUri } });
 
+  // Record the block so it's listable + reversible (#180).
+  await prisma.blockedActor
+    .upsert({
+      where: { actorUri },
+      create: {
+        actorUri,
+        handle: info ? `@${info.username}@${info.domain}` : null,
+        displayName: info?.displayName ?? null,
+        avatarUrl: info?.avatarUrl ?? null,
+        inbox: follower?.inbox ?? followRecord?.inbox ?? null,
+      },
+      update: {},
+    })
+    .catch(() => {});
+
+  return NextResponse.json({ success: true });
+}
+
+export async function unblock(body: AdminBody): Promise<NextResponse> {
+  const { actorUri } = body;
+  if (!actorUri || typeof actorUri !== "string") {
+    return NextResponse.json({ error: "actorUri required" }, { status: 400 });
+  }
+
+  const blocked = await prisma.blockedActor.findUnique({ where: { actorUri } });
+
+  // Deliver Undo(Block) best-effort — prefer the cached inbox, else resolve it.
+  const inbox = blocked?.inbox || (await resolveActorInbox(actorUri).catch(() => null));
+  if (inbox) {
+    await deliverActivity(inbox, {
+      "@context": "https://www.w3.org/ns/activitystreams",
+      id: `${siteUrl}/ap/undo/${Date.now()}`,
+      type: "Undo",
+      actor: `${siteUrl}/ap/actor`,
+      object: { type: "Block", actor: `${siteUrl}/ap/actor`, object: actorUri },
+    }).catch(() => {});
+  }
+
+  await prisma.blockedActor.deleteMany({ where: { actorUri } });
   return NextResponse.json({ success: true });
 }

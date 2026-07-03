@@ -4,10 +4,8 @@ import { recordTokenUse } from "@/lib/audit";
 import { prisma } from "@/lib/db";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { marked } from "marked";
-import { buildPostObject } from "@/lib/ap-post";
+import { publishPost } from "@/lib/publish-post";
 import { deletePostWithFederation } from "@/lib/delete-post";
-
-const DEBUG = process.env.FEDIHOME_DEBUG === "true";
 
 function slugify(text: string): string {
   return text
@@ -52,6 +50,7 @@ export async function GET(req: NextRequest) {
       properties: {
         name: post.title ? [post.title] : [],
         content: [post.content],
+        summary: post.excerpt ? [post.excerpt] : [],
         published: [post.publishedAt.toISOString()],
         category: post.tags,
         "post-status": [post.published ? "published" : "draft"],
@@ -120,6 +119,15 @@ export async function POST(req: NextRequest) {
     : properties.category?.[0] || (title ? "article" : "note");
   const tags = properties.category || [];
   const photos = properties.photo || [];
+  // Micropub `summary` is the standard field for an article excerpt/description.
+  const excerpt = properties.summary?.[0] || null;
+
+  // Schedule for later: a future `mp-scheduled` (or `published`) datetime creates
+  // the post unpublished; the scheduler federates it at that time. (#183)
+  const scheduledRaw = properties["mp-scheduled"]?.[0] || properties.published?.[0];
+  const scheduledForDate = scheduledRaw ? new Date(scheduledRaw) : null;
+  const isScheduled =
+    !!scheduledForDate && !isNaN(scheduledForDate.getTime()) && scheduledForDate.getTime() > Date.now();
 
   if (!content && !photos.length) {
     return NextResponse.json({ error: "content required" }, { status: 400 });
@@ -135,40 +143,20 @@ export async function POST(req: NextRequest) {
       title,
       content,
       contentHtml,
+      excerpt,
       category,
       tags,
       photos,
-      published: properties["post-status"]?.[0] !== "draft",
+      published: properties["post-status"]?.[0] !== "draft" && !isScheduled,
+      ...(isScheduled ? { publishedAt: scheduledForDate!, scheduledFor: scheduledForDate! } : {}),
       apId: `${siteUrl}/post/${slug}`,
     },
   });
 
-  // Federate the post via ActivityPub
+  // Federate + crosspost via the shared publisher (also used by the scheduler).
+  // Fire-and-forget so the 201 isn't blocked on delivery.
   if (post.published) {
-    const { deliverToFollowers } = await import("@/lib/http-signatures");
-    const activity = {
-      "@context": "https://www.w3.org/ns/activitystreams",
-      id: `${siteUrl}/ap/create/${post.id}`,
-      type: "Create",
-      actor: `${siteUrl}/ap/actor`,
-      published: post.publishedAt.toISOString(),
-      object: buildPostObject(post),
-    };
-    deliverToFollowers(activity).catch((err) =>
-      console.error("Failed to federate post:", err)
-    );
-
-    // Cross-post to Bluesky + Threads
-    const { crosspostToBluesky, crosspostToThreads } = await import("@/lib/crosspost");
-    const postUrl = `${siteUrl}/post/${slug}`;
-    crosspostToBluesky(content, postUrl).then((r) => {
-      if (DEBUG && r.success) console.log("Cross-posted to Bluesky:", r.uri);
-      else console.error("Bluesky crosspost failed:", r.error);
-    });
-    crosspostToThreads(content, postUrl).then((r) => {
-      if (DEBUG && r.success) console.log("Cross-posted to Threads:", r.id);
-      else console.error("Threads crosspost failed:", r.error);
-    });
+    void publishPost(post);
   }
 
   return new NextResponse(null, {

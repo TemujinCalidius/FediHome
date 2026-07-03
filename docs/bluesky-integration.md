@@ -86,6 +86,10 @@ When a post has a `blueskyUri` stored (set automatically during crossposting), t
 2. Stores new replies in the `BlueskyReply` table with the author's handle, display name, avatar, and content
 3. These replies are displayed on the post page alongside guest comments and Fediverse interactions
 
+The follower-graph, DM, and notification sync runs automatically every 15 minutes
+via FediHome's built-in scheduler (no cron needed) — tune or disable it with the
+`SCHEDULER_BLUESKY_*` env vars (see `.env.example`).
+
 ## Disabling Crossposting Per Post
 
 When composing a post from the admin panel, each crosspost destination has a toggle. You can disable Bluesky crossposting for individual posts by unchecking it before publishing.

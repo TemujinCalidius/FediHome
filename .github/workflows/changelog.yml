@@ -1,10 +1,24 @@
 name: Changelog
 
-# Require every PR to update CHANGELOG.md (under "## Unreleased"), unless it
-# carries the "skip-changelog" label. Keeps the changelog in lockstep with main.
+# Two gates keeping the changelog trustworthy:
+#   1. "CHANGELOG updated"  — every PR must touch CHANGELOG.md (add an entry
+#      under "## Unreleased"), unless it carries the "skip-changelog" label.
+#   2. "CHANGELOG in sync"  — structural invariants, so released history can
+#      never drift between dev and main again:
+#        * PRs → dev:  stripping "## Unreleased" must leave exactly main's
+#          released sections (plus at most ONE new version section matching
+#          package.json — a release-prep PR). Catches edited/dropped released
+#          headings and entries filed below the fold.
+#        * PRs → main: no "## Unreleased" may remain, and the top version must
+#          match package.json (release prep ran: scripts/prepare-release.mjs).
+#      Deliberate edits to released history (e.g. a typo fix in an old entry)
+#      bypass gate 2 with the "changelog-resync" label.
 on:
   pull_request:
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+    # `edited` fires on a base-branch retarget (e.g. dev → main), which flips
+    # the sync job's mode — without it a stale dev-mode pass could satisfy a
+    # main-merge's checks.
+    types: [opened, synchronize, reopened, labeled, unlabeled, edited]
 
 # Least-privilege token — read the repo + the PR's file list.
 permissions:
@@ -33,4 +47,27 @@ jobs:
           else
             echo "::error::This PR doesn't update CHANGELOG.md. Add an entry under '## Unreleased', or apply the 'skip-changelog' label if no entry is warranted."
             exit 1
+          fi
+
+  changelog-sync:
+    name: CHANGELOG in sync
+    runs-on: ubuntu-latest
+    steps:
+      # Checks out the PR *merge* ref — validates the post-merge result.
+      - uses: actions/checkout@v4
+
+      - name: Check changelog structure against main
+        env:
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+          BASE: ${{ github.base_ref }}
+        run: |
+          if printf ',%s,' "$LABELS" | grep -q ',changelog-resync,'; then
+            echo "changelog-resync label present — skipping the sync check (deliberate history edit)."
+            exit 0
+          fi
+          if [ "$BASE" = "main" ]; then
+            node scripts/check-changelog-sync.mjs release
+          else
+            git fetch --no-tags --depth=1 origin main
+            node scripts/check-changelog-sync.mjs dev --base-ref origin/main
           fi
