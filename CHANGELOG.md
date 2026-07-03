@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Added
+- **The scheduler is now configurable from the admin UI — no restart, no env editing.** A new **Instance settings** screen (`/admin/settings`, linked from the timeline header) lets you toggle the scheduler's jobs (scheduled-post publishing, Bluesky sync) and change their cadences; the scheduler re-reads its configuration every tick, so changes apply within a minute. Saved values live in the database as overrides on top of the `SCHEDULER_*` env defaults — "Use env defaults" reverts. Cadences are clamped to 10s–24h so a typo can't wedge the scheduler. Owner-cookie only (an app token can't reconfigure your instance). First slice of the in-app admin/config panel (#59).
+
 ### Fixed
 - **A crash mid-publish can no longer strand a scheduled post as published-but-undelivered.** Publishing a due scheduled post flips it live *before* delivering (so overlapping runs can't double-post) — but a crash/restart in that window left the post visible on the site while followers never received it, with no retry. A completed delivery attempt is now recorded (`Post.federatedAt`), and the scheduler retries a claimed-but-undelivered scheduled post once, after a 10-minute *quiet* period (anchored to the row's last activity, so a post claimed late after downtime still gets its full grace). Retries can't double-post: federation reuses the same activity id (remote servers dedupe), the Bluesky/Threads crossposts are guarded by persisted markers **re-read at post time**, publish sweeps never overlap in-process, and the retry itself is claimed atomically across instances. (#195)
 - **Scheduled posts now get Bluesky reply-syncing.** The scheduler's publish path never stored the crosspost's `at://` URI (`Post.blueskyUri`), so replies to a *scheduled* post's Bluesky copy were never synced back — the shared publisher now persists it on success (as the immediate-compose path already did), plus the new `threadsPostId` marker.

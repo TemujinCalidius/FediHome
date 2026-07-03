@@ -1,4 +1,4 @@
-import { getSchedulerConfig } from "./scheduler-config";
+import { getSchedulerConfig, getEffectiveSchedulerConfig } from "./scheduler-config";
 import { publishDueScheduledPosts } from "./publish-post";
 import { syncBlueskyGraph } from "./bluesky-graph";
 import { pollBlueskyDMs } from "./bluesky-dm-poll";
@@ -16,21 +16,31 @@ import { syncBlueskyNotifications } from "./bluesky-notifications";
  * the Next bundle those imports are already resolved by the app's bundler,
  * same as the API routes that use them.
  *
+ * Dispatch: one self-scheduling master loop (every 15s) checks each job's
+ * elapsed time against its configured cadence — read per tick through
+ * `getEffectiveSchedulerConfig()` (env defaults + the admin-editable
+ * `SiteSetting` overrides, #59) — so toggles AND cadence changes from
+ * /admin/settings apply within a minute, no restart. Cadences are therefore
+ * quantized to the 15s master tick (a 60s job fires every 60–75s).
+ *
  * Safety in a web server:
  * - every tick is fully try/caught — a job failure can NEVER take the app down;
- * - intervals are unref()'d so they never hold the process open on shutdown;
+ * - the master loop schedules the next tick only after the current one
+ *   finishes, and runPublishTick() additionally carries an in-flight guard, so
+ *   publish sweeps never overlap in-process (a slow delivery racing a later
+ *   retry sweep is how a crosspost could double-fire);
+ * - timers are unref()'d so they never hold the process open on shutdown;
  * - a globalThis guard makes startScheduler() idempotent per process (dev
- *   server restarts / duplicate register calls can't stack intervals);
+ *   server restarts / duplicate register calls can't stack loops);
  * - overlapping instances are safe: publishing claims each post atomically.
- *
- * Both jobs re-check their enabled flag every tick, so SCHEDULER_* toggles
- * (and later, admin-backend settings) take effect without touching intervals.
- * Cadences are read once at boot.
  */
 
 const globalScheduler = globalThis as typeof globalThis & {
   __fedihomeSchedulerStarted?: boolean;
 };
+
+const MASTER_TICK_MS = 15_000;
+const lastRun = { publish: 0, bluesky: 0 };
 
 function log(msg: string) {
   console.log(`[${new Date().toISOString()}] scheduler: ${msg}`);
@@ -42,9 +52,11 @@ let publishTickInFlight = false;
 
 export async function runPublishTick(): Promise<void> {
   if (publishTickInFlight) return;
-  if (!getSchedulerConfig().publishScheduled.enabled) return;
+  // Claim the flag SYNCHRONOUSLY — an await before it would open a suspension
+  // window where two callers both pass the check.
   publishTickInFlight = true;
   try {
+    if (!(await getEffectiveSchedulerConfig()).publishScheduled.enabled) return;
     const n = await publishDueScheduledPosts();
     if (n > 0) log(`published ${n} scheduled post(s)`);
   } catch (err) {
@@ -55,7 +67,7 @@ export async function runPublishTick(): Promise<void> {
 }
 
 export async function runBlueskySyncTick(): Promise<void> {
-  if (!getSchedulerConfig().blueskySync.enabled) return;
+  if (!(await getEffectiveSchedulerConfig()).blueskySync.enabled) return;
   try {
     const g = await syncBlueskyGraph();
     const d = await pollBlueskyDMs();
@@ -66,15 +78,35 @@ export async function runBlueskySyncTick(): Promise<void> {
   }
 }
 
-function everySeconds(seconds: number, tick: () => Promise<void>) {
-  const timer = setInterval(() => void tick(), seconds * 1000);
+async function masterTick(): Promise<void> {
+  const cfg = await getEffectiveSchedulerConfig();
+  const now = Date.now();
+  if (cfg.publishScheduled.enabled && now - lastRun.publish >= cfg.publishScheduled.intervalSec * 1000) {
+    lastRun.publish = now;
+    await runPublishTick();
+  }
+  if (cfg.blueskySync.enabled && now - lastRun.bluesky >= cfg.blueskySync.intervalSec * 1000) {
+    lastRun.bluesky = now;
+    await runBlueskySyncTick();
+  }
+}
+
+function scheduleNext(): void {
+  const timer = setTimeout(async () => {
+    try {
+      await masterTick();
+    } catch (err) {
+      console.error("scheduler: tick failed:", err);
+    }
+    scheduleNext();
+  }, MASTER_TICK_MS);
   // Never keep the server process alive just for the scheduler.
   if (typeof timer.unref === "function") timer.unref();
 }
 
 /**
- * Start the scheduler loops. Idempotent — returns false if this process
- * already started them.
+ * Start the scheduler loop. Idempotent — returns false if this process
+ * already started it.
  */
 export function startScheduler(): boolean {
   if (globalScheduler.__fedihomeSchedulerStarted) return false;
@@ -83,12 +115,17 @@ export function startScheduler(): boolean {
   const cfg = getSchedulerConfig();
   log(
     `starting (in-app) — publish=${cfg.publishScheduled.enabled ? cfg.publishScheduled.intervalSec + "s" : "off"}, ` +
-      `bluesky=${cfg.blueskySync.enabled ? cfg.blueskySync.intervalSec + "s" : "off"}`,
+      `bluesky=${cfg.blueskySync.enabled ? cfg.blueskySync.intervalSec + "s" : "off"}` +
+      ` (env defaults; /admin/settings overrides apply live)`,
   );
 
-  // Run the publish sweep once at startup so due posts don't wait a full tick.
-  void runPublishTick();
-  everySeconds(cfg.publishScheduled.intervalSec, runPublishTick);
-  everySeconds(cfg.blueskySync.intervalSec, runBlueskySyncTick);
+  // Publish sweeps start immediately (due posts shouldn't wait a tick);
+  // the Bluesky sync waits out its first full interval.
+  lastRun.publish = 0;
+  lastRun.bluesky = Date.now();
+
+  const boot = masterTick().catch((err) => console.error("scheduler: tick failed:", err));
+  void boot;
+  scheduleNext();
   return true;
 }
