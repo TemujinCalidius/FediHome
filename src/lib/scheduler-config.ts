@@ -1,13 +1,16 @@
 /**
- * FediHome scheduler configuration (#183).
+ * FediHome scheduler configuration (#183, #59).
  *
- * The in-app scheduler (`src/lib/scheduler.ts`, started by
- * `src/instrumentation.ts`) reads its job cadences
- * from here. TODAY these come from env vars with sensible defaults. When the
- * proper admin backend lands (#59), this function can read DB rows instead
- * (falling back to these defaults) so the cadences are editable in-app — the
- * scheduler consults it, so no scheduler rewrite is needed.
+ * Two layers:
+ *  - `getSchedulerConfig()` — the env-var defaults (SCHEDULER_*), sync.
+ *  - `getEffectiveSchedulerConfig()` — env defaults overlaid with the
+ *    admin-editable overrides stored in `SiteSetting` (`scheduler.*` keys,
+ *    written by /admin/settings), cached for 60s so the scheduler can consult
+ *    it every tick without hammering the DB. Overrides win; deleting an
+ *    override reverts to the env/default value. DB unavailable → env defaults.
  */
+
+import { prisma } from "./db";
 
 export interface SchedulerJobConfig {
   enabled: boolean;
@@ -43,4 +46,73 @@ export function getSchedulerConfig(): SchedulerConfig {
       intervalSec: posNum(process.env.SCHEDULER_BLUESKY_INTERVAL_SEC, 900),
     },
   };
+}
+
+/* ------------------- admin-editable DB overrides (#59) ------------------- */
+
+/** SiteSetting keys the admin settings screen may write, with validation. */
+export const SCHEDULER_SETTING_KEYS = [
+  "scheduler.publish.enabled",
+  "scheduler.publish.intervalSec",
+  "scheduler.bluesky.enabled",
+  "scheduler.bluesky.intervalSec",
+] as const;
+
+export type SchedulerSettingKey = (typeof SCHEDULER_SETTING_KEYS)[number];
+
+// Keep operator mistakes from wedging the scheduler: cadences are clamped to
+// [10s, 24h] — outside that, the override is ignored (env/default wins).
+const MIN_INTERVAL_SEC = 10;
+const MAX_INTERVAL_SEC = 86_400;
+
+function overrideNum(value: string | undefined, fallback: number): number {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  const floored = Math.floor(n);
+  return floored >= MIN_INTERVAL_SEC && floored <= MAX_INTERVAL_SEC ? floored : fallback;
+}
+
+function overrideFlag(value: string | undefined, fallback: boolean): boolean {
+  if (value == null || value === "") return fallback;
+  return value !== "false" && value !== "0";
+}
+
+const CACHE_TTL_MS = 60_000;
+let cache: { at: number; cfg: SchedulerConfig } | null = null;
+
+/** Drop the cache — called after the admin saves settings so they apply on the next tick. */
+export function invalidateSchedulerConfigCache(): void {
+  cache = null;
+}
+
+/**
+ * Env defaults + SiteSetting overrides. Safe to call every scheduler tick
+ * (60s cache); falls back to plain env config if the DB is unreachable.
+ */
+export async function getEffectiveSchedulerConfig(): Promise<SchedulerConfig> {
+  if (cache && Date.now() - cache.at < CACHE_TTL_MS) return cache.cfg;
+
+  const base = getSchedulerConfig();
+  let cfg = base;
+  try {
+    const rows = await prisma.siteSetting.findMany({
+      where: { key: { in: [...SCHEDULER_SETTING_KEYS] } },
+    });
+    const o = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+    cfg = {
+      publishScheduled: {
+        enabled: overrideFlag(o["scheduler.publish.enabled"], base.publishScheduled.enabled),
+        intervalSec: overrideNum(o["scheduler.publish.intervalSec"], base.publishScheduled.intervalSec),
+      },
+      blueskySync: {
+        enabled: overrideFlag(o["scheduler.bluesky.enabled"], base.blueskySync.enabled),
+        intervalSec: overrideNum(o["scheduler.bluesky.intervalSec"], base.blueskySync.intervalSec),
+      },
+    };
+  } catch {
+    return base; // DB down/mid-migration — env defaults, and don't cache the failure
+  }
+
+  cache = { at: Date.now(), cfg };
+  return cfg;
 }
