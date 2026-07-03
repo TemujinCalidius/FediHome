@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.8.0 (2026-07-03)
 
 ### Added
 - **Schedule posts to publish later.** Set a future date/time when composing and FediHome creates the post unpublished, then publishes it — federating a `Create` to your followers and cross-posting to Bluesky/Threads — automatically at that time, via the background scheduler (default check: every 60s). Works from the **web composer** (a "Schedule" date/time picker next to Publish) and from **connected apps** over Micropub (a future `published`/`mp-scheduled` datetime) and `POST /api/compose` (a `scheduledFor` ISO datetime). Scheduled posts are listable via `GET /api/posts?status=scheduled`. Publishing is claimed atomically so overlapping scheduler runs can't double-post. (#183)
