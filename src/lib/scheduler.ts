@@ -36,13 +36,21 @@ function log(msg: string) {
   console.log(`[${new Date().toISOString()}] scheduler: ${msg}`);
 }
 
+// Publish sweeps must never overlap in-process: a slow delivery racing a later
+// tick's retry sweep is how a crosspost could double-fire.
+let publishTickInFlight = false;
+
 export async function runPublishTick(): Promise<void> {
+  if (publishTickInFlight) return;
   if (!getSchedulerConfig().publishScheduled.enabled) return;
+  publishTickInFlight = true;
   try {
     const n = await publishDueScheduledPosts();
     if (n > 0) log(`published ${n} scheduled post(s)`);
   } catch (err) {
     console.error("scheduler: publish-scheduled failed:", err);
+  } finally {
+    publishTickInFlight = false;
   }
 }
 

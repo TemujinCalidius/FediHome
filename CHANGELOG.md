@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- **A crash mid-publish can no longer strand a scheduled post as published-but-undelivered.** Publishing a due scheduled post flips it live *before* delivering (so overlapping runs can't double-post) — but a crash/restart in that window left the post visible on the site while followers never received it, with no retry. A completed delivery attempt is now recorded (`Post.federatedAt`), and the scheduler retries a claimed-but-undelivered scheduled post once, after a 10-minute *quiet* period (anchored to the row's last activity, so a post claimed late after downtime still gets its full grace). Retries can't double-post: federation reuses the same activity id (remote servers dedupe), the Bluesky/Threads crossposts are guarded by persisted markers **re-read at post time**, publish sweeps never overlap in-process, and the retry itself is claimed atomically across instances. (#195)
+- **Scheduled posts now get Bluesky reply-syncing.** The scheduler's publish path never stored the crosspost's `at://` URI (`Post.blueskyUri`), so replies to a *scheduled* post's Bluesky copy were never synced back — the shared publisher now persists it on success (as the immediate-compose path already did), plus the new `threadsPostId` marker.
+
+### Schema
+- New nullable `Post.federatedAt` + `Post.threadsPostId` columns (delivery markers for #195). Additive and non-destructive. **Upgrade with `npm run update`** (it applies `prisma/manual-migrations/2026-07-03-post-delivery-markers.sql` before `db push`), or apply that SQL by hand — **plain `prisma db push` alone is NOT sufficient for this one**: the migration also backfills `federatedAt` for scheduled posts published before the markers existed; without the backfill each of them would be re-crossposted once.
+
 ## 1.8.0 (2026-07-03)
 
 ### Added

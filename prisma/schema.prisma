@@ -42,6 +42,15 @@ model Post {
   // Bluesky crosspost
   blueskyUri  String?  // at:// URI returned from crosspost
 
+  // Threads crosspost id. Written by the shared publisher; doubles as the
+  // idempotency marker so a delivery retry can't double-post to Threads. (#195)
+  threadsPostId String?
+
+  // Set when a scheduled post's delivery attempt (federation + crossposts)
+  // completed. A claimed (published=true) scheduled post with federatedAt null
+  // crashed mid-delivery and is retried once by the scheduler. (#195)
+  federatedAt DateTime?
+
   // Fedi interaction counts (cached)
   likeCount   Int      @default(0)
   boostCount  Int      @default(0)
