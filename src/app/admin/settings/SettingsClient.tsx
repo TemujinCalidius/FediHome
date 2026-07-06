@@ -22,6 +22,8 @@ export default function SettingsClient({
   const [publishInterval, setPublishInterval] = useState(String(effective.publishScheduled.intervalSec));
   const [blueskyEnabled, setBlueskyEnabled] = useState(effective.blueskySync.enabled);
   const [blueskyInterval, setBlueskyInterval] = useState(String(effective.blueskySync.intervalSec));
+  const [deliveryEnabled, setDeliveryEnabled] = useState(effective.deliveryRetry.enabled);
+  const [deliveryInterval, setDeliveryInterval] = useState(String(effective.deliveryRetry.intervalSec));
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [hasOverrides, setHasOverrides] = useState(Object.keys(overrides).length > 0);
@@ -45,6 +47,8 @@ export default function SettingsClient({
       setPublishInterval(String(eff.publishScheduled.intervalSec));
       setBlueskyEnabled(eff.blueskySync.enabled);
       setBlueskyInterval(String(eff.blueskySync.intervalSec));
+      setDeliveryEnabled(eff.deliveryRetry.enabled);
+      setDeliveryInterval(String(eff.deliveryRetry.intervalSec));
       setResult({ ok: true, msg: "Saved — the scheduler applies changes within a minute." });
       return true;
     } catch {
@@ -62,6 +66,8 @@ export default function SettingsClient({
         "scheduler.publish.intervalSec": publishInterval,
         "scheduler.bluesky.enabled": blueskyEnabled ? "true" : "false",
         "scheduler.bluesky.intervalSec": blueskyInterval,
+        "scheduler.delivery.enabled": deliveryEnabled ? "true" : "false",
+        "scheduler.delivery.intervalSec": deliveryInterval,
       })
     ) {
       setHasOverrides(true);
@@ -75,6 +81,8 @@ export default function SettingsClient({
         "scheduler.publish.intervalSec": null,
         "scheduler.bluesky.enabled": null,
         "scheduler.bluesky.intervalSec": null,
+        "scheduler.delivery.enabled": null,
+        "scheduler.delivery.intervalSec": null,
       })
     ) {
       setHasOverrides(false);
@@ -146,6 +154,15 @@ export default function SettingsClient({
           blueskyInterval,
           setBlueskyInterval,
           defaults.blueskySync.intervalSec,
+        )}
+        {jobRow(
+          "Delivery retry",
+          "Retries failed follower deliveries with backoff, so a transiently-down instance still gets your posts.",
+          deliveryEnabled,
+          setDeliveryEnabled,
+          deliveryInterval,
+          setDeliveryInterval,
+          defaults.deliveryRetry.intervalSec,
         )}
 
         <div className="flex items-center gap-3 py-4">
