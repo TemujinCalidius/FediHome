@@ -503,6 +503,11 @@ model SiteSettings {
   contactEmail  String?
   verifiedEmail String?
   accentColor   String?  @default("#3b82f6")
+  // Runtime-editable profile (#201) — overlaid on the site.config.ts env
+  // defaults by getRuntimeProfile(). Null = use the env/default value.
+  actorSummary  String?
+  avatarPath    String?
+  bannerPath    String?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }

@@ -7,6 +7,7 @@ import PostCard from "@/components/blog/PostCard";
 import Pagination from "@/components/ui/Pagination";
 import LandingShowcase from "@/components/home/LandingShowcase";
 import { siteConfig } from "@/../site.config";
+import { getRuntimeProfile } from "@/lib/site-profile";
 
 const POSTS_PER_PAGE = 10;
 
@@ -17,6 +18,7 @@ export default async function HomePage({
 }) {
   const params = await searchParams;
   const page = Math.max(1, parseInt(params.page || "1", 10));
+  const profile = await getRuntimeProfile();
 
   // Hide author follow-ups from the homepage feed — they appear inline on the
   // original post's page instead.
@@ -105,19 +107,19 @@ export default async function HomePage({
           <section className="mb-16">
             <div className="flex items-center gap-4 mb-4">
               <Image
-                src={siteConfig.avatarPath}
-                alt={siteConfig.authorName}
+                src={profile.avatarPath}
+                alt={profile.authorName}
                 width={64}
                 height={64}
                 className="rounded-full ring-2 ring-accent-400/20"
               />
               <h1 className="font-display text-3xl md:text-4xl font-bold text-white">
-                {siteConfig.authorName}
+                {profile.authorName}
               </h1>
             </div>
-            {siteConfig.authorTagline && (
+            {profile.authorTagline && (
               <p className="text-lg text-gray-400 leading-relaxed max-w-2xl">
-                {siteConfig.authorTagline}
+                {profile.authorTagline}
               </p>
             )}
             <p className="text-gray-500 mt-4 leading-relaxed">

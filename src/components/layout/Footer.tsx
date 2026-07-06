@@ -1,8 +1,10 @@
 import { getSiteStats } from "@/lib/tinylytics";
 import { siteConfig } from "@/../site.config";
+import { getRuntimeProfile } from "@/lib/site-profile";
 
 export default async function Footer() {
   const stats = await getSiteStats();
+  const profile = await getRuntimeProfile();
   const { webringUrl, webringLabel, badgeSrc, badgeHref, badgeAlt, fundingUrl, fundingLabel } =
     siteConfig.footer;
   const hasExtras = Boolean(badgeSrc || webringUrl || fundingUrl);
@@ -14,7 +16,7 @@ export default async function Footer() {
         <div className="flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="text-center md:text-left">
             <p className="text-sm text-gray-500">
-              &copy; {new Date().getFullYear()} {siteConfig.authorName}
+              &copy; {new Date().getFullYear()} {profile.authorName}
             </p>
             <p className="text-xs text-gray-600 mt-1">
               Self-owned. Self-hosted. Fediverse-native.
