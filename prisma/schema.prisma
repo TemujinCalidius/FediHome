@@ -307,6 +307,9 @@ model FediPost {
   displayName String?
   avatarUrl   String?
   publishedAt DateTime
+  // Set when a remote Update (edit) was applied to this stored post (#205).
+  // Null = never edited since we stored it.
+  editedAt    DateTime?
   createdAt   DateTime @default(now())
 
   isOutgoing  Boolean  @default(false) // true for posts/replies WE sent
