@@ -16,7 +16,7 @@ function req(params: Record<string, string> = {}): NextRequest {
 }
 
 const row = (over: Record<string, unknown> = {}) => ({
-  slug: "hello", title: "Hello", excerpt: "x", category: "article",
+  id: "post_1", slug: "hello", title: "Hello", excerpt: "x", category: "article",
   photos: [], videos: [], audioPaths: [],
   published: true, publishedAt: new Date("2026-01-02"), updatedAt: new Date("2026-01-03"),
   scheduledFor: null,
@@ -43,7 +43,7 @@ describe("GET /api/posts (My Posts)", () => {
     ] as never);
     const body = await (await GET(req())).json();
     expect(body.posts).toHaveLength(2);
-    expect(body.posts[0]).toMatchObject({ slug: "hello", url: "/post/hello", type: "article", counts: { likes: 2, boosts: 1 } });
+    expect(body.posts[0]).toMatchObject({ id: "post_1", slug: "hello", url: "/post/hello", type: "article", counts: { likes: 2, boosts: 1 } });
     expect(body.posts[1]).toMatchObject({ type: "photo", media: { photos: 2, videos: 0, audio: 0 } });
   });
 
