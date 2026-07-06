@@ -20,6 +20,7 @@ export interface SchedulerJobConfig {
 export interface SchedulerConfig {
   publishScheduled: SchedulerJobConfig;
   blueskySync: SchedulerJobConfig;
+  deliveryRetry: SchedulerJobConfig;
 }
 
 function posNum(value: string | undefined, fallback: number): number {
@@ -45,6 +46,11 @@ export function getSchedulerConfig(): SchedulerConfig {
       enabled: flag(process.env.SCHEDULER_BLUESKY_ENABLED, !!process.env.BLUESKY_HANDLE),
       intervalSec: posNum(process.env.SCHEDULER_BLUESKY_INTERVAL_SEC, 900),
     },
+    // Retry failed follower deliveries (#207). Default: on, every 60s.
+    deliveryRetry: {
+      enabled: flag(process.env.SCHEDULER_DELIVERY_ENABLED, true),
+      intervalSec: posNum(process.env.SCHEDULER_DELIVERY_INTERVAL_SEC, 60),
+    },
   };
 }
 
@@ -56,6 +62,8 @@ export const SCHEDULER_SETTING_KEYS = [
   "scheduler.publish.intervalSec",
   "scheduler.bluesky.enabled",
   "scheduler.bluesky.intervalSec",
+  "scheduler.delivery.enabled",
+  "scheduler.delivery.intervalSec",
 ] as const;
 
 export type SchedulerSettingKey = (typeof SCHEDULER_SETTING_KEYS)[number];
@@ -107,6 +115,10 @@ export async function getEffectiveSchedulerConfig(): Promise<SchedulerConfig> {
       blueskySync: {
         enabled: overrideFlag(o["scheduler.bluesky.enabled"], base.blueskySync.enabled),
         intervalSec: overrideNum(o["scheduler.bluesky.intervalSec"], base.blueskySync.intervalSec),
+      },
+      deliveryRetry: {
+        enabled: overrideFlag(o["scheduler.delivery.enabled"], base.deliveryRetry.enabled),
+        intervalSec: overrideNum(o["scheduler.delivery.intervalSec"], base.deliveryRetry.intervalSec),
       },
     };
   } catch {

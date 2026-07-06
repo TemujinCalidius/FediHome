@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- **Follower deliveries that fail are now retried instead of silently lost.** Sending a post/reply/edit/delete to your followers was fire-and-forget: if a follower's instance was briefly down, rate-limiting, or 5xx'ing at that moment, that follower simply never got it — no retry, no record. Failed deliveries are now persisted and retried by the scheduler with exponential backoff (2 min → 10 min → 1 h → 6 h → 24 h, then it gives up), each retry claimed atomically so overlapping runs can't double-send, and the re-send reuses the identical activity (stable id → remote servers dedupe if it actually landed). Terminal/old rows are pruned automatically. The retry job appears as a third toggle on `/admin/settings` (`SCHEDULER_DELIVERY_*`). (#207)
 - **Edit your profile after setup — name, bio, tagline, summary, accent colour, avatar and banner.** Until now the owner's profile came only from env vars (with the avatar/banner paths hardcoded), so there was no way to change it short of editing files and restarting. A new `update_profile` admin action (`manage` scope + owner cookie) writes the changes to the database and they take effect immediately — no restart — across the **ActivityPub actor**, `GET /api/account`, **and your own site** (homepage, about page, profile page, footer, RSS), all now reading a `SiteSettings` overlay on the env defaults. An actor `Update` is federated so Mastodon and friends refresh their cached copy. Avatar/banner come from a prior `POST /api/media` upload; image paths are validated as same-origin uploads (no external URLs or path traversal). Backs the native apps' "Edit Profile" screen and moves the in-app admin panel forward. (#201, part of #59)
 
 ### Changed
@@ -14,6 +15,7 @@
 
 ### Schema
 - `SiteSettings` gains nullable `actorSummary` / `avatarPath` / `bannerPath` columns backing post-setup profile editing (#201). Additive and non-destructive. **After upgrading, run `npx prisma db push`** (or apply `prisma/manual-migrations/2026-07-06-sitesettings-profile.sql` — `npm run update` does both).
+- New `FailedDelivery` table backing the delivery retry queue (#207). Additive and non-destructive (a brand-new table). **After upgrading, run `npx prisma db push`** (or apply `prisma/manual-migrations/2026-07-06-failed-delivery.sql` — `npm run update` does both).
 
 ## 1.9.0 (2026-07-06)
 

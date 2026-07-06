@@ -514,6 +514,22 @@ model SiteSettings {
 
 // === Key-value settings (notification read state, etc.) ===
 
+model FailedDelivery {
+  id          String    @id @default(cuid())
+  inbox       String
+  activityId  String
+  activity    String // the full activity JSON, re-sent verbatim so the id is stable (remote servers dedupe)
+  attempts    Int       @default(0)
+  nextRetryAt DateTime
+  lastError   String?
+  failedAt    DateTime? // set when we give up (terminal); null = still retrying
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([activityId, inbox])
+  @@index([nextRetryAt])
+}
+
 model SiteSetting {
   key       String   @id
   value     String
