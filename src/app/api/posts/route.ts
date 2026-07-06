@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { authenticateApiRequest } from "@/lib/auth";
+import { parseCursor, cursorWhere, encodeCursor, CURSOR_ORDER } from "@/lib/cursor";
 
 /**
  * List the owner's OWN posts — the backing data for a native "My Posts" content
@@ -18,7 +19,7 @@ export async function GET(req: NextRequest) {
   }
 
   const sp = req.nextUrl.searchParams;
-  const cursor = sp.get("cursor"); // publishedAt ISO
+  const cursor = parseCursor(sp.get("cursor")); // "<iso>_<id>"
   const status = sp.get("status") || "all"; // all | published | draft | scheduled
   const type = sp.get("type"); // note | article | journal | photo | video | audio
   const limitRaw = Number(sp.get("limit"));
@@ -26,7 +27,7 @@ export async function GET(req: NextRequest) {
     Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(Math.floor(limitRaw), MAX_LIMIT) : DEFAULT_LIMIT;
 
   const where: Record<string, unknown> = {};
-  if (cursor) where.publishedAt = { lt: new Date(cursor) };
+  if (cursor) Object.assign(where, cursorWhere(cursor));
   if (status === "published") where.published = true;
   else if (status === "scheduled") { where.published = false; where.scheduledFor = { not: null }; }
   else if (status === "draft") { where.published = false; where.scheduledFor = null; }
@@ -37,7 +38,7 @@ export async function GET(req: NextRequest) {
 
   const rows = await prisma.post.findMany({
     where,
-    orderBy: { publishedAt: "desc" },
+    orderBy: CURSOR_ORDER,
     take: limit + 1,
     select: {
       id: true, slug: true, title: true, excerpt: true, category: true,
@@ -75,6 +76,7 @@ export async function GET(req: NextRequest) {
     };
   });
 
-  const nextCursor = hasMore ? page[page.length - 1].publishedAt.toISOString() : null;
+  const last = page[page.length - 1];
+  const nextCursor = hasMore ? encodeCursor(last.publishedAt, last.id) : null;
   return NextResponse.json({ posts, nextCursor });
 }
