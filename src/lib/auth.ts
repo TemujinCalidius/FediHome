@@ -11,6 +11,20 @@ export function safeCompare(a: string, b: string): boolean {
   }
 }
 
+/**
+ * SHA-256 lookup hash for HIGH-ENTROPY random secrets ONLY — OAuth
+ * authorization codes and bearer/Micropub tokens (≥ 64 hex chars, minted with
+ * crypto.randomBytes). A fast hash is the correct (and required) choice here: it
+ * gives O(1) DB lookup by `tokenHash` and there's no offline-guessing risk when
+ * the input has ~256 bits of entropy. It is NOT a password hash.
+ *
+ * INVARIANT: never pass a human-chosen/low-entropy secret to this. The owner's
+ * `ADMIN_SECRET` is never hashed (it's compared with timingSafeEqual, and is
+ * itself a 64–128-hex random value); admin session ids are random + HMAC-bound.
+ * If a memorable password is ever introduced, hash it with scrypt/argon2, not
+ * this. (CodeQL js/insufficient-password-hash flags the sha256 call — a false
+ * positive under this invariant; alert #30 dismissed accordingly.)
+ */
 export function hashToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
 }

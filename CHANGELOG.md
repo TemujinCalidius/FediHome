@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Changed
+- Bumped `tsx` 4.22.5 → 4.23.0 (dev dependency; sandbox-verified). Documented the `hashToken` invariant in `src/lib/auth.ts` (it only ever hashes high-entropy random tokens — a fast SHA-256 lookup hash, never a password) and dismissed the corresponding CodeQL `js/insufficient-password-hash` alert as a false positive.
+
 ### Fixed
 - **Feed pagination no longer skips posts that share a timestamp at a page boundary.** The timeline and `/api/posts` paged on `publishedAt` alone with a strict `<`, so when the last post of one page and the first of the next had the exact same millisecond `publishedAt` (a batched/scheduled publish, a bulk import), every post at that timestamp was excluded from the next page and silently vanished from the feed. Pagination now uses a compound `(publishedAt, id)` keyset cursor with a unique tiebreak. Existing (plain-timestamp) cursors from in-flight clients still work. (#206)
 - **Editing a post via a connected app no longer wipes its media, and the post id is now available to edit it.** Two gaps blocked native "edit my post": `GET /api/posts` didn't return each post's `id` (only its slug), so a client had nothing to pass to the edit endpoint; and `POST /api/compose` with `editingPostId` mapped omitted media straight to empty arrays, so a title/content-only edit **destroyed** the post's photos, videos, and audio. Now `/api/posts` items include `id`, and an edit only touches a media group when it's provided — omit `photos` to leave them untouched, or send `[]` to clear them (the same rule for videos and audio). Preserved media is also carried on the federated `Update`, so remote copies keep their attachments too. (#202)
