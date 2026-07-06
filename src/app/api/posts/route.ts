@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
     orderBy: { publishedAt: "desc" },
     take: limit + 1,
     select: {
-      slug: true, title: true, excerpt: true, category: true,
+      id: true, slug: true, title: true, excerpt: true, category: true,
       photos: true, videos: true, audioPaths: true,
       published: true, publishedAt: true, updatedAt: true, scheduledFor: true,
       likeCount: true, boostCount: true,
@@ -58,6 +58,7 @@ export async function GET(req: NextRequest) {
     const kind = photos ? "photo" : videos ? "video" : audio ? "audio" : p.category;
     const status = p.published ? "published" : p.scheduledFor ? "scheduled" : "draft";
     return {
+      id: p.id,
       slug: p.slug,
       url: `/post/${p.slug}`,
       title: p.title,

@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- **Editing a post via a connected app no longer wipes its media, and the post id is now available to edit it.** Two gaps blocked native "edit my post": `GET /api/posts` didn't return each post's `id` (only its slug), so a client had nothing to pass to the edit endpoint; and `POST /api/compose` with `editingPostId` mapped omitted media straight to empty arrays, so a title/content-only edit **destroyed** the post's photos, videos, and audio. Now `/api/posts` items include `id`, and an edit only touches a media group when it's provided — omit `photos` to leave them untouched, or send `[]` to clear them (the same rule for videos and audio). Preserved media is also carried on the federated `Update`, so remote copies keep their attachments too. (#202)
+
 ## 1.9.0 (2026-07-06)
 
 ### Added

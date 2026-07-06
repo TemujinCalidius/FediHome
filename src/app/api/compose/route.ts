@@ -6,6 +6,7 @@ import { crosspostToBluesky, crosspostReplyToBluesky, crosspostToThreads, crossp
 import { sanitizeHtml } from "@/lib/sanitize";
 import { parseMentions, linkMentions, buildApMentionTags, collectMentionInboxes } from "@/lib/mentions";
 import { imageAttachment } from "@/lib/ap-post";
+import { buildMediaUpdate } from "@/lib/post-media";
 import path from "path";
 
 const siteUrl = process.env.SITE_URL || "http://localhost:3000";
@@ -604,14 +605,10 @@ async function updatePostHandler(postId: string, input: EditInput) {
 
   const isArticle = !!input.title?.trim();
   const tags = extractHashtags(input.content);
-  const photoUrls = (input.photos || []).map((p) => p.url);
-  const photoCaptions = (input.photos || []).map((p) => p.alt || "");
-  const videoUrls = (input.videos || []).map((v) => v.url);
-  const videoTitles = (input.videos || []).map((v) => v.title || "");
-  const videoThumbnails = (input.videos || []).map((v) => v.thumbnailUrl || "");
-  const audioPaths = (input.audios || []).map((a) => a.url);
-  const audioTitles = (input.audios || []).map((a) => a.title || "");
-  const audioCovers = (input.audios || []).map((a) => a.coverImage || "");
+  // Media edits are OPT-IN (#202): an omitted field leaves the stored media
+  // untouched (so a title/content-only edit can't wipe a post's photos/video/
+  // audio); an explicit empty array clears it. See buildMediaUpdate.
+  const mediaData = buildMediaUpdate(input);
 
   // Parse @mentions for the new content
   const mentions = await parseMentions(input.content);
@@ -643,14 +640,7 @@ async function updatePostHandler(postId: string, input: EditInput) {
       excerpt: input.description?.trim() || null,
       category: isArticle ? "article" : existing.category,
       tags,
-      photos: photoUrls,
-      photoCaptions,
-      videos: videoUrls,
-      videoTitles,
-      videoThumbnails,
-      audioPaths,
-      audioTitles,
-      audioCovers,
+      ...mediaData,
     },
   });
 
@@ -662,18 +652,23 @@ async function updatePostHandler(postId: string, input: EditInput) {
   } else {
     apContent = contentHtml;
   }
-  if (input.videos && input.videos.length > 0) {
-    const videoLinks = input.videos
-      .map((v) => `<p><a href="${v.url}" rel="nofollow noopener noreferrer">${v.url}</a></p>`)
+  // Federate the EFFECTIVE (post-update) media, not the raw input — so an edit
+  // that omitted a media field still carries the preserved attachments in the
+  // Update, instead of dropping them on the remote copy (#202).
+  const effPhotos = updated.photos.map((url, i) => ({ url, alt: updated.photoCaptions[i] || "" }));
+  const effAudios = updated.audioPaths.map((url, i) => ({ url, title: updated.audioTitles[i] || "" }));
+  if (updated.videos.length > 0) {
+    const videoLinks = updated.videos
+      .map((url) => `<p><a href="${url}" rel="nofollow noopener noreferrer">${url}</a></p>`)
       .join("\n");
     apContent = `${apContent}\n${videoLinks}`;
   }
 
   const apImageAttachments = [
-    ...(updated.coverImage && !(input.photos || []).some((p) => p.url === updated.coverImage)
+    ...(updated.coverImage && !effPhotos.some((p) => p.url === updated.coverImage)
       ? [imageAttachment(updated.coverImage)]
       : []),
-    ...(input.photos || []).map((p) => {
+    ...effPhotos.map((p) => {
       const url = p.url.startsWith("http") ? p.url : `${siteUrl}${p.url}`;
       const ext = url.split(".").pop()?.toLowerCase() || "jpg";
       const mimeMap: Record<string, string> = {
@@ -683,7 +678,7 @@ async function updatePostHandler(postId: string, input: EditInput) {
       return { type: "Image", mediaType: mimeMap[ext] || "image/jpeg", url, name: p.alt || "" };
     }),
   ];
-  const apAudioAttachments = (input.audios || []).map((a) => {
+  const apAudioAttachments = effAudios.map((a) => {
     const url = a.url.startsWith("http") ? a.url : `${siteUrl}${a.url}`;
     return { type: "Document", mediaType: "audio/mpeg", url, name: a.title || "" };
   });
