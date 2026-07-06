@@ -102,6 +102,17 @@ export async function POST(req: NextRequest) {
       }
       break;
 
+    case "Update":
+      // A remote edit of a Note/Article we may already store (#205). Without
+      // this, edits made on the origin instance never apply here.
+      if (
+        activity.object?.type === "Note" ||
+        activity.object?.type === "Article"
+      ) {
+        await handleUpdateNote(actorUri, activity.object);
+      }
+      break;
+
     case "Delete":
       // Handle deletes silently
       break;
@@ -489,6 +500,65 @@ async function recordIncomingReply(opts: {
     type: "reply",
     icon: info.avatarUrl || undefined,
   }).catch(() => {});
+}
+
+/**
+ * Incoming `Update(Note|Article)` — a remote edit of content we already store
+ * (#205). Re-derives the stored content exactly like `handleNote` (title
+ * escape + sanitizeHtml + attachments) and stamps `editedAt`. An object we
+ * never stored is ignored (matching Mastodon: no create-from-Update).
+ *
+ * Ownership gate: the HTTP signature + actorMatchesSigner bind the request to
+ * the actor's HOST, not the actor — so we additionally require the Update's
+ * actor to BE the stored author, or any signed actor on the same host could
+ * rewrite our cached copy of someone else's post.
+ */
+async function handleUpdateNote(actorUri: string, note: Record<string, unknown>) {
+  const apId = (note.id as string) || "";
+  if (!apId) return;
+
+  const stored = await prisma.fediPost.findUnique({ where: { apId } });
+
+  if (stored && stored.actorUri !== actorUri) {
+    console.warn(
+      `AP inbox: Update actor mismatch (actor=${encodeURIComponent(actorUri)} stored=${encodeURIComponent(stored.actorUri)})`
+    );
+    return;
+  }
+
+  // Mastodon sends the edit time as `updated`; fall back to "now". Clamp to
+  // <= now — the value is remote-controlled, and a future-dated edit stamp
+  // shouldn't be trustable by anything that later displays or sorts on it.
+  const now = new Date();
+  const updatedRaw = note.updated ? new Date(note.updated as string) : now;
+  const editedAt = isNaN(updatedRaw.getTime()) || updatedRaw > now ? now : updatedRaw;
+
+  if (stored) {
+    const { urls: mediaUrls, types: mediaTypes } = await processAttachments(
+      note.attachment as unknown[] | undefined
+    );
+    const articleTitle = typeof note.name === "string" ? note.name.trim() : "";
+    const body = (note.content as string) || "";
+    const rawContent = articleTitle
+      ? `<h2>${escapeText(articleTitle)}</h2>${body}`
+      : body;
+    const content = sanitizeHtml(rawContent);
+
+    await prisma.fediPost.update({
+      where: { apId },
+      data: { content, contentHtml: content, mediaUrls, mediaTypes, editedAt },
+    });
+    if (DEBUG) console.log(`AP inbox: applied Update to ${encodeURIComponent(apId)}`);
+  }
+
+  // An edited reply to OUR content also lives in FediInteraction rows (the
+  // bell/thread copy) — and for non-followed repliers that's the ONLY copy.
+  // sourceApId isn't unique, so updateMany; the actorUri filter keeps the
+  // ownership gate on this path too.
+  await prisma.fediInteraction.updateMany({
+    where: { sourceApId: apId, actorUri, type: "reply" },
+    data: { content: sanitizeHtml((note.content as string) || "") },
+  });
 }
 
 async function handleNote(actorUri: string, note: Record<string, unknown>) {
