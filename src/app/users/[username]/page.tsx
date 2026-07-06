@@ -4,6 +4,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/db";
 import type { Metadata } from "next";
 import { siteConfig } from "@/../site.config";
+import { getRuntimeProfile } from "@/lib/site-profile";
 
 const siteUrl = siteConfig.url;
 const fediHandle = siteConfig.fediHandle;
@@ -16,13 +17,15 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { username } = await params;
   if (username !== fediHandle) return { title: "Not Found" };
+  const profile = await getRuntimeProfile();
+  const desc = profile.authorBio || profile.authorTagline || "Follow me on the Fediverse.";
   return {
-    title: `${siteConfig.authorName} (@${fediHandle}@${siteDomain})`,
-    description: siteConfig.authorBio || siteConfig.authorTagline || "Follow me on the Fediverse.",
+    title: `${profile.authorName} (@${fediHandle}@${siteDomain})`,
+    description: desc,
     openGraph: {
-      title: `${siteConfig.authorName} (@${fediHandle}@${siteDomain})`,
-      description: siteConfig.authorBio || siteConfig.authorTagline || "Follow me on the Fediverse.",
-      images: [{ url: siteConfig.avatarPath, width: 400, height: 400 }],
+      title: `${profile.authorName} (@${fediHandle}@${siteDomain})`,
+      description: desc,
+      images: [{ url: profile.avatarPath, width: 400, height: 400 }],
     },
   };
 }
@@ -35,10 +38,11 @@ export default async function UserProfilePage({
   const { username } = await params;
   if (username !== fediHandle) notFound();
 
-  const [postCount, followerCount, followingCount] = await Promise.all([
+  const [postCount, followerCount, followingCount, profile] = await Promise.all([
     prisma.post.count({ where: { inReplyToPostId: null } }),
     prisma.fediFollower.count(),
     prisma.fediFollowing.count(),
+    getRuntimeProfile(),
   ]);
 
   return (
@@ -51,8 +55,8 @@ export default async function UserProfilePage({
         <div className="px-6 pb-6">
           <div className="-mt-16 mb-4">
             <Image
-              src={siteConfig.avatarPath}
-              alt={siteConfig.authorName}
+              src={profile.avatarPath}
+              alt={profile.authorName}
               width={120}
               height={120}
               className="rounded-full border-4 border-white dark:border-neutral-900"
@@ -60,14 +64,14 @@ export default async function UserProfilePage({
           </div>
 
           <h1 className="text-2xl font-bold text-neutral-900 dark:text-white">
-            {siteConfig.authorName}
+            {profile.authorName}
           </h1>
           <p className="text-neutral-500 dark:text-neutral-400 text-sm">
             @{fediHandle}@{siteDomain}
           </p>
 
           <p className="mt-3 text-neutral-700 dark:text-neutral-300 text-sm leading-relaxed">
-            {siteConfig.authorBio || siteConfig.authorTagline || siteConfig.description}
+            {profile.authorBio || profile.authorTagline || siteConfig.description}
           </p>
 
           {/* Stats */}

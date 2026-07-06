@@ -1,8 +1,10 @@
 import { prisma } from "@/lib/db";
 import { siteConfig } from "@/../site.config";
+import { getRuntimeProfile } from "@/lib/site-profile";
 
 export async function GET() {
   const siteUrl = siteConfig.url;
+  const profile = await getRuntimeProfile();
 
   const posts = await prisma.post.findMany({
     where: { published: true, inReplyToPostId: null },
@@ -87,7 +89,7 @@ export async function GET() {
   const feed = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
-    <title>${xml(siteConfig.authorName)}</title>
+    <title>${xml(profile.authorName)}</title>
     <link>${siteUrl}</link>
     <description>${xml(siteConfig.description)}</description>
     <language>en-au</language>
