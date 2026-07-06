@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { authenticateApiRequest } from "@/lib/auth";
 import { sanitizeHtml } from "@/lib/sanitize";
+import { parseCursor, cursorWhere, encodeCursor, CURSOR_ORDER } from "@/lib/cursor";
 
 const PAGE_SIZE = 20;
 
@@ -11,13 +12,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const cursor = req.nextUrl.searchParams.get("cursor"); // publishedAt ISO string
+  const cursor = parseCursor(req.nextUrl.searchParams.get("cursor")); // "<iso>_<id>"
   const showReplies = req.nextUrl.searchParams.get("replies") === "1";
   const showBoosts = req.nextUrl.searchParams.get("boosts") === "1";
 
   const where: Record<string, unknown> = {};
   if (cursor) {
-    where.publishedAt = { lt: new Date(cursor) };
+    Object.assign(where, cursorWhere(cursor));
   }
   if (!showReplies) {
     where.inReplyTo = null;
@@ -28,7 +29,7 @@ export async function GET(req: NextRequest) {
 
   const posts = await prisma.fediPost.findMany({
     where,
-    orderBy: { publishedAt: "desc" },
+    orderBy: CURSOR_ORDER,
     take: PAGE_SIZE + 1, // fetch one extra to check if there's more
   });
 
@@ -40,7 +41,8 @@ export async function GET(req: NextRequest) {
     ...p,
     contentHtml: p.contentHtml ? sanitizeHtml(p.contentHtml) : null,
   }));
-  const nextCursor = hasMore ? page[page.length - 1].publishedAt.toISOString() : null;
+  const last = page[page.length - 1];
+  const nextCursor = hasMore ? encodeCursor(last.publishedAt, last.id) : null;
 
   return NextResponse.json({
     posts: JSON.parse(JSON.stringify(safePage)),
