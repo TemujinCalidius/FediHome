@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.9.0 (2026-07-06)
 
 ### Added
 - **The scheduler is now configurable from the admin UI — no restart, no env editing.** A new **Instance settings** screen (`/admin/settings`, linked from the timeline header) lets you toggle the scheduler's jobs (scheduled-post publishing, Bluesky sync) and change their cadences; the scheduler re-reads its configuration every tick, so changes apply within a minute. Saved values live in the database as overrides on top of the `SCHEDULER_*` env defaults — "Use env defaults" reverts. Cadences are clamped to 10s–24h so a typo can't wedge the scheduler. Owner-cookie only (an app token can't reconfigure your instance). First slice of the in-app admin/config panel (#59).
