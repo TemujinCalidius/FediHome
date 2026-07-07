@@ -22,10 +22,11 @@ beforeEach(() => {
 });
 
 describe("getSchedulerConfig", () => {
-  it("defaults: publish on/60s, bluesky off (unconfigured)/900s", () => {
+  it("defaults: publish on/60s, bluesky off (unconfigured)/900s, delivery on/60s", () => {
     expect(getSchedulerConfig()).toEqual({
       publishScheduled: { enabled: true, intervalSec: 60 },
       blueskySync: { enabled: false, intervalSec: 900 },
+      deliveryRetry: { enabled: true, intervalSec: 60 },
     });
   });
 

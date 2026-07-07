@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { authenticateApiRequest } from "@/lib/auth";
 import { siteConfig } from "@/../site.config";
+import { getRuntimeProfile } from "@/lib/site-profile";
 
 /**
  * The owner's identity + instance info — the app's "me". Lets a connected app
@@ -13,13 +14,14 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const [fediFollowers, bskyFollowers, fediFollowing, bskyFollowing, posts] =
+  const [fediFollowers, bskyFollowers, fediFollowing, bskyFollowing, posts, profile] =
     await Promise.all([
       prisma.fediFollower.count(),
       prisma.blueskyFollower.count(),
       prisma.fediFollowing.count(),
       prisma.blueskyFollowing.count(),
       prisma.post.count({ where: { published: true } }),
+      getRuntimeProfile(),
     ]);
 
   return NextResponse.json({
@@ -29,10 +31,13 @@ export async function GET(req: NextRequest) {
     domain: siteConfig.fediDomain,
     fediAddress: siteConfig.fediAddress,
     name: siteConfig.name,
-    authorName: siteConfig.authorName,
-    summary: siteConfig.actorSummary,
-    avatar: `${siteConfig.url}${siteConfig.avatarPath}`,
-    banner: `${siteConfig.url}${siteConfig.bannerPath}`,
+    authorName: profile.authorName,
+    bio: profile.authorBio,
+    tagline: profile.authorTagline,
+    summary: profile.actorSummary,
+    accentColor: profile.accentColor,
+    avatar: `${siteConfig.url}${profile.avatarPath}`,
+    banner: `${siteConfig.url}${profile.bannerPath}`,
     counts: {
       followers: fediFollowers + bskyFollowers,
       following: fediFollowing + bskyFollowing,

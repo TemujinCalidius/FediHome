@@ -1,6 +1,7 @@
 import { createFederation, MemoryKvStore } from "@fedify/fedify";
 import { prisma } from "./db";
 import { siteConfig } from "@/../site.config";
+import { getRuntimeProfile } from "./site-profile";
 import crypto from "crypto";
 
 const siteUrl = siteConfig.url;
@@ -38,9 +39,21 @@ export async function ensureActorKeys(): Promise<{
   return { publicKey, privateKey };
 }
 
+/** Guess an image mediaType from a path extension (default image/jpeg). */
+function imageMediaType(path: string): string {
+  const ext = path.split(".").pop()?.toLowerCase() || "";
+  const map: Record<string, string> = {
+    png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
+    webp: "image/webp", gif: "image/gif",
+  };
+  return map[ext] || "image/jpeg";
+}
+
 // Get the actor profile JSON
 export async function getActorProfile() {
   const keys = await ensureActorKeys();
+  // Runtime-editable profile (#201) overlaid on env defaults.
+  const profile = await getRuntimeProfile();
 
   return {
     "@context": [
@@ -50,8 +63,8 @@ export async function getActorProfile() {
     id: `${siteUrl}/ap/actor`,
     type: "Person",
     preferredUsername: handle,
-    name: siteConfig.authorName,
-    summary: siteConfig.actorSummary,
+    name: profile.authorName,
+    summary: profile.actorSummary,
     url: siteUrl,
     manuallyApprovesFollowers: false,
     discoverable: true,
@@ -64,13 +77,13 @@ export async function getActorProfile() {
     },
     icon: {
       type: "Image",
-      mediaType: "image/png",
-      url: `${siteUrl}${siteConfig.avatarPath}`,
+      mediaType: imageMediaType(profile.avatarPath),
+      url: `${siteUrl}${profile.avatarPath}`,
     },
     image: {
       type: "Image",
-      mediaType: "image/webp",
-      url: `${siteUrl}${siteConfig.bannerPath}`,
+      mediaType: imageMediaType(profile.bannerPath),
+      url: `${siteUrl}${profile.bannerPath}`,
     },
     publicKey: {
       id: `${siteUrl}/ap/actor#main-key`,

@@ -3,6 +3,7 @@ import { publishDueScheduledPosts } from "./publish-post";
 import { syncBlueskyGraph } from "./bluesky-graph";
 import { pollBlueskyDMs } from "./bluesky-dm-poll";
 import { syncBlueskyNotifications } from "./bluesky-notifications";
+import { retryFailedDeliveries } from "./delivery-retry";
 
 /**
  * FediHome's periodic jobs (publishing due scheduled posts #183, Bluesky sync),
@@ -40,7 +41,7 @@ const globalScheduler = globalThis as typeof globalThis & {
 };
 
 const MASTER_TICK_MS = 15_000;
-const lastRun = { publish: 0, bluesky: 0 };
+const lastRun = { publish: 0, bluesky: 0, delivery: 0 };
 
 function log(msg: string) {
   console.log(`[${new Date().toISOString()}] scheduler: ${msg}`);
@@ -78,6 +79,18 @@ export async function runBlueskySyncTick(): Promise<void> {
   }
 }
 
+export async function runDeliveryRetryTick(): Promise<void> {
+  if (!(await getEffectiveSchedulerConfig()).deliveryRetry.enabled) return;
+  try {
+    const r = await retryFailedDeliveries();
+    if (r.claimed > 0 || r.pruned > 0) {
+      log(`delivery-retry: ${r.delivered} delivered, ${r.gaveUp} gave up, ${r.claimed} tried, ${r.pruned} pruned`);
+    }
+  } catch (err) {
+    console.error("scheduler: delivery-retry failed:", err);
+  }
+}
+
 async function masterTick(): Promise<void> {
   const cfg = await getEffectiveSchedulerConfig();
   const now = Date.now();
@@ -88,6 +101,10 @@ async function masterTick(): Promise<void> {
   if (cfg.blueskySync.enabled && now - lastRun.bluesky >= cfg.blueskySync.intervalSec * 1000) {
     lastRun.bluesky = now;
     await runBlueskySyncTick();
+  }
+  if (cfg.deliveryRetry.enabled && now - lastRun.delivery >= cfg.deliveryRetry.intervalSec * 1000) {
+    lastRun.delivery = now;
+    await runDeliveryRetryTick();
   }
 }
 
@@ -115,14 +132,16 @@ export function startScheduler(): boolean {
   const cfg = getSchedulerConfig();
   log(
     `starting (in-app) — publish=${cfg.publishScheduled.enabled ? cfg.publishScheduled.intervalSec + "s" : "off"}, ` +
-      `bluesky=${cfg.blueskySync.enabled ? cfg.blueskySync.intervalSec + "s" : "off"}` +
+      `bluesky=${cfg.blueskySync.enabled ? cfg.blueskySync.intervalSec + "s" : "off"}, ` +
+      `delivery=${cfg.deliveryRetry.enabled ? cfg.deliveryRetry.intervalSec + "s" : "off"}` +
       ` (env defaults; /admin/settings overrides apply live)`,
   );
 
-  // Publish sweeps start immediately (due posts shouldn't wait a tick);
-  // the Bluesky sync waits out its first full interval.
+  // Publish sweeps start immediately (due posts shouldn't wait a tick); the
+  // Bluesky sync + delivery retry wait out their first full interval.
   lastRun.publish = 0;
   lastRun.bluesky = Date.now();
+  lastRun.delivery = Date.now();
 
   const boot = masterTick().catch((err) => console.error("scheduler: tick failed:", err));
   void boot;

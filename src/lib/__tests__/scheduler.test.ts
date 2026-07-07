@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const {
   getSchedulerConfig, getEffectiveSchedulerConfig,
-  publishDueScheduledPosts, syncBlueskyGraph, pollBlueskyDMs, syncBlueskyNotifications,
+  publishDueScheduledPosts, syncBlueskyGraph, pollBlueskyDMs, syncBlueskyNotifications, retryFailedDeliveries,
 } = vi.hoisted(() => ({
   getSchedulerConfig: vi.fn(),
   getEffectiveSchedulerConfig: vi.fn(),
@@ -10,18 +10,21 @@ const {
   syncBlueskyGraph: vi.fn(),
   pollBlueskyDMs: vi.fn(),
   syncBlueskyNotifications: vi.fn(),
+  retryFailedDeliveries: vi.fn(),
 }));
 vi.mock("@/lib/scheduler-config", () => ({ getSchedulerConfig, getEffectiveSchedulerConfig }));
 vi.mock("@/lib/publish-post", () => ({ publishDueScheduledPosts }));
 vi.mock("@/lib/bluesky-graph", () => ({ syncBlueskyGraph }));
 vi.mock("@/lib/bluesky-dm-poll", () => ({ pollBlueskyDMs }));
 vi.mock("@/lib/bluesky-notifications", () => ({ syncBlueskyNotifications }));
+vi.mock("@/lib/delivery-retry", () => ({ retryFailedDeliveries }));
 
-import { startScheduler, runPublishTick, runBlueskySyncTick } from "@/lib/scheduler";
+import { startScheduler, runPublishTick, runBlueskySyncTick, runDeliveryRetryTick } from "@/lib/scheduler";
 
 const cfg = (over: Record<string, unknown> = {}) => ({
   publishScheduled: { enabled: true, intervalSec: 60 },
   blueskySync: { enabled: true, intervalSec: 900 },
+  deliveryRetry: { enabled: false, intervalSec: 60 },
   ...over,
 });
 
@@ -35,6 +38,7 @@ beforeEach(() => {
   syncBlueskyGraph.mockResolvedValue({ followers: 1, following: 2 });
   pollBlueskyDMs.mockResolvedValue({ messages: 0 });
   syncBlueskyNotifications.mockResolvedValue({ pushed: 0 });
+  retryFailedDeliveries.mockResolvedValue({ claimed: 0, delivered: 0, gaveUp: 0, pruned: 0 });
 });
 
 afterEach(() => {
@@ -92,6 +96,29 @@ describe("in-app scheduler (#183/#59)", () => {
     startScheduler();
     await vi.advanceTimersByTimeAsync(3_600_000);
     expect(syncBlueskyGraph).not.toHaveBeenCalled();
+  });
+
+  it("dispatches the delivery-retry job on its cadence when enabled (#207)", async () => {
+    getEffectiveSchedulerConfig.mockResolvedValue(cfg({ deliveryRetry: { enabled: true, intervalSec: 60 } }));
+    startScheduler();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(retryFailedDeliveries).toHaveBeenCalled();
+  });
+
+  it("never runs delivery retry when the job is disabled", async () => {
+    // cfg() defaults deliveryRetry off.
+    startScheduler();
+    await vi.advanceTimersByTimeAsync(600_000);
+    expect(retryFailedDeliveries).not.toHaveBeenCalled();
+  });
+
+  it("runDeliveryRetryTick swallows a failure (web-server safety)", async () => {
+    getEffectiveSchedulerConfig.mockResolvedValue(cfg({ deliveryRetry: { enabled: true, intervalSec: 60 } }));
+    retryFailedDeliveries.mockRejectedValue(new Error("db down"));
+    const consoleErr = vi.spyOn(console, "error").mockImplementation(() => {});
+    await expect(runDeliveryRetryTick()).resolves.toBeUndefined();
+    expect(consoleErr).toHaveBeenCalled();
+    consoleErr.mockRestore();
   });
 
   it("publish ticks never overlap in-process (a slow delivery can't race a later tick's retry sweep)", async () => {

@@ -1,11 +1,15 @@
 import { siteConfig } from "@/../site.config";
+import { getRuntimeProfile } from "@/lib/site-profile";
+
+export const dynamic = "force-dynamic";
 
 export const metadata = {
   title: "About",
   description: `About ${siteConfig.authorName}`,
 };
 
-export default function AboutPage() {
+export default async function AboutPage() {
+  const profile = await getRuntimeProfile();
   return (
     <div className="max-w-3xl mx-auto px-6 py-16">
       <h1 className="font-display text-3xl font-bold text-white mb-6">
@@ -13,8 +17,8 @@ export default function AboutPage() {
       </h1>
 
       <div className="space-y-6 text-gray-400 leading-relaxed">
-        {siteConfig.authorBio ? (
-          <p>{siteConfig.authorBio}</p>
+        {profile.authorBio ? (
+          <p>{profile.authorBio}</p>
         ) : (
           <p>
             This is a self-hosted FediHome instance. Visit the admin panel to

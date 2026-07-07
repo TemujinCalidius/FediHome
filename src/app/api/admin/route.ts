@@ -6,6 +6,7 @@ import { fediDm, bskyDm, markDmRead, markAllDmsRead } from "./_actions/dms";
 import { follow, unfollow, unfollowByUri, block, unblock } from "./_actions/fedi-graph";
 import { like, boost, unlike, unboost } from "./_actions/fedi-interactions";
 import { bskyReply, syncGraph, bskyFollow, bskyUnfollow } from "./_actions/bluesky";
+import { updateProfile } from "./_actions/profile";
 
 // Least-privilege scope per action, so a connected app's token only reaches the
 // surface it was granted:
@@ -23,6 +24,7 @@ const ACTION_SCOPE: Record<string, string> = {
   sync_bluesky_graph: "manage",
   block: "manage", // unfollows + deletes the actor's posts/interactions → destructive
   unblock: "manage", // reverses block: removes the record + delivers Undo Block
+  update_profile: "manage", // edits the owner's public profile + federates actor Update
   reply: "interact",
   edit_reply: "interact",
   follow: "interact",
@@ -92,6 +94,7 @@ export async function POST(req: NextRequest) {
     case "unfollow_by_uri": return unfollowByUri(body);
     case "block": return block(body);
     case "unblock": return unblock(body);
+    case "update_profile": return updateProfile(body);
     case "like": return like(body);
     case "unlike": return unlike(body);
     case "boost": return boost(body);

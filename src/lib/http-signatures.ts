@@ -145,8 +145,41 @@ export async function deliverActivity(
   }
 }
 
+// First retry fires 2 minutes after a delivery fails (#207); subsequent
+// backoff is scheduled by the retry job (src/lib/delivery-retry.ts).
+const FIRST_RETRY_DELAY_MS = 2 * 60_000;
+
 /**
- * Deliver an activity to ALL followers
+ * Record failed follower deliveries so the scheduler can retry them (#207).
+ * Best-effort and idempotent per (activityId, inbox) — a redelivery of the same
+ * activity to the same inbox bumps the existing row rather than duplicating it.
+ * Never throws: enqueueing must not break the (already best-effort) delivery.
+ */
+export async function enqueueFailedDeliveries(
+  activityId: string,
+  activityJson: string,
+  failures: { inbox: string; error: string }[]
+): Promise<void> {
+  const nextRetryAt = new Date(Date.now() + FIRST_RETRY_DELAY_MS);
+  await Promise.all(
+    failures.map((f) =>
+      prisma.failedDelivery
+        .upsert({
+          where: { activityId_inbox: { activityId, inbox: f.inbox } },
+          create: { activityId, inbox: f.inbox, activity: activityJson, attempts: 1, nextRetryAt, lastError: f.error.slice(0, 300) },
+          update: { attempts: { increment: 1 }, lastError: f.error.slice(0, 300) },
+        })
+        .catch((err) => console.error(`Failed to enqueue delivery retry for ${f.inbox}:`, err))
+    )
+  );
+}
+
+/**
+ * Deliver an activity to ALL followers. Fire-and-forget for the caller, but a
+ * per-inbox failure is now persisted to FailedDelivery so the scheduler retries
+ * it with backoff (#207) — a transiently-down follower no longer silently loses
+ * the post. Retries re-send the identical activity JSON (stable id → remote
+ * dedupe).
  */
 export async function deliverToFollowers(
   activity: Record<string, unknown>
@@ -163,10 +196,25 @@ export async function deliverToFollowers(
   }
 
   // Deliver in parallel (but limit concurrency)
-  const promises = Array.from(inboxes).map((inbox) =>
-    deliverActivity(inbox, activity)
-  );
-  await Promise.allSettled(promises);
+  const inboxList = Array.from(inboxes);
+  const results = await Promise.allSettled(inboxList.map((inbox) => deliverActivity(inbox, activity)));
+
+  // Enqueue failures for retry. deliverActivity resolves (never rejects) with
+  // { ok:false } on failure; handle a rejection defensively too.
+  const activityId = typeof activity.id === "string" ? activity.id : null;
+  if (activityId) {
+    const failures: { inbox: string; error: string }[] = [];
+    results.forEach((r, i) => {
+      if (r.status === "fulfilled" && !r.value.ok) {
+        failures.push({ inbox: inboxList[i], error: r.value.error || `status ${r.value.status}` });
+      } else if (r.status === "rejected") {
+        failures.push({ inbox: inboxList[i], error: String(r.reason) });
+      }
+    });
+    if (failures.length > 0) {
+      await enqueueFailedDeliveries(activityId, JSON.stringify(activity), failures).catch(() => {});
+    }
+  }
 }
 
 export type SignatureVerification =
