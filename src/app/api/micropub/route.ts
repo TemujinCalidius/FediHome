@@ -40,6 +40,15 @@ export async function GET(req: NextRequest) {
   }
 
   if (q === "source") {
+    // Owner-only: q=source returns a post's full source, INCLUDING unpublished
+    // drafts and scheduled posts. Without this gate any unauthenticated caller
+    // could read draft content by (guessable) slug. Single-owner instance, so a
+    // valid token is the owner; matches the POST handler's auth.
+    const auth = await verifyMicropubToken(req.headers.get("authorization"));
+    if (!auth.valid) {
+      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    }
+
     const url = req.nextUrl.searchParams.get("url");
     if (!url) return NextResponse.json({ error: "url required" }, { status: 400 });
     const slug = url.split("/").pop();
