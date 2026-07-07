@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.10.1 (2026-07-07)
+
+### Security
+- **Unpublished drafts and scheduled posts could be read by an unauthenticated caller, and editing them before publishing leaked their content to followers — both fixed.** `GET /api/micropub?q=source` returned a post's full source (title, body, tags) including **unpublished drafts and scheduled posts**, but — unlike the `POST` handler — required no authentication, so anyone who could guess a post's slug (slugs derive from the title, or the first words + a timestamp) could read draft content. It now requires a valid token, matching the `POST` handler; `q=config` (public discovery info) is unchanged. Separately, editing a draft or a not-yet-published scheduled post via a token federated a signed, public ActivityPub `Update` of its content to every follower *before* it was ever published; editing an unpublished post now updates it silently and federates nothing (the scheduler still delivers a `Create` at publish time). (GHSA-x3j3-ghcw-8r77, #224)
+
 ## 1.10.0 (2026-07-07)
 
 ### Added
