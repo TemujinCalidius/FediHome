@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.10.0 (2026-07-07)
 
 ### Added
 - **Follower deliveries that fail are now retried instead of silently lost.** Sending a post/reply/edit/delete to your followers was fire-and-forget: if a follower's instance was briefly down, rate-limiting, or 5xx'ing at that moment, that follower simply never got it — no retry, no record. Failed deliveries are now persisted and retried by the scheduler with exponential backoff (2 min → 10 min → 1 h → 6 h → 24 h, then it gives up), each retry claimed atomically so overlapping runs can't double-send, and the re-send reuses the identical activity (stable id → remote servers dedupe if it actually landed). Terminal/old rows are pruned automatically. The retry job appears as a third toggle on `/admin/settings` (`SCHEDULER_DELIVERY_*`). (#207)
