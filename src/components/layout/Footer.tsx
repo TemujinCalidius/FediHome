@@ -1,12 +1,14 @@
 import { getSiteStats } from "@/lib/tinylytics";
 import { siteConfig } from "@/../site.config";
 import { getRuntimeProfile } from "@/lib/site-profile";
+import { getRuntimeSiteConfig } from "@/lib/site-settings";
 
 export default async function Footer() {
   const stats = await getSiteStats();
   const profile = await getRuntimeProfile();
+  const site = await getRuntimeSiteConfig();
   const { webringUrl, webringLabel, badgeSrc, badgeHref, badgeAlt, fundingUrl, fundingLabel } =
-    siteConfig.footer;
+    site.footer;
   const hasExtras = Boolean(badgeSrc || webringUrl || fundingUrl);
 
   return (

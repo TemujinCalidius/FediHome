@@ -1,12 +1,17 @@
 import type { MetadataRoute } from "next";
-import { siteConfig } from "@/../site.config";
+import { getRuntimeSiteConfig } from "@/lib/site-settings";
+
+// Render per request so an admin's site name/description edit is reflected —
+// a statically-prerendered manifest would freeze the build-time env values.
+export const dynamic = "force-dynamic";
 
 // Served at /manifest.webmanifest; Next auto-injects <link rel="manifest">.
-export default function manifest(): MetadataRoute.Manifest {
+export default async function manifest(): Promise<MetadataRoute.Manifest> {
+  const site = await getRuntimeSiteConfig();
   return {
-    name: siteConfig.name,
-    short_name: siteConfig.name,
-    description: siteConfig.description,
+    name: site.name,
+    short_name: site.name,
+    description: site.description,
     start_url: "/timeline",
     scope: "/",
     display: "standalone",

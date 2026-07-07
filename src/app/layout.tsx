@@ -6,58 +6,63 @@ import ScrollToTop from "@/components/ui/ScrollToTop";
 import PullToRefresh from "@/components/ui/PullToRefresh";
 import Tinylytics from "@/components/analytics/Tinylytics";
 import { siteConfig } from "@/../site.config";
+import { getRuntimeSiteConfig } from "@/lib/site-settings";
+import { getRuntimeProfile } from "@/lib/site-profile";
 
-export const metadata: Metadata = {
-  metadataBase: new URL(siteConfig.url),
-  title: {
-    default: siteConfig.name,
-    template: `%s — ${siteConfig.name}`,
-  },
-  description: siteConfig.description,
-  authors: [{ name: siteConfig.authorName }],
-  openGraph: {
-    type: "website",
-    locale: "en_AU",
-    url: "/",
-    title: siteConfig.name,
-    description: siteConfig.description,
-    siteName: siteConfig.name,
-    // Site-wide default preview image. Pages that don't define their own
-    // `openGraph` inherit this, so every shared link still gets a card image;
-    // pages that set `openGraph` (post, photography) provide their own. (#96)
-    images: [siteConfig.ogImagePath],
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: siteConfig.name,
-    description: siteConfig.description,
-    images: [siteConfig.ogImagePath],
-  },
-  alternates: {
-    types: {
-      "application/rss+xml": "/feed.xml",
-      "application/activity+json": "/ap/actor",
+export async function generateMetadata(): Promise<Metadata> {
+  const [site, profile] = await Promise.all([getRuntimeSiteConfig(), getRuntimeProfile()]);
+  return {
+    metadataBase: new URL(siteConfig.url),
+    title: {
+      default: site.name,
+      template: `%s — ${site.name}`,
     },
-  },
-  robots: { index: true, follow: true },
-  // PWA: installable to the iOS/Android home screen. Push (incl. iOS 16.4+) is
-  // wired up via /sw.js + the NotificationBell "Enable phone notifications"
-  // (dormant until VAPID keys are set in .env.local).
-  manifest: "/manifest.webmanifest",
-  appleWebApp: {
-    capable: true,
-    title: siteConfig.name,
-    statusBarStyle: "black-translucent",
-  },
-  icons: {
-    icon: "/favicon.png",
-    apple: "/icons/apple-touch-icon.png",
-  },
-  other: {
-    "micropub": `${siteConfig.url}/api/micropub`,
-    "media-endpoint": `${siteConfig.url}/api/media`,
-  },
-};
+    description: site.description,
+    authors: [{ name: profile.authorName }],
+    openGraph: {
+      type: "website",
+      locale: "en_AU",
+      url: "/",
+      title: site.name,
+      description: site.description,
+      siteName: site.name,
+      // Site-wide default preview image. Pages that don't define their own
+      // `openGraph` inherit this, so every shared link still gets a card image;
+      // pages that set `openGraph` (post, photography) provide their own. (#96)
+      images: [siteConfig.ogImagePath],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: site.name,
+      description: site.description,
+      images: [siteConfig.ogImagePath],
+    },
+    alternates: {
+      types: {
+        "application/rss+xml": "/feed.xml",
+        "application/activity+json": "/ap/actor",
+      },
+    },
+    robots: { index: true, follow: true },
+    // PWA: installable to the iOS/Android home screen. Push (incl. iOS 16.4+) is
+    // wired up via /sw.js + the NotificationBell "Enable phone notifications"
+    // (dormant until VAPID keys are set in .env.local).
+    manifest: "/manifest.webmanifest",
+    appleWebApp: {
+      capable: true,
+      title: site.name,
+      statusBarStyle: "black-translucent",
+    },
+    icons: {
+      icon: "/favicon.png",
+      apple: "/icons/apple-touch-icon.png",
+    },
+    other: {
+      "micropub": `${siteConfig.url}/api/micropub`,
+      "media-endpoint": `${siteConfig.url}/api/media`,
+    },
+  };
+}
 
 export const viewport: Viewport = {
   themeColor: "#0a0a0f",

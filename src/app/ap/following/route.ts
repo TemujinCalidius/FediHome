@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { siteConfig } from "@/../site.config";
+import { getRuntimeSiteConfig } from "@/lib/site-settings";
 
 const siteUrl = process.env.SITE_URL || "http://localhost:3000";
 
 export async function GET() {
-  const hidden = siteConfig.hideSocialGraph;
+  const hidden = (await getRuntimeSiteConfig()).hideSocialGraph;
   const following = hidden ? [] : await prisma.fediFollowing.findMany();
   const totalItems = hidden ? await prisma.fediFollowing.count() : following.length;
 

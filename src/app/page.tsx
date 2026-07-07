@@ -6,8 +6,8 @@ import { prisma } from "@/lib/db";
 import PostCard from "@/components/blog/PostCard";
 import Pagination from "@/components/ui/Pagination";
 import LandingShowcase from "@/components/home/LandingShowcase";
-import { siteConfig } from "@/../site.config";
 import { getRuntimeProfile } from "@/lib/site-profile";
+import { getRuntimeSiteConfig } from "@/lib/site-settings";
 
 const POSTS_PER_PAGE = 10;
 
@@ -19,6 +19,7 @@ export default async function HomePage({
   const params = await searchParams;
   const page = Math.max(1, parseInt(params.page || "1", 10));
   const profile = await getRuntimeProfile();
+  const site = await getRuntimeSiteConfig();
 
   // Hide author follow-ups from the homepage feed — they appear inline on the
   // original post's page instead.
@@ -38,7 +39,7 @@ export default async function HomePage({
     <section>
       <div className="flex items-center justify-between mb-8">
         <h2 className="font-display text-xl font-semibold text-white">
-          {siteConfig.landingMode
+          {site.landing.mode
             ? "From the blog"
             : page === 1
               ? "Recent Posts"
@@ -75,10 +76,10 @@ export default async function HomePage({
 
   // Project showcase landing (LANDING_MODE) — replaces the personal homepage
   // with an "About FediHome" page; the blog still renders below.
-  if (siteConfig.landingMode) {
+  if (site.landing.mode) {
     return (
       <div>
-        {page === 1 && <LandingShowcase />}
+        {page === 1 && <LandingShowcase landing={site.landing} footer={site.footer} />}
         <div className="max-w-3xl mx-auto px-6 pb-16 pt-4">{postsSection}</div>
       </div>
     );
@@ -91,7 +92,7 @@ export default async function HomePage({
       {page === 1 && (
         <div className="relative w-full h-48 md:h-64 overflow-hidden">
           <Image
-            src={siteConfig.bannerPath}
+            src={profile.bannerPath}
             alt=""
             fill
             className="object-cover"
