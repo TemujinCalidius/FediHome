@@ -7,6 +7,7 @@
 - **Edit your profile after setup — name, bio, tagline, summary, accent colour, avatar and banner.** Until now the owner's profile came only from env vars (with the avatar/banner paths hardcoded), so there was no way to change it short of editing files and restarting. A new `update_profile` admin action (`manage` scope + owner cookie) writes the changes to the database and they take effect immediately — no restart — across the **ActivityPub actor**, `GET /api/account`, **and your own site** (homepage, about page, profile page, footer, RSS), all now reading a `SiteSettings` overlay on the env defaults. An actor `Update` is federated so Mastodon and friends refresh their cached copy. Avatar/banner come from a prior `POST /api/media` upload; image paths are validated as same-origin uploads (no external URLs or path traversal). Backs the native apps' "Edit Profile" screen and moves the in-app admin panel forward. (#201, part of #59)
 
 ### Changed
+- Refreshed dependencies: `@atproto/api` 0.20.25 → 0.20.26, `vitest` & `@vitest/coverage-v8` 4.1.9 → 4.1.10 (sandbox-verified).
 - Bumped `tsx` 4.22.5 → 4.23.0 (dev dependency; sandbox-verified). Documented the `hashToken` invariant in `src/lib/auth.ts` (it only ever hashes high-entropy random tokens — a fast SHA-256 lookup hash, never a password) and dismissed the corresponding CodeQL `js/insufficient-password-hash` alert as a false positive.
 
 ### Fixed

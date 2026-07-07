@@ -20,7 +20,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@atproto/api": "^0.20.25",
+    "@atproto/api": "^0.20.26",
     "@fedify/fedify": "^2.2.0",
     "@fedify/next": "^2.2.0",
     "@prisma/adapter-pg": "^7.8.0",
@@ -55,11 +55,11 @@
     "@types/nodemailer": "^8.0.1",
     "@types/pg": "^8.20.0",
     "@types/sanitize-html": "^2.16.1",
-    "@vitest/coverage-v8": "^4.1.9",
+    "@vitest/coverage-v8": "^4.1.10",
     "eslint": "^10.6.0",
     "eslint-config-next": "^16.2.10",
     "tsx": "^4.23.0",
-    "vitest": "^4.1.9"
+    "vitest": "^4.1.10"
   },
   "overrides": {
     "yaml": "^2.8.3",
