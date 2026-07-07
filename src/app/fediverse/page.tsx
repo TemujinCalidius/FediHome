@@ -4,13 +4,17 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { siteConfig } from "@/../site.config";
+import { getRuntimeSiteConfig } from "@/lib/site-settings";
 
 const MAX_POSTS = 50;
 
-export const metadata = {
-  title: siteConfig.publicFeedTitle,
-  description: `A read-only view of the Fediverse accounts ${siteConfig.name} follows.`,
-};
+export async function generateMetadata() {
+  const site = await getRuntimeSiteConfig();
+  return {
+    title: site.publicFeedTitle,
+    description: `A read-only view of the Fediverse accounts ${site.name} follows.`,
+  };
+}
 
 // Canonical source URL for a post (apId is usually the URL); null if unknown.
 function sourceUrl(apId: string): string | null {
@@ -133,8 +137,9 @@ function FediCard({ post }: { post: Post }) {
 }
 
 export default async function FediversePage() {
+  const site = await getRuntimeSiteConfig();
   // Route only exists when the operator opts in.
-  if (!siteConfig.publicFeed) notFound();
+  if (!site.publicFeed) notFound();
 
   const posts = await prisma.fediPost.findMany({
     where: { inReplyTo: null, boostedBy: null },
@@ -146,7 +151,7 @@ export default async function FediversePage() {
     <div className="max-w-2xl mx-auto px-6 py-12 md:py-16">
       <header className="mb-8">
         <h1 className="font-display text-2xl md:text-3xl font-bold text-white">
-          {siteConfig.publicFeedTitle}
+          {site.publicFeedTitle}
         </h1>
         <p className="mt-2 text-gray-400 leading-relaxed">
           A read-only window into the Fediverse accounts{" "}
@@ -154,7 +159,7 @@ export default async function FediversePage() {
           follows — the same feed the owner sees behind the scenes. Liking,
           boosting and replying happen from your own instance; run your own{" "}
           <a
-            href={siteConfig.repoUrl}
+            href={site.landing.repoUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="text-accent-400 hover:underline"

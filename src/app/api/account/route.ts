@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { authenticateApiRequest } from "@/lib/auth";
 import { siteConfig } from "@/../site.config";
 import { getRuntimeProfile } from "@/lib/site-profile";
+import { getRuntimeSiteConfig } from "@/lib/site-settings";
 
 /**
  * The owner's identity + instance info — the app's "me". Lets a connected app
@@ -14,7 +15,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const [fediFollowers, bskyFollowers, fediFollowing, bskyFollowing, posts, profile] =
+  const [fediFollowers, bskyFollowers, fediFollowing, bskyFollowing, posts, profile, site] =
     await Promise.all([
       prisma.fediFollower.count(),
       prisma.blueskyFollower.count(),
@@ -22,6 +23,7 @@ export async function GET(req: NextRequest) {
       prisma.blueskyFollowing.count(),
       prisma.post.count({ where: { published: true } }),
       getRuntimeProfile(),
+      getRuntimeSiteConfig(),
     ]);
 
   return NextResponse.json({
@@ -30,7 +32,7 @@ export async function GET(req: NextRequest) {
     handle: siteConfig.fediHandle,
     domain: siteConfig.fediDomain,
     fediAddress: siteConfig.fediAddress,
-    name: siteConfig.name,
+    name: site.name,
     authorName: profile.authorName,
     bio: profile.authorBio,
     tagline: profile.authorTagline,
