@@ -723,13 +723,20 @@ async function updatePostHandler(postId: string, input: EditInput) {
     },
   };
 
-  deliverToFollowers(activity).catch((err) =>
-    console.error("Failed to federate post update:", err)
-  );
-  for (const inbox of mentionInboxes) {
-    deliverActivity(inbox, activity).catch((err) =>
-      console.error(`Failed to deliver update to mentioned ${inbox}:`, err)
+  // #224: only federate an Update for a post that is ALREADY published. Editing
+  // a draft or a not-yet-published scheduled post must not send its content to
+  // followers — the row is updated silently, and the scheduler federates a
+  // Create when it publishes. (An edit never flips `published`, so the pre-edit
+  // state is the post's publication state.)
+  if (existing.published) {
+    deliverToFollowers(activity).catch((err) =>
+      console.error("Failed to federate post update:", err)
     );
+    for (const inbox of mentionInboxes) {
+      deliverActivity(inbox, activity).catch((err) =>
+        console.error(`Failed to deliver update to mentioned ${inbox}:`, err)
+      );
+    }
   }
 
   return NextResponse.json({
