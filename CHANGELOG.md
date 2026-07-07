@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Security
+- **Incoming ActivityPub activities are now bound to the actor, not just its host.** The inbox verified an HTTP signature and then only checked that the signing key's *host* matched the claimed `actor` — so any account on the same instance as someone you follow could forge activities (follows, likes, replies, edits) as that other account. Verification now binds to the key's true **owner** and requires it to exactly equal the activity's `actor`. The owner is only trusted when it's on the key's own host, so a malicious server still can't serve a key document claiming to be owned by an actor on a *different* instance. Narrow threat model (a hostile/misconfigured instance an account is shared with), but genuine federation-security hardening. Adds the first dedicated `verifyIncomingSignature` unit tests. (#209)
+
 ## 1.10.0 (2026-07-07)
 
 ### Added
