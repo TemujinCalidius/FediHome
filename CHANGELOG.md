@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- **Failed crossposts at compose time are no longer silent.** When you published a post, a Bluesky/Threads/Day One crosspost that failed *transiently* (a network blip, a 5xx, an HTTP/2 `GOAWAY`) was discarded with no log line — the crosspost helpers return `{ success: false }` rather than throwing, and the compose path only handled the success case (Bluesky) or a thrown error (Threads/Day One via a bare `.catch`). A real incident lost a video post's Bluesky copy this way with zero evidence. All three now log the returned error on failure, matching the scheduled-publish path. (This makes the failure *visible*; automatic retry follows separately.) (#225)
+
 ## 1.11.0 (2026-07-08)
 
 ### Added
