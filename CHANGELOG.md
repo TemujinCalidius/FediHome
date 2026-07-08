@@ -2,8 +2,11 @@
 
 ## Unreleased
 
-### Fixed
-- **Failed crossposts at compose time are no longer silent.** When you published a post, a Bluesky/Threads/Day One crosspost that failed *transiently* (a network blip, a 5xx, an HTTP/2 `GOAWAY`) was discarded with no log line — the crosspost helpers return `{ success: false }` rather than throwing, and the compose path only handled the success case (Bluesky) or a thrown error (Threads/Day One via a bare `.catch`). A real incident lost a video post's Bluesky copy this way with zero evidence. All three now log the returned error on failure, matching the scheduled-publish path. (This makes the failure *visible*; automatic retry follows separately.) (#225)
+### Added
+- **Failed crossposts are now retried automatically instead of being lost.** When you published a post, a Bluesky/Threads crosspost that failed *transiently* (a network blip, a 5xx, an HTTP/2 `GOAWAY`) was discarded with no log line and no retry — the crosspost helpers return `{ success: false }` rather than throwing, and the compose path only handled the success case (Bluesky) or a thrown error (Threads/Day One via a bare `.catch`), so the failure fell through silently. A real incident lost a video post's Bluesky copy this way with zero evidence. Now: every crosspost failure is **logged** (matching the scheduled-publish path), and Bluesky/Threads failures are **persisted and retried by the scheduler with backoff** (2 min → 10 min → 1 h → 6 h → 24 h, then it gives up), writing the `blueskyUri`/`threadsPostId` marker on success — the same atomic-claim + prune design as the follower-delivery retry (#207). The retry job is a fourth toggle on `/admin/settings` (`SCHEDULER_CROSSPOST_*`). Day One (a local journal export) logs failures but isn't retried. (#225)
+
+### Schema
+- New `FailedCrosspost` table backing the crosspost retry queue (#225). Additive and non-destructive (a brand-new table). **After upgrading, run `npx prisma db push`** (or apply `prisma/manual-migrations/2026-07-08-failed-crosspost.sql` — `npm run update` does both).
 
 ## 1.11.0 (2026-07-08)
 

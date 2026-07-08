@@ -24,6 +24,8 @@ export default function SettingsClient({
   const [blueskyInterval, setBlueskyInterval] = useState(String(effective.blueskySync.intervalSec));
   const [deliveryEnabled, setDeliveryEnabled] = useState(effective.deliveryRetry.enabled);
   const [deliveryInterval, setDeliveryInterval] = useState(String(effective.deliveryRetry.intervalSec));
+  const [crosspostEnabled, setCrosspostEnabled] = useState(effective.crosspostRetry.enabled);
+  const [crosspostInterval, setCrosspostInterval] = useState(String(effective.crosspostRetry.intervalSec));
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [hasOverrides, setHasOverrides] = useState(Object.keys(overrides).length > 0);
@@ -49,6 +51,8 @@ export default function SettingsClient({
       setBlueskyInterval(String(eff.blueskySync.intervalSec));
       setDeliveryEnabled(eff.deliveryRetry.enabled);
       setDeliveryInterval(String(eff.deliveryRetry.intervalSec));
+      setCrosspostEnabled(eff.crosspostRetry.enabled);
+      setCrosspostInterval(String(eff.crosspostRetry.intervalSec));
       setResult({ ok: true, msg: "Saved — the scheduler applies changes within a minute." });
       return true;
     } catch {
@@ -68,6 +72,8 @@ export default function SettingsClient({
         "scheduler.bluesky.intervalSec": blueskyInterval,
         "scheduler.delivery.enabled": deliveryEnabled ? "true" : "false",
         "scheduler.delivery.intervalSec": deliveryInterval,
+        "scheduler.crosspost.enabled": crosspostEnabled ? "true" : "false",
+        "scheduler.crosspost.intervalSec": crosspostInterval,
       })
     ) {
       setHasOverrides(true);
@@ -83,6 +89,8 @@ export default function SettingsClient({
         "scheduler.bluesky.intervalSec": null,
         "scheduler.delivery.enabled": null,
         "scheduler.delivery.intervalSec": null,
+        "scheduler.crosspost.enabled": null,
+        "scheduler.crosspost.intervalSec": null,
       })
     ) {
       setHasOverrides(false);
@@ -163,6 +171,15 @@ export default function SettingsClient({
           deliveryInterval,
           setDeliveryInterval,
           defaults.deliveryRetry.intervalSec,
+        )}
+        {jobRow(
+          "Crosspost retry",
+          "Retries failed Bluesky/Threads crossposts with backoff, so a transient blip at publish time doesn't lose the crosspost.",
+          crosspostEnabled,
+          setCrosspostEnabled,
+          crosspostInterval,
+          setCrosspostInterval,
+          defaults.crosspostRetry.intervalSec,
         )}
 
         <div className="flex items-center gap-3 py-4">
