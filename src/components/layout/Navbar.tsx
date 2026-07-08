@@ -3,20 +3,22 @@ import Image from "next/image";
 import { cookies } from "next/headers";
 import NotificationBell from "./NotificationBell";
 import MobileMenu from "./MobileMenu";
-import { siteConfig } from "@/../site.config";
-import { navLinks } from "@/lib/nav";
+import { buildNavLinks } from "@/lib/nav";
+import { getRuntimeSiteConfig } from "@/lib/site-settings";
 
 export default async function Navbar() {
   const cookieStore = await cookies();
   const adminCookie = cookieStore.get("sl_admin")?.value;
   const { verifyAdminSession } = await import("@/lib/auth");
   const isAdmin = await verifyAdminSession(adminCookie);
+  const siteCfg = await getRuntimeSiteConfig();
+  const navLinks = buildNavLinks(siteCfg);
 
   return (
     <nav className="border-b border-surface-800 bg-surface-950/90 backdrop-blur-md sticky top-0 z-50">
       <div className="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
         <Link href="/" className="flex-shrink-0 font-display text-lg font-bold text-white hover:text-accent-400 transition-colors">
-          {siteConfig.name}
+          {siteCfg.name}
         </Link>
 
         <div className="hidden md:flex items-center gap-6">

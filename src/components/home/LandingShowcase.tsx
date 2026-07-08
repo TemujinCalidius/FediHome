@@ -1,6 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { siteConfig } from "@/../site.config";
+import type { RuntimeSiteConfig } from "@/lib/site-settings";
 
 // What FediHome does — shown on the project showcase landing (LANDING_MODE=true).
 const FEATURES = [
@@ -39,9 +40,15 @@ const INSTALL_ONE_LINER =
  * get it. Powers the public demo at fedihome.social; off by default so a
  * personal instance keeps its normal homepage.
  */
-export default function LandingShowcase() {
-  const repo = siteConfig.repoUrl;
-  const funding = siteConfig.footer.fundingUrl;
+export default function LandingShowcase({
+  landing,
+  footer,
+}: {
+  landing: RuntimeSiteConfig["landing"];
+  footer: RuntimeSiteConfig["footer"];
+}) {
+  const repo = landing.repoUrl;
+  const funding = footer.fundingUrl;
   return (
     <div className="relative overflow-hidden">
       {/* Subtle generated texture backdrop + fade into the page background */}
@@ -67,10 +74,10 @@ export default function LandingShowcase() {
               Open source · Fediverse · Self-hosted
             </span>
             <h1 className="mt-5 font-display text-4xl md:text-5xl font-bold leading-tight text-white">
-              {siteConfig.landingHeadline}
+              {landing.headline}
             </h1>
             <p className="mt-4 max-w-xl text-lg leading-relaxed text-gray-400">
-              {siteConfig.landingSubhead}
+              {landing.subhead}
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <a
@@ -91,7 +98,7 @@ export default function LandingShowcase() {
                   rel="noopener noreferrer"
                   className="btn-outlined text-xs"
                 >
-                  ♥ {siteConfig.footer.fundingLabel}
+                  ♥ {footer.fundingLabel}
                 </a>
               )}
             </div>

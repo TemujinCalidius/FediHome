@@ -228,8 +228,9 @@ export type SignatureVerification =
  *   1. We can recompute Digest and compare to the signed Digest header.
  *   2. The body cannot be tampered with after signature verification.
  *
- * Returns the actor URI extracted from `keyId`. Callers must compare this
- * to the activity's `actor` field to prevent cross-actor spoofing (C5).
+ * Returns the signing key's OWNER actor URI (host-validated — see the return
+ * site). Callers must compare this to the activity's `actor` field with
+ * `actorMatchesSigner` (exact match) to prevent cross-actor spoofing (C5/#209).
  */
 export async function verifyIncomingSignature(
   req: Request,
@@ -286,7 +287,7 @@ export async function verifyIncomingSignature(
   if (!(await assertPublicHost(actorUriFromKey))) {
     return { valid: false, reason: "keyId resolves to private/blocked host" };
   }
-  let actor: { publicKey?: { publicKeyPem?: string }; id?: string };
+  let actor: { publicKey?: { publicKeyPem?: string; owner?: string }; id?: string };
   try {
     const actorRes = await fetch(actorUriFromKey, {
       headers: { Accept: "application/activity+json" },
@@ -327,22 +328,44 @@ export async function verifyIncomingSignature(
     return { valid: false, reason: `verifier error: ${err instanceof Error ? err.message : String(err)}` };
   }
 
-  return { valid: true, actorUri: actorUriFromKey };
+  // Bind to the key's OWNER so the caller can require it == the activity actor
+  // (#209 — a host-only match let any actor on the same instance forge as
+  // another). Prefer the key's declared `owner`, else the fetched actor's `id`,
+  // else the URL we fetched from. Crucially, only trust an owner on the SAME
+  // host as the key's own URL: a fetched document must not be able to claim an
+  // owner on a *different* host (that would let evil.example serve a doc
+  // declaring `owner: victim.social/celebrity`). A cross-host claim falls back
+  // to the fetch URL, which then can't match the claimed actor.
+  const claimedOwner = actor.publicKey?.owner || actor.id || actorUriFromKey;
+  const owner = sameHost(claimedOwner, actorUriFromKey) ? claimedOwner : actorUriFromKey;
+  return { valid: true, actorUri: owner };
+}
+
+/** True if two URIs resolve to the same host (case-insensitive). Internal. */
+function sameHost(a: string, b: string): boolean {
+  try {
+    return new URL(a).host.toLowerCase() === new URL(b).host.toLowerCase();
+  } catch {
+    return false;
+  }
 }
 
 /**
- * Returns true if a verified signer (actorUri from keyId) is allowed to act
- * on behalf of the actor claimed in the activity body.
+ * Returns true if the verified signer (the key's owner, from
+ * verifyIncomingSignature) is the actor claimed in the activity body.
  *
- * Strict: hostname must match. Mastodon, Pixelfed, etc. all use the same
- * hostname for keyId and actor.id. This blocks the cross-domain spoofing
- * scenario described in C5 of the audit.
+ * EXACT URI match (not host-only): the signer must BE the claimed actor, so an
+ * actor can't act on behalf of a different actor on the same host (#209). Hosts
+ * are compared case-insensitively and a trailing slash is ignored, but the path
+ * must match exactly — `.../users/alice` ≠ `.../users/bob`.
  */
 export function actorMatchesSigner(signerUri: string, claimedActorUri: string): boolean {
   try {
-    const a = new URL(signerUri);
-    const b = new URL(claimedActorUri);
-    return a.host.toLowerCase() === b.host.toLowerCase();
+    const norm = (u: string) => {
+      const x = new URL(u);
+      return `${x.protocol}//${x.host.toLowerCase()}${x.pathname.replace(/\/+$/, "")}`;
+    };
+    return norm(signerUri) === norm(claimedActorUri);
   } catch {
     return false;
   }

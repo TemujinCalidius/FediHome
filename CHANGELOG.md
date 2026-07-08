@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.11.0 (2026-07-08)
+
+### Added
+- **Edit your site's appearance & features in the admin panel — no file editing, no restart.** A new **Site settings** screen (`/admin/site`, linked from the timeline header) makes the display/feature config editable in-app: site name & description, the project landing page (on/off + headline/subhead/repo), the public Fediverse feed (on/off + title + hide-follower/following lists), which nav sections show (Journal/Articles/Photography/Videos/Audio/About), and footer links (webring/badge/funding). Saved values live in the database as overrides on the `SITE_*`/`NAV_*`/`FOOTER_*` env defaults — "Use env defaults" reverts — and apply across your site (homepage, nav, footer, `/fediverse`, RSS, PWA manifest, metadata) within a minute. Owner-cookie only. Identity/secret config (`SITE_URL`, `FEDI_HANDLE`, `ADMIN_SECRET`) stays env-set — it's baked into your federated identity — so a managed host can pre-set it while the owner configures everything else in-app. Advances #59 toward a file-editing-free setup. (#59)
+
+### Security
+- **Incoming ActivityPub activities are now bound to the actor, not just its host.** The inbox verified an HTTP signature and then only checked that the signing key's *host* matched the claimed `actor` — so any account on the same instance as someone you follow could forge activities (follows, likes, replies, edits) as that other account. Verification now binds to the key's true **owner** and requires it to exactly equal the activity's `actor`. The owner is only trusted when it's on the key's own host, so a malicious server still can't serve a key document claiming to be owned by an actor on a *different* instance. Narrow threat model (a hostile/misconfigured instance an account is shared with), but genuine federation-security hardening. Adds the first dedicated `verifyIncomingSignature` unit tests. (#209)
+
 ## 1.10.1 (2026-07-07)
 
 ### Security
