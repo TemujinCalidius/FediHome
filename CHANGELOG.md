@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.11.0 (2026-07-08)
 
 ### Added
 - **Edit your site's appearance & features in the admin panel — no file editing, no restart.** A new **Site settings** screen (`/admin/site`, linked from the timeline header) makes the display/feature config editable in-app: site name & description, the project landing page (on/off + headline/subhead/repo), the public Fediverse feed (on/off + title + hide-follower/following lists), which nav sections show (Journal/Articles/Photography/Videos/Audio/About), and footer links (webring/badge/funding). Saved values live in the database as overrides on the `SITE_*`/`NAV_*`/`FOOTER_*` env defaults — "Use env defaults" reverts — and apply across your site (homepage, nav, footer, `/fediverse`, RSS, PWA manifest, metadata) within a minute. Owner-cookie only. Identity/secret config (`SITE_URL`, `FEDI_HANDLE`, `ADMIN_SECRET`) stays env-set — it's baked into your federated identity — so a managed host can pre-set it while the owner configures everything else in-app. Advances #59 toward a file-editing-free setup. (#59)
