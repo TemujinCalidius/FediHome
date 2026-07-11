@@ -7,6 +7,7 @@ vi.mock("@/lib/db", () => ({
     $transaction: vi.fn(),
     blueskyReply: { deleteMany: vi.fn() },
     guestComment: { deleteMany: vi.fn() },
+    failedCrosspost: { deleteMany: vi.fn() },
     post: { delete: vi.fn() },
   },
 }));
@@ -25,9 +26,10 @@ describe("deletePostWithFederation (#16)", () => {
     await deletePostWithFederation({ id: "p1", apId: "https://x/post/p1", published: true });
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     const ops = vi.mocked(prisma.$transaction).mock.calls[0][0] as unknown as unknown[];
-    expect(ops).toHaveLength(3); // blueskyReply.deleteMany, guestComment.deleteMany, post.delete
+    expect(ops).toHaveLength(4); // blueskyReply + guestComment + failedCrosspost deleteMany, post.delete
     expect(prisma.blueskyReply.deleteMany).toHaveBeenCalledWith({ where: { postId: "p1" } });
     expect(prisma.guestComment.deleteMany).toHaveBeenCalledWith({ where: { postId: "p1" } });
+    expect(prisma.failedCrosspost.deleteMany).toHaveBeenCalledWith({ where: { postId: "p1" } });
     expect(prisma.post.delete).toHaveBeenCalledWith({ where: { id: "p1" } });
   });
 

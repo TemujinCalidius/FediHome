@@ -7,6 +7,7 @@ import { sanitizeHtml } from "@/lib/sanitize";
 import { parseMentions, linkMentions, buildApMentionTags, collectMentionInboxes } from "@/lib/mentions";
 import { imageAttachment } from "@/lib/ap-post";
 import { buildMediaUpdate } from "@/lib/post-media";
+import { enqueueFailedCrosspost } from "@/lib/crosspost-retry";
 import path from "path";
 
 const siteUrl = process.env.SITE_URL || "http://localhost:3000";
@@ -542,10 +543,17 @@ async function composeHandler(req: NextRequest) {
         });
       } else if (!bskyResult.success) {
         // #225: crosspost* returns { success:false } on a transient failure
-        // (never throws), so without this branch the error was discarded
-        // unlogged — a Bluesky blip silently lost the crosspost with no trace.
-        // Matches the scheduled path (publish-post.ts).
+        // (never throws) — log it (was discarded unlogged) AND persist for
+        // retry so a Bluesky blip self-heals instead of silently losing the
+        // crosspost. The scheduler re-attempts with backoff.
         console.error("Bluesky crosspost failed:", bskyResult.error);
+        await enqueueFailedCrosspost(post.id, "bluesky", {
+          text: bskyText,
+          url: postUrl,
+          images: bskyImages.length > 0 ? bskyImages : undefined,
+          video: firstVideo,
+          replyTo: parentPost?.blueskyUri ?? undefined,
+        }, bskyResult.error);
       }
     } catch (err) {
       console.error("Bluesky crosspost error:", err);
@@ -560,7 +568,10 @@ async function composeHandler(req: NextRequest) {
     // was silent. Log the returned error too.
     crosspostToThreads(crosspostText, postUrl)
       .then((r) => {
-        if (!r.success) console.error("Threads crosspost failed:", r.error);
+        if (!r.success) {
+          console.error("Threads crosspost failed:", r.error);
+          return enqueueFailedCrosspost(post.id, "threads", { text: crosspostText, url: postUrl }, r.error);
+        }
       })
       .catch((err) => console.error("Threads crosspost error:", err));
   }

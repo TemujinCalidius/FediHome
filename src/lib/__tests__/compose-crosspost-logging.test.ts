@@ -8,6 +8,7 @@ const {
   authenticateApiRequest, verifyOrigin, deliverToFollowers, deliverActivity,
   crosspostToBluesky, crosspostReplyToBluesky, crosspostToThreads, crosspostToDayOne,
   parseMentions, linkMentions, buildApMentionTags, collectMentionInboxes, imageAttachment, sanitizeHtml, buildMediaUpdate,
+  enqueueFailedCrosspost,
 } = vi.hoisted(() => ({
   authenticateApiRequest: vi.fn(),
   verifyOrigin: vi.fn(),
@@ -24,10 +25,12 @@ const {
   imageAttachment: vi.fn(),
   sanitizeHtml: vi.fn((s: string) => s),
   buildMediaUpdate: vi.fn(() => ({})),
+  enqueueFailedCrosspost: vi.fn(),
 }));
 vi.mock("@/lib/auth", () => ({ authenticateApiRequest, verifyOrigin }));
 vi.mock("@/lib/http-signatures", () => ({ deliverToFollowers, deliverActivity }));
 vi.mock("@/lib/crosspost", () => ({ crosspostToBluesky, crosspostReplyToBluesky, crosspostToThreads, crosspostToDayOne }));
+vi.mock("@/lib/crosspost-retry", () => ({ enqueueFailedCrosspost }));
 vi.mock("@/lib/mentions", () => ({ parseMentions, linkMentions, buildApMentionTags, collectMentionInboxes }));
 vi.mock("@/lib/ap-post", () => ({ imageAttachment }));
 vi.mock("@/lib/sanitize", () => ({ sanitizeHtml }));
@@ -54,6 +57,7 @@ beforeEach(() => {
   parseMentions.mockResolvedValue({ fedi: [] });
   deliverToFollowers.mockResolvedValue(undefined);
   deliverActivity.mockResolvedValue(undefined);
+  enqueueFailedCrosspost.mockResolvedValue(undefined);
   vi.mocked(prisma.post.create).mockResolvedValue({
     id: "p1", slug: "hi", apId: "https://x/post/hi",
     publishedAt: new Date("2026-07-08T00:00:00Z"), coverImage: null,
@@ -72,6 +76,10 @@ describe("compose crosspost failure logging (#225)", () => {
     await POST(createReq({ content: "hello" }));
     expect(errSpy).toHaveBeenCalledWith("Bluesky crosspost failed:", "GOAWAY");
     expect(prisma.post.update).not.toHaveBeenCalled(); // no blueskyUri written on failure
+    // #225: also enqueued for retry so the blip self-heals.
+    expect(enqueueFailedCrosspost).toHaveBeenCalledWith(
+      "p1", "bluesky", expect.objectContaining({ text: expect.any(String), url: expect.any(String) }), "GOAWAY",
+    );
   });
 
   it("writes blueskyUri (no error log) when Bluesky succeeds", async () => {
@@ -91,5 +99,8 @@ describe("compose crosspost failure logging (#225)", () => {
     await flush();
     expect(errSpy).toHaveBeenCalledWith("Threads crosspost failed:", "threads 500");
     expect(errSpy).toHaveBeenCalledWith("DayOne crosspost failed:", "dayone 500");
+    // Threads enqueues for retry; Day One (local journal export) only logs.
+    expect(enqueueFailedCrosspost).toHaveBeenCalledWith("p1", "threads", expect.objectContaining({ text: expect.any(String) }), "threads 500");
+    expect(enqueueFailedCrosspost).not.toHaveBeenCalledWith("p1", "dayone", expect.anything(), expect.anything());
   });
 });

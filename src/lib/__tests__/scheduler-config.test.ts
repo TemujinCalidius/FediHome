@@ -27,6 +27,7 @@ describe("getSchedulerConfig", () => {
       publishScheduled: { enabled: true, intervalSec: 60 },
       blueskySync: { enabled: false, intervalSec: 900 },
       deliveryRetry: { enabled: true, intervalSec: 60 },
+      crosspostRetry: { enabled: true, intervalSec: 60 },
     });
   });
 

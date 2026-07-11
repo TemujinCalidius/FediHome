@@ -21,6 +21,7 @@ export interface SchedulerConfig {
   publishScheduled: SchedulerJobConfig;
   blueskySync: SchedulerJobConfig;
   deliveryRetry: SchedulerJobConfig;
+  crosspostRetry: SchedulerJobConfig;
 }
 
 function posNum(value: string | undefined, fallback: number): number {
@@ -51,6 +52,11 @@ export function getSchedulerConfig(): SchedulerConfig {
       enabled: flag(process.env.SCHEDULER_DELIVERY_ENABLED, true),
       intervalSec: posNum(process.env.SCHEDULER_DELIVERY_INTERVAL_SEC, 60),
     },
+    // Retry failed Bluesky/Threads crossposts (#225). Default: on, every 60s.
+    crosspostRetry: {
+      enabled: flag(process.env.SCHEDULER_CROSSPOST_ENABLED, true),
+      intervalSec: posNum(process.env.SCHEDULER_CROSSPOST_INTERVAL_SEC, 60),
+    },
   };
 }
 
@@ -64,6 +70,8 @@ export const SCHEDULER_SETTING_KEYS = [
   "scheduler.bluesky.intervalSec",
   "scheduler.delivery.enabled",
   "scheduler.delivery.intervalSec",
+  "scheduler.crosspost.enabled",
+  "scheduler.crosspost.intervalSec",
 ] as const;
 
 export type SchedulerSettingKey = (typeof SCHEDULER_SETTING_KEYS)[number];
@@ -119,6 +127,10 @@ export async function getEffectiveSchedulerConfig(): Promise<SchedulerConfig> {
       deliveryRetry: {
         enabled: overrideFlag(o["scheduler.delivery.enabled"], base.deliveryRetry.enabled),
         intervalSec: overrideNum(o["scheduler.delivery.intervalSec"], base.deliveryRetry.intervalSec),
+      },
+      crosspostRetry: {
+        enabled: overrideFlag(o["scheduler.crosspost.enabled"], base.crosspostRetry.enabled),
+        intervalSec: overrideNum(o["scheduler.crosspost.intervalSec"], base.crosspostRetry.intervalSec),
       },
     };
   } catch {
