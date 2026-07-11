@@ -9,7 +9,7 @@ vi.mock("@/lib/crosspost", () => ({ crosspostToBluesky, crosspostReplyToBluesky,
 vi.mock("@/lib/db", () => ({
   prisma: {
     failedCrosspost: { upsert: vi.fn(), findMany: vi.fn(), updateMany: vi.fn(), deleteMany: vi.fn() },
-    post: { update: vi.fn() },
+    post: { update: vi.fn(), findUnique: vi.fn() },
   },
 }));
 
@@ -31,6 +31,8 @@ beforeEach(() => {
   vi.mocked(prisma.failedCrosspost.deleteMany).mockResolvedValue({ count: 0 } as never);
   vi.mocked(prisma.failedCrosspost.upsert).mockResolvedValue({} as never);
   vi.mocked(prisma.post.update).mockResolvedValue({} as never);
+  // Default: the post exists with no marker yet → retry proceeds.
+  vi.mocked(prisma.post.findUnique).mockResolvedValue({ blueskyUri: null, threadsPostId: null } as never);
   crosspostToBluesky.mockResolvedValue({ success: true, uri: "at://done" });
   crosspostReplyToBluesky.mockResolvedValue({ success: true, uri: "at://reply" });
   crosspostToThreads.mockResolvedValue({ success: true, id: "th1" });
@@ -81,14 +83,42 @@ describe("retryFailedCrossposts (#225)", () => {
     expect(prisma.post.update).toHaveBeenCalledWith({ where: { id: "p1" }, data: { threadsPostId: "th1" } });
   });
 
-  it("claims atomically (CAS on nextRetryAt); a lost race re-attempts nothing", async () => {
+  it("does NOT re-post if the platform marker is already set — duplicate guard (crash-after-success)", async () => {
+    vi.mocked(prisma.failedCrosspost.findMany).mockResolvedValueOnce([row()] as never);
+    vi.mocked(prisma.post.findUnique).mockResolvedValue({ blueskyUri: "at://already-landed", threadsPostId: null } as never);
+    const r = await retryFailedCrossposts(NOW);
+    expect(crosspostToBluesky).not.toHaveBeenCalled(); // no duplicate public post
+    expect(prisma.failedCrosspost.deleteMany).toHaveBeenCalledWith({ where: { id: "c1" } }); // row cleared
+    expect(r.delivered).toBe(0);
+  });
+
+  it("does NOT re-post if the post was deleted since enqueue (orphan guard)", async () => {
+    vi.mocked(prisma.failedCrosspost.findMany).mockResolvedValueOnce([row()] as never);
+    vi.mocked(prisma.post.findUnique).mockResolvedValue(null as never);
+    await retryFailedCrossposts(NOW);
+    expect(crosspostToBluesky).not.toHaveBeenCalled();
+    expect(prisma.failedCrosspost.deleteMany).toHaveBeenCalledWith({ where: { id: "c1" } });
+  });
+
+  it("skips the tick (no re-post, keeps the row) when the marker can't be verified (DB read error)", async () => {
+    vi.mocked(prisma.failedCrosspost.findMany).mockResolvedValueOnce([row()] as never);
+    vi.mocked(prisma.post.findUnique).mockRejectedValue(new Error("db blip"));
+    await retryFailedCrossposts(NOW);
+    expect(crosspostToBluesky).not.toHaveBeenCalled();
+    // The row is NOT deleted (retried next tick). deleteMany runs only for the
+    // terminal-prune sweep, never to remove this row by id.
+    expect(prisma.failedCrosspost.deleteMany).not.toHaveBeenCalledWith({ where: { id: "c1" } });
+  });
+
+  it("claims atomically (CAS on nextRetryAt) with a 5-min lease; a lost race re-attempts nothing", async () => {
     vi.mocked(prisma.failedCrosspost.findMany).mockResolvedValueOnce([row()] as never);
     vi.mocked(prisma.failedCrosspost.updateMany).mockResolvedValue({ count: 0 } as never);
     const r = await retryFailedCrossposts(NOW);
     expect(crosspostToBluesky).not.toHaveBeenCalled();
     expect(r.claimed).toBe(0);
-    const claim = vi.mocked(prisma.failedCrosspost.updateMany).mock.calls[0][0] as { where: Record<string, unknown> };
+    const claim = vi.mocked(prisma.failedCrosspost.updateMany).mock.calls[0][0] as { where: Record<string, unknown>; data: { nextRetryAt: Date } };
     expect(claim.where).toEqual({ id: "c1", nextRetryAt: row().nextRetryAt });
+    expect(claim.data.nextRetryAt.getTime()).toBe(NOW.getTime() + 5 * 60_000); // lease
   });
 
   it("reschedules with the next backoff step on failure (attempts 1→2 → 10 min)", async () => {

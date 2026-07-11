@@ -24,10 +24,14 @@ export async function deletePostWithFederation(post: {
   apId: string | null;
   published: boolean;
 }): Promise<void> {
-  // Remove the post + its child rows atomically.
+  // Remove the post + its child rows atomically. Also drop any queued crosspost
+  // retry (#225) so a pending retry can't publish the just-deleted content to
+  // Bluesky/Threads after the fact (the retry job also guards on the post being
+  // gone, but clearing the row here removes it immediately).
   await prisma.$transaction([
     prisma.blueskyReply.deleteMany({ where: { postId: post.id } }),
     prisma.guestComment.deleteMany({ where: { postId: post.id } }),
+    prisma.failedCrosspost.deleteMany({ where: { postId: post.id } }),
     prisma.post.delete({ where: { id: post.id } }),
   ]);
 

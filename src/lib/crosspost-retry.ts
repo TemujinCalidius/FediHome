@@ -18,6 +18,17 @@ import {
  * retry reproduces the original attempt (no re-derivation drift). On success we
  * write the platform marker (blueskyUri / threadsPostId) on the Post and drop
  * the row; after MAX_ATTEMPTS we give up (terminal).
+ *
+ * DUPLICATE SAFETY: unlike the follower-delivery queue (#207), where remote AP
+ * servers dedupe a redelivered activity by its stable id, Bluesky/Threads have
+ * NO such dedupe — every retry is a fresh create call. Before re-posting we
+ * therefore re-read the Post and SKIP if the platform's marker is already set
+ * (a prior attempt landed but we crashed before deleting the row) or the Post
+ * is gone (deleted since). The one residual we cannot cover: a
+ * "landed-but-reported-false" original — the crosspost committed remotely but
+ * the response was lost, so `success:false` was returned and no marker was
+ * written — would be re-posted once, since neither platform offers a
+ * client-side idempotency key. Accepted limitation.
  */
 
 export type CrosspostPlatform = "bluesky" | "threads";
@@ -107,6 +118,22 @@ export async function retryFailedCrossposts(now: Date = new Date()): Promise<Cro
     });
     if (claim.count !== 1) continue;
     claimed++;
+
+    // Duplicate guard (no remote dedupe for Bluesky/Threads): don't re-post if
+    // this platform already has its marker (a prior attempt landed but the row
+    // outlived it — e.g. a crash before deleteMany), or the Post is gone.
+    const post = await prisma.post
+      .findUnique({ where: { id: row.postId }, select: { blueskyUri: true, threadsPostId: true } })
+      .catch(() => undefined);
+    if (post === undefined) continue; // couldn't verify — leave the row (its lease holds) for next tick
+    const alreadyDone =
+      post === null ||
+      (row.platform === "bluesky" && !!post.blueskyUri) ||
+      (row.platform === "threads" && !!post.threadsPostId);
+    if (alreadyDone) {
+      await prisma.failedCrosspost.deleteMany({ where: { id: row.id } });
+      continue;
+    }
 
     let payload: CrosspostPayload;
     try {
