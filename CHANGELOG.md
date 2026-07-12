@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Added
+- The first-run setup wizard now collects your site's appearance and feature choices — public Fediverse feed, landing-page mode, and which navigation sections show — and writes them straight to the DB-backed site config, so a fresh install lands pre-configured with no file editing. Reuses the same validated config store the admin panel uses. (#59)
+
 ### Changed
 - Refreshed dependencies (all sandbox-verified): `@atproto/api` 0.20.27 → 0.20.28, `@types/node` 26.1.0 → 26.1.1, `@eslint/eslintrc` 3.3.5 → 3.3.6, `fast-xml-parser` 5.9.0 → 5.10.0, `marked` 18.0.5 → 18.0.6, `postcss` 8.5.16 → 8.5.17, `sanitize-html` 2.17.5 → 2.17.6. (`typescript` stays pinned at 6.x — 7.0.2 breaks `next build`; tracked in #234.)
 

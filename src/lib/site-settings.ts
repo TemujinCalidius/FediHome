@@ -144,3 +144,71 @@ export async function getRuntimeSiteConfig(): Promise<RuntimeSiteConfig> {
   cache = { at: Date.now(), cfg };
   return cfg;
 }
+
+/* ------------------------- validate + persist ------------------------- */
+
+const KEY_SET = new Set<string>(SITE_CONFIG_KEYS);
+const MAX_TEXT = 500;
+const CONTROL = /[\r\n]/;
+
+/**
+ * Validate one field's value against its declared type. Returns the accepted
+ * value or null if invalid. Empty string is allowed (clears a text/url field to
+ * its "unset" state). URLs must be same-origin-relative or absolute http(s) —
+ * never javascript:/data: (footer.badgeSrc is an <img> src).
+ */
+export function validateSiteConfigValue(key: string, value: string): string | null {
+  const type = SITE_CONFIG_FIELDS[key];
+  if (type === "bool") return value === "true" || value === "false" ? value : null;
+  if (value.length > MAX_TEXT || CONTROL.test(value)) return null;
+  if (type === "url") {
+    if (value === "") return value;
+    if (value.startsWith("/") && !value.startsWith("//")) return value;
+    try {
+      const u = new URL(value);
+      return u.protocol === "http:" || u.protocol === "https:" ? value : null;
+    } catch {
+      return null;
+    }
+  }
+  return value; // text
+}
+
+/**
+ * Validate a partial `{ key: value | null }` map and persist it to `SiteSetting`
+ * (upsert overrides; `null` deletes → revert to env), then invalidate the cache.
+ * Shared by the admin editor (#59) and the first-run setup wizard. Validate-all
+ * before write-any, so a bad key/value rejects the whole batch atomically.
+ */
+export async function applySiteConfig(
+  settings: unknown,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!settings || typeof settings !== "object" || Array.isArray(settings)) {
+    return { ok: false, error: "settings object required" };
+  }
+  const entries = Object.entries(settings as Record<string, unknown>);
+  if (entries.length === 0 || entries.length > SITE_CONFIG_KEYS.length) {
+    return { ok: false, error: "invalid settings payload" };
+  }
+
+  const writes: Array<{ key: string; value: string | null }> = [];
+  for (const [key, raw] of entries) {
+    if (!KEY_SET.has(key)) return { ok: false, error: `unknown setting: ${key}` };
+    if (raw === null) {
+      writes.push({ key, value: null });
+      continue;
+    }
+    if (typeof raw !== "string") return { ok: false, error: `${key} must be a string or null` };
+    const valid = validateSiteConfigValue(key, raw);
+    if (valid === null) return { ok: false, error: `invalid value for ${key}` };
+    writes.push({ key, value: valid });
+  }
+
+  for (const { key, value } of writes) {
+    if (value === null) await prisma.siteSetting.deleteMany({ where: { key } });
+    else await prisma.siteSetting.upsert({ where: { key }, update: { value }, create: { key, value } });
+  }
+
+  invalidateSiteConfigCache();
+  return { ok: true };
+}
