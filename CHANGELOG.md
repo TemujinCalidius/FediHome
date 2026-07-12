@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.12.0 (2026-07-12)
 
 ### Added
 - **Failed crossposts are now retried automatically instead of being lost.** When you published a post, a Bluesky/Threads crosspost that failed *transiently* (a network blip, a 5xx, an HTTP/2 `GOAWAY`) was discarded with no log line and no retry — the crosspost helpers return `{ success: false }` rather than throwing, and the compose path only handled the success case (Bluesky) or a thrown error (Threads/Day One via a bare `.catch`), so the failure fell through silently. A real incident lost a video post's Bluesky copy this way with zero evidence. Now: every crosspost failure is **logged** (matching the scheduled-publish path), and Bluesky/Threads failures are **persisted and retried by the scheduler with backoff** (2 min → 10 min → 1 h → 6 h → 24 h, then it gives up), writing the `blueskyUri`/`threadsPostId` marker on success — the same atomic-claim + prune design as the follower-delivery retry (#207). Because Bluesky/Threads (unlike ActivityPub) don't dedupe a re-sent post, a retry re-reads the post first and skips if its marker is already set or the post was deleted, so a crash between a successful crosspost and its bookkeeping can't produce a duplicate. The retry job is a fourth toggle on `/admin/settings` (`SCHEDULER_CROSSPOST_*`). Day One (a local journal export) logs failures but isn't retried. (#225)
