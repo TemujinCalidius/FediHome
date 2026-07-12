@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect } from "react";
 import Link from "next/link";
 
-const TOTAL_STEPS = 6;
+const TOTAL_STEPS = 7;
 
 function StepIndicator({ current }: { current: number }) {
   return (
@@ -96,6 +96,15 @@ export default function SetupWizard() {
   const [savedPassword, setSavedPassword] = useState(false);
   const [setupToken, setSetupToken] = useState("");
 
+  // Site features (#59) — collected here and written to the DB-backed site
+  // config, so a fresh install is configured without editing files. Defaults
+  // match the env defaults (nav sections all shown; landing + public feed off).
+  const [publicFeed, setPublicFeed] = useState(false);
+  const [landingMode, setLandingMode] = useState(false);
+  const [nav, setNav] = useState({
+    journal: true, articles: true, photography: true, videos: true, audio: true, about: true,
+  });
+
   // Domain from current URL
   const [domain, setDomain] = useState("yourdomain.com");
   useEffect(() => {
@@ -103,15 +112,15 @@ export default function SetupWizard() {
     setDomain(window.location.hostname);
   }, []);
 
-  // Generate admin secret when reaching step 5
+  // Generate admin secret when reaching the password step (6)
   useEffect(() => {
-    if (step === 5 && !adminSecret) {
+    if (step === 6 && !adminSecret) {
       const bytes = new Uint8Array(32);
       crypto.getRandomValues(bytes);
       const hex = Array.from(bytes)
         .map((b) => b.toString(16).padStart(2, "0"))
         .join("");
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- generate the admin secret once when reaching step 5
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- generate the admin secret once when reaching the password step
       setAdminSecret(hex);
     }
   }, [step, adminSecret]);
@@ -122,6 +131,18 @@ export default function SetupWizard() {
   const handleComplete = async () => {
     setIsSubmitting(true);
     setError(null);
+    // Only send the feature choices that DIFFER from the env defaults, so setup
+    // writes a clean set of overrides (an untouched toggle stays env-driven).
+    const siteConfig: Record<string, string> = {};
+    if (publicFeed) siteConfig["feed.public"] = "true";
+    if (landingMode) siteConfig["landing.mode"] = "true";
+    const navKeys: Record<keyof typeof nav, string> = {
+      journal: "nav.journal", articles: "nav.articles", photography: "nav.photography",
+      videos: "nav.videos", audio: "nav.audio", about: "nav.about",
+    };
+    (Object.keys(nav) as (keyof typeof nav)[]).forEach((k) => {
+      if (!nav[k]) siteConfig[navKeys[k]] = "false"; // hidden = non-default
+    });
     try {
       const res = await fetch("/api/setup", {
         method: "POST",
@@ -135,6 +156,7 @@ export default function SetupWizard() {
           adminSecret,
           siteUrl: window.location.origin,
           setupToken,
+          ...(Object.keys(siteConfig).length ? { siteConfig } : {}),
         }),
       });
       const data = await res.json();
@@ -194,7 +216,7 @@ export default function SetupWizard() {
           {step === 2 && (
             <div>
               <div className="mb-6">
-                <p className="text-xs font-semibold text-accent-400 uppercase tracking-wider mb-1">Step 1 of 5</p>
+                <p className="text-xs font-semibold text-accent-400 uppercase tracking-wider mb-1">Step 1 of 6</p>
                 <h2 className="text-2xl font-bold text-white font-display">Your Identity</h2>
                 <p className="text-gray-500 text-sm mt-1">How your site and profile appear to visitors.</p>
               </div>
@@ -253,7 +275,7 @@ export default function SetupWizard() {
           {step === 3 && (
             <div>
               <div className="mb-6">
-                <p className="text-xs font-semibold text-accent-400 uppercase tracking-wider mb-1">Step 2 of 5</p>
+                <p className="text-xs font-semibold text-accent-400 uppercase tracking-wider mb-1">Step 2 of 6</p>
                 <h2 className="text-2xl font-bold text-white font-display">Fediverse Handle</h2>
                 <p className="text-gray-500 text-sm mt-1">Your identity on the Fediverse.</p>
               </div>
@@ -297,7 +319,7 @@ export default function SetupWizard() {
           {step === 4 && (
             <div>
               <div className="mb-6">
-                <p className="text-xs font-semibold text-accent-400 uppercase tracking-wider mb-1">Step 3 of 5</p>
+                <p className="text-xs font-semibold text-accent-400 uppercase tracking-wider mb-1">Step 3 of 6</p>
                 <h2 className="text-2xl font-bold text-white font-display">Recovery Email</h2>
                 <p className="text-gray-500 text-sm mt-1">In case you need to reset your admin password.</p>
               </div>
@@ -325,11 +347,78 @@ export default function SetupWizard() {
             </div>
           )}
 
-          {/* Step 5: Admin Password */}
+          {/* Step 4: Site Features */}
           {step === 5 && (
             <div>
               <div className="mb-6">
-                <p className="text-xs font-semibold text-accent-400 uppercase tracking-wider mb-1">Step 4 of 5</p>
+                <p className="text-xs font-semibold text-accent-400 uppercase tracking-wider mb-1">Step 4 of 6</p>
+                <h2 className="text-2xl font-bold text-white font-display">Site Features</h2>
+                <p className="text-gray-500 text-sm mt-1">
+                  Turn sections on or off. You can change all of this later in Settings — nothing here is permanent.
+                </p>
+              </div>
+
+              <div className="space-y-3 mb-6">
+                <label className="flex items-start gap-3 rounded-lg bg-surface-800 border border-surface-700 p-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={publicFeed}
+                    onChange={(e) => setPublicFeed(e.target.checked)}
+                    className="mt-1"
+                  />
+                  <span>
+                    <span className="block text-sm text-white">Public Fediverse feed</span>
+                    <span className="block text-xs text-gray-500">
+                      Show a login-free, read-only window into the accounts you follow at <code>/fediverse</code>.
+                    </span>
+                  </span>
+                </label>
+
+                <label className="flex items-start gap-3 rounded-lg bg-surface-800 border border-surface-700 p-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={landingMode}
+                    onChange={(e) => setLandingMode(e.target.checked)}
+                    className="mt-1"
+                  />
+                  <span>
+                    <span className="block text-sm text-white">Project landing page</span>
+                    <span className="block text-xs text-gray-500">
+                      Make the homepage a project-style landing page instead of your personal blog intro.
+                    </span>
+                  </span>
+                </label>
+              </div>
+
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Navigation sections</p>
+              <div className="grid grid-cols-2 gap-2 mb-6">
+                {([
+                  ["journal", "Journal"], ["articles", "Articles"], ["photography", "Photography"],
+                  ["videos", "Videos"], ["audio", "Audio"], ["about", "About"],
+                ] as [keyof typeof nav, string][]).map(([key, label]) => (
+                  <label key={key} className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={nav[key]}
+                      onChange={(e) => setNav((n) => ({ ...n, [key]: e.target.checked }))}
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+
+              <div className="flex justify-between">
+                <button onClick={prev} className="btn-outlined cursor-pointer">Back</button>
+                <button onClick={next} className="btn-primary cursor-pointer">Continue</button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 5: Admin Password */}
+          {step === 6 && (
+            <div>
+              <div className="mb-6">
+                <p className="text-xs font-semibold text-accent-400 uppercase tracking-wider mb-1">Step 5 of 6</p>
                 <h2 className="text-2xl font-bold text-white font-display">Admin Password</h2>
                 <p className="text-gray-500 text-sm mt-1">Your key to the admin panel.</p>
               </div>
@@ -409,7 +498,7 @@ export default function SetupWizard() {
           )}
 
           {/* Step 6: Complete */}
-          {step === 6 && (
+          {step === 7 && (
             <div className="text-center">
               <div className="mb-6">
                 <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-moss-500/15 border border-moss-500/25 mb-4">

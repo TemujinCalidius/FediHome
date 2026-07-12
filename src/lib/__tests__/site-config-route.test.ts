@@ -19,7 +19,6 @@ vi.mock("@/lib/site-settings", async (orig) => {
 
 import { GET, POST } from "@/app/api/admin/site-config/route";
 import { prisma } from "@/lib/db";
-import { invalidateSiteConfigCache } from "@/lib/site-settings";
 
 function postReq(body: unknown): NextRequest {
   return new Request("https://x/api/admin/site-config", {
@@ -59,7 +58,7 @@ describe("/api/admin/site-config (#59)", () => {
     expect(prisma.siteSetting.upsert).not.toHaveBeenCalled();
   });
 
-  it("accepts a valid mix, deletes null overrides, invalidates the cache", async () => {
+  it("accepts a valid mix, upserts overrides and deletes null ones (revert)", async () => {
     const res = await POST(postReq({ settings: {
       "site.name": "My Site",
       "landing.mode": "true",
@@ -72,7 +71,7 @@ describe("/api/admin/site-config (#59)", () => {
       where: { key: "site.name" }, update: { value: "My Site" },
     }));
     expect(prisma.siteSetting.deleteMany).toHaveBeenCalledWith({ where: { key: "nav.about" } });
-    expect(invalidateSiteConfigCache).toHaveBeenCalled();
+    // (Cache invalidation is applySiteConfig's job, covered in site-settings.test.ts.)
   });
 
   it("allows an empty string to clear a url/text field", async () => {
