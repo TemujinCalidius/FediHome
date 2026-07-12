@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- Refreshed dependencies (all sandbox-verified): `@atproto/api` 0.20.27 → 0.20.28, `@types/node` 26.1.0 → 26.1.1, `@eslint/eslintrc` 3.3.5 → 3.3.6, `fast-xml-parser` 5.9.0 → 5.10.0, `marked` 18.0.5 → 18.0.6, `postcss` 8.5.16 → 8.5.17, `sanitize-html` 2.17.5 → 2.17.6. (`typescript` stays pinned at 6.x — 7.0.2 breaks `next build`; tracked in #234.)
+
 ## 1.12.0 (2026-07-12)
 
 ### Added
