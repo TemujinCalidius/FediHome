@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const {
   getSchedulerConfig, getEffectiveSchedulerConfig,
-  publishDueScheduledPosts, syncBlueskyGraph, pollBlueskyDMs, syncBlueskyNotifications, retryFailedDeliveries,
+  publishDueScheduledPosts, syncBlueskyGraph, pollBlueskyDMs, syncBlueskyNotifications, retryFailedDeliveries, retryFailedCrossposts,
 } = vi.hoisted(() => ({
   getSchedulerConfig: vi.fn(),
   getEffectiveSchedulerConfig: vi.fn(),
@@ -11,6 +11,7 @@ const {
   pollBlueskyDMs: vi.fn(),
   syncBlueskyNotifications: vi.fn(),
   retryFailedDeliveries: vi.fn(),
+  retryFailedCrossposts: vi.fn(),
 }));
 vi.mock("@/lib/scheduler-config", () => ({ getSchedulerConfig, getEffectiveSchedulerConfig }));
 vi.mock("@/lib/publish-post", () => ({ publishDueScheduledPosts }));
@@ -18,13 +19,15 @@ vi.mock("@/lib/bluesky-graph", () => ({ syncBlueskyGraph }));
 vi.mock("@/lib/bluesky-dm-poll", () => ({ pollBlueskyDMs }));
 vi.mock("@/lib/bluesky-notifications", () => ({ syncBlueskyNotifications }));
 vi.mock("@/lib/delivery-retry", () => ({ retryFailedDeliveries }));
+vi.mock("@/lib/crosspost-retry", () => ({ retryFailedCrossposts }));
 
-import { startScheduler, runPublishTick, runBlueskySyncTick, runDeliveryRetryTick } from "@/lib/scheduler";
+import { startScheduler, runPublishTick, runBlueskySyncTick, runDeliveryRetryTick, runCrosspostRetryTick } from "@/lib/scheduler";
 
 const cfg = (over: Record<string, unknown> = {}) => ({
   publishScheduled: { enabled: true, intervalSec: 60 },
   blueskySync: { enabled: true, intervalSec: 900 },
   deliveryRetry: { enabled: false, intervalSec: 60 },
+  crosspostRetry: { enabled: false, intervalSec: 60 },
   ...over,
 });
 
@@ -39,6 +42,7 @@ beforeEach(() => {
   pollBlueskyDMs.mockResolvedValue({ messages: 0 });
   syncBlueskyNotifications.mockResolvedValue({ pushed: 0 });
   retryFailedDeliveries.mockResolvedValue({ claimed: 0, delivered: 0, gaveUp: 0, pruned: 0 });
+  retryFailedCrossposts.mockResolvedValue({ claimed: 0, delivered: 0, gaveUp: 0, pruned: 0 });
 });
 
 afterEach(() => {
@@ -110,6 +114,28 @@ describe("in-app scheduler (#183/#59)", () => {
     startScheduler();
     await vi.advanceTimersByTimeAsync(600_000);
     expect(retryFailedDeliveries).not.toHaveBeenCalled();
+  });
+
+  it("dispatches the crosspost-retry job on its cadence when enabled (#225)", async () => {
+    getEffectiveSchedulerConfig.mockResolvedValue(cfg({ crosspostRetry: { enabled: true, intervalSec: 60 } }));
+    startScheduler();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(retryFailedCrossposts).toHaveBeenCalled();
+  });
+
+  it("never runs crosspost retry when the job is disabled", async () => {
+    startScheduler();
+    await vi.advanceTimersByTimeAsync(600_000);
+    expect(retryFailedCrossposts).not.toHaveBeenCalled();
+  });
+
+  it("runCrosspostRetryTick swallows a failure (web-server safety)", async () => {
+    getEffectiveSchedulerConfig.mockResolvedValue(cfg({ crosspostRetry: { enabled: true, intervalSec: 60 } }));
+    retryFailedCrossposts.mockRejectedValue(new Error("bsky down"));
+    const consoleErr = vi.spyOn(console, "error").mockImplementation(() => {});
+    await expect(runCrosspostRetryTick()).resolves.toBeUndefined();
+    expect(consoleErr).toHaveBeenCalled();
+    consoleErr.mockRestore();
   });
 
   it("runDeliveryRetryTick swallows a failure (web-server safety)", async () => {

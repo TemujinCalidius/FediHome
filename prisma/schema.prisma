@@ -514,6 +514,22 @@ model SiteSettings {
 
 // === Key-value settings (notification read state, etc.) ===
 
+model FailedCrosspost {
+  id          String    @id @default(cuid())
+  postId      String
+  platform    String // "bluesky" | "threads"
+  payload     String // JSON of the crosspost args, re-sent verbatim on retry (text, url, images?, video?, replyTo?)
+  attempts    Int       @default(0)
+  nextRetryAt DateTime
+  lastError   String?
+  failedAt    DateTime? // set when we give up (terminal); null = still retrying
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([postId, platform])
+  @@index([nextRetryAt])
+}
+
 model FailedDelivery {
   id          String    @id @default(cuid())
   inbox       String
