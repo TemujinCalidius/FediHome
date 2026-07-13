@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("@/lib/db", () => ({ prisma: { siteSetting: { findMany: vi.fn() } } }));
+vi.mock("@/lib/db", () => ({ prisma: { siteSetting: { findMany: vi.fn(), upsert: vi.fn(), deleteMany: vi.fn() } } }));
 vi.mock("@/../site.config", () => ({
   siteConfig: {
     name: "Env Site", description: "env desc",
@@ -8,10 +8,11 @@ vi.mock("@/../site.config", () => ({
     publicFeed: false, publicFeedTitle: "env feed", hideSocialGraph: false,
     nav: { showJournal: true, showArticles: true, showPhotography: true, showVideos: true, showAudio: true, showAbout: true },
     footer: { webringUrl: "", webringLabel: "Webring", badgeSrc: "", badgeHref: "", badgeAlt: "Badge", fundingUrl: "", fundingLabel: "Support" },
+    download: { macosEnabled: false, macosReleaseUrl: "https://env/releases/latest", macosAppStoreUrl: "" },
   },
 }));
 
-import { getRuntimeSiteConfig, invalidateSiteConfigCache, siteConfigDefaults } from "@/lib/site-settings";
+import { getRuntimeSiteConfig, invalidateSiteConfigCache, siteConfigDefaults, applySiteConfig, validateSiteConfigValue } from "@/lib/site-settings";
 import { buildNavLinks } from "@/lib/nav";
 import { prisma } from "@/lib/db";
 
@@ -21,6 +22,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   invalidateSiteConfigCache();
   vi.mocked(prisma.siteSetting.findMany).mockResolvedValue([] as never);
+  vi.mocked(prisma.siteSetting.upsert).mockResolvedValue({} as never);
+  vi.mocked(prisma.siteSetting.deleteMany).mockResolvedValue({ count: 1 } as never);
 });
 
 describe("getRuntimeSiteConfig (#59)", () => {
@@ -43,6 +46,19 @@ describe("getRuntimeSiteConfig (#59)", () => {
     expect(cfg.description).toBe("env desc");
   });
 
+  it("overlays the macOS download group (#241): off by default, editable URLs", async () => {
+    const base = await getRuntimeSiteConfig();
+    expect(base.download).toEqual({ macosEnabled: false, macosReleaseUrl: "https://env/releases/latest", macosAppStoreUrl: "" });
+    invalidateSiteConfigCache();
+    vi.mocked(prisma.siteSetting.findMany).mockResolvedValue(
+      rows({ "download.macos.enabled": "true", "download.macos.appStoreUrl": "https://apps.apple.com/app/id1" }) as never,
+    );
+    const cfg = await getRuntimeSiteConfig();
+    expect(cfg.download.macosEnabled).toBe(true);
+    expect(cfg.download.macosAppStoreUrl).toBe("https://apps.apple.com/app/id1");
+    expect(cfg.download.macosReleaseUrl).toBe("https://env/releases/latest"); // untouched → env default
+  });
+
   it("caches for a minute; invalidation forces a re-read", async () => {
     await getRuntimeSiteConfig();
     await getRuntimeSiteConfig();
@@ -57,6 +73,48 @@ describe("getRuntimeSiteConfig (#59)", () => {
     expect((await getRuntimeSiteConfig()).name).toBe("Env Site");
     vi.mocked(prisma.siteSetting.findMany).mockResolvedValue(rows({ "site.name": "Back" }) as never);
     expect((await getRuntimeSiteConfig()).name).toBe("Back"); // failure wasn't cached
+  });
+});
+
+describe("validateSiteConfigValue (#59)", () => {
+  it("bool fields accept only true/false", () => {
+    expect(validateSiteConfigValue("landing.mode", "true")).toBe("true");
+    expect(validateSiteConfigValue("landing.mode", "false")).toBe("false");
+    expect(validateSiteConfigValue("landing.mode", "yes")).toBeNull();
+  });
+  it("url fields accept relative + http(s), reject javascript:/protocol-relative/control chars", () => {
+    expect(validateSiteConfigValue("footer.badgeSrc", "/images/b.png")).toBe("/images/b.png");
+    expect(validateSiteConfigValue("footer.webringUrl", "https://ring.example")).toBe("https://ring.example");
+    expect(validateSiteConfigValue("footer.webringUrl", "")).toBe(""); // unset
+    expect(validateSiteConfigValue("footer.webringUrl", "javascript:alert(1)")).toBeNull();
+    expect(validateSiteConfigValue("footer.badgeSrc", "//evil.example/x")).toBeNull();
+    expect(validateSiteConfigValue("site.name", "a\nb")).toBeNull(); // control char
+  });
+});
+
+describe("applySiteConfig (#59 — shared by admin panel + setup wizard)", () => {
+  it("upserts valid overrides + deletes null ones, then invalidates the cache", async () => {
+    // Warm the cache, then apply → the next read must re-hit the DB.
+    await getRuntimeSiteConfig();
+    expect(prisma.siteSetting.findMany).toHaveBeenCalledTimes(1);
+    const r = await applySiteConfig({ "feed.public": "true", "nav.about": null });
+    expect(r).toEqual({ ok: true });
+    expect(prisma.siteSetting.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { key: "feed.public" }, update: { value: "true" } }),
+    );
+    expect(prisma.siteSetting.deleteMany).toHaveBeenCalledWith({ where: { key: "nav.about" } });
+    await getRuntimeSiteConfig();
+    expect(prisma.siteSetting.findMany).toHaveBeenCalledTimes(2); // cache was invalidated
+  });
+
+  it("rejects an unknown key, a non-string value, an invalid value, and an empty/oversized payload — writing nothing", async () => {
+    expect((await applySiteConfig({ "nope.key": "x" })).ok).toBe(false);
+    expect((await applySiteConfig({ "landing.mode": "maybe" })).ok).toBe(false);
+    expect((await applySiteConfig({ "site.name": 5 })).ok).toBe(false);
+    expect((await applySiteConfig({})).ok).toBe(false);
+    expect((await applySiteConfig(null)).ok).toBe(false);
+    expect(prisma.siteSetting.upsert).not.toHaveBeenCalled();
+    expect(prisma.siteSetting.deleteMany).not.toHaveBeenCalled();
   });
 });
 
@@ -75,5 +133,14 @@ describe("buildNavLinks (#59)", () => {
     invalidateSiteConfigCache();
     vi.mocked(prisma.siteSetting.findMany).mockResolvedValue(rows({ "feed.public": "true" }) as never);
     expect(buildNavLinks(await getRuntimeSiteConfig()).some((l) => l.href === "/fediverse")).toBe(true);
+  });
+
+  it("shows the Download link only when the macOS app is enabled (#241)", async () => {
+    invalidateSiteConfigCache();
+    vi.mocked(prisma.siteSetting.findMany).mockResolvedValue([] as never);
+    expect(buildNavLinks(await getRuntimeSiteConfig()).some((l) => l.href === "/download")).toBe(false);
+    invalidateSiteConfigCache();
+    vi.mocked(prisma.siteSetting.findMany).mockResolvedValue(rows({ "download.macos.enabled": "true" }) as never);
+    expect(buildNavLinks(await getRuntimeSiteConfig()).some((l) => l.href === "/download")).toBe(true);
   });
 });

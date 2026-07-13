@@ -22,5 +22,6 @@ export function buildNavLinks(cfg: RuntimeSiteConfig): NavLink[] {
     ...(cfg.nav.showAudio ? [{ label: "Audio", href: "/audio" }] : []),
     ...(cfg.publicFeed ? [{ label: "Fediverse", href: "/fediverse" }] : []),
     ...(cfg.nav.showAbout ? [{ label: "About", href: "/about" }] : []),
+    ...(cfg.download.macosEnabled ? [{ label: "Download", href: "/download" }] : []),
   ];
 }

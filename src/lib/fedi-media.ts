@@ -247,6 +247,33 @@ export async function trimFediStorage(): Promise<{ deleted: number; freedBytes: 
   return { deleted, freedBytes };
 }
 
+/**
+ * Reclaim cached remote media for pruned posts (#240). Only removes files we
+ * proxied under public/uploads/fedi/ — remote passthrough URLs (skip-proxy
+ * video hosts, proxy fallbacks) and remote avatars are left untouched. Each
+ * path is resolved and confirmed to stay INSIDE the fedi media dir before
+ * unlink, so a poisoned "/uploads/fedi/../.." value can't escape the tree.
+ * Best-effort per file (an already-gone file never throws). Returns the count
+ * actually removed.
+ */
+export async function removeFediMediaFiles(urls: string[]): Promise<number> {
+  const baseDir = path.join(process.cwd(), "public", "uploads", "fedi");
+  let removed = 0;
+  for (const url of urls) {
+    if (typeof url !== "string" || !url.startsWith("/uploads/fedi/")) continue;
+    const abs = path.join(process.cwd(), "public", url);
+    const rel = path.relative(baseDir, abs);
+    if (rel.startsWith("..") || path.isAbsolute(rel)) continue; // escaped the tree
+    try {
+      await unlink(abs);
+      removed++;
+    } catch {
+      // already gone / unreadable — best effort
+    }
+  }
+  return removed;
+}
+
 export async function processAttachments(
   attachments: unknown[] | undefined
 ): Promise<{ urls: string[]; types: string[] }> {

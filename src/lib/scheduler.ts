@@ -5,6 +5,7 @@ import { pollBlueskyDMs } from "./bluesky-dm-poll";
 import { syncBlueskyNotifications } from "./bluesky-notifications";
 import { retryFailedDeliveries } from "./delivery-retry";
 import { retryFailedCrossposts } from "./crosspost-retry";
+import { pruneStaleFediPosts } from "./fedi-retention";
 
 /**
  * FediHome's periodic jobs (publishing due scheduled posts #183, Bluesky sync),
@@ -42,7 +43,7 @@ const globalScheduler = globalThis as typeof globalThis & {
 };
 
 const MASTER_TICK_MS = 15_000;
-const lastRun = { publish: 0, bluesky: 0, delivery: 0, crosspost: 0 };
+const lastRun = { publish: 0, bluesky: 0, delivery: 0, crosspost: 0, retention: 0 };
 
 function log(msg: string) {
   console.log(`[${new Date().toISOString()}] scheduler: ${msg}`);
@@ -104,6 +105,21 @@ export async function runCrosspostRetryTick(): Promise<void> {
   }
 }
 
+export async function runRetentionSweepTick(): Promise<void> {
+  if (!(await getEffectiveSchedulerConfig()).retentionSweep.enabled) return;
+  try {
+    const r = await pruneStaleFediPosts();
+    if (r.pruned > 0 || r.filesRemoved > 0) {
+      log(
+        `retention: pruned ${r.pruned} remote post(s), ${r.filesRemoved} media file(s)` +
+          (r.capped ? " (capped — more next tick)" : ""),
+      );
+    }
+  } catch (err) {
+    console.error("scheduler: retention-sweep failed:", err);
+  }
+}
+
 async function masterTick(): Promise<void> {
   const cfg = await getEffectiveSchedulerConfig();
   const now = Date.now();
@@ -122,6 +138,10 @@ async function masterTick(): Promise<void> {
   if (cfg.crosspostRetry.enabled && now - lastRun.crosspost >= cfg.crosspostRetry.intervalSec * 1000) {
     lastRun.crosspost = now;
     await runCrosspostRetryTick();
+  }
+  if (cfg.retentionSweep.enabled && now - lastRun.retention >= cfg.retentionSweep.intervalSec * 1000) {
+    lastRun.retention = now;
+    await runRetentionSweepTick();
   }
 }
 
@@ -151,7 +171,8 @@ export function startScheduler(): boolean {
     `starting (in-app) — publish=${cfg.publishScheduled.enabled ? cfg.publishScheduled.intervalSec + "s" : "off"}, ` +
       `bluesky=${cfg.blueskySync.enabled ? cfg.blueskySync.intervalSec + "s" : "off"}, ` +
       `delivery=${cfg.deliveryRetry.enabled ? cfg.deliveryRetry.intervalSec + "s" : "off"}, ` +
-      `crosspost=${cfg.crosspostRetry.enabled ? cfg.crosspostRetry.intervalSec + "s" : "off"}` +
+      `crosspost=${cfg.crosspostRetry.enabled ? cfg.crosspostRetry.intervalSec + "s" : "off"}, ` +
+      `retention=${cfg.retentionSweep.enabled ? cfg.retentionSweep.intervalSec + "s/" + cfg.retentionSweep.retentionDays + "d" : "off"}` +
       ` (env defaults; /admin/settings overrides apply live)`,
   );
 
@@ -161,6 +182,7 @@ export function startScheduler(): boolean {
   lastRun.bluesky = Date.now();
   lastRun.delivery = Date.now();
   lastRun.crosspost = Date.now();
+  lastRun.retention = Date.now();
 
   const boot = masterTick().catch((err) => console.error("scheduler: tick failed:", err));
   void boot;

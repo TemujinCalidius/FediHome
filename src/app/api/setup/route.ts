@@ -5,6 +5,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import * as fs from "fs";
 import * as path from "path";
 import { verifyAdmin, safeCompare } from "@/lib/auth";
+import { applySiteConfig } from "@/lib/site-settings";
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
@@ -187,6 +188,15 @@ export async function POST(request: Request) {
 
     const finalContent = cleaned.trimEnd() + "\n" + envLines.join("\n");
     fs.writeFileSync(envPath, finalContent, { encoding: "utf-8", mode: 0o600 });
+
+    // Apply the wizard's appearance/feature choices (#59) to the DB-backed site
+    // config, so a fresh install is configured with no file editing. Validated
+    // + persisted by the same helper the admin panel uses. Best-effort: a bad
+    // value is skipped, never blocking the (already-claimed) setup.
+    if (body.siteConfig && typeof body.siteConfig === "object") {
+      const applied = await applySiteConfig(body.siteConfig);
+      if (!applied.ok) console.warn("Setup: skipped invalid site config:", applied.error);
+    }
 
     const response = NextResponse.json({ success: true });
 
