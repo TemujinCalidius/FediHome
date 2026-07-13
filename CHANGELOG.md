@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- A "Download the macOS app" marketing surface (#241): an opt-in `/download` page, a homepage hero CTA, and a nav link that advertise the native FediHome macOS app. The primary download tracks the app's GitHub Releases `latest` (always the newest notarized build), with a slot for the Mac App Store badge once the listing is live. Off by default — enable it (and edit the URLs) from **Admin → Site settings** or via `DOWNLOAD_MACOS_ENABLED` / `DOWNLOAD_MACOS_RELEASE_URL` / `DOWNLOAD_MACOS_APP_STORE_URL`.
 - The first-run setup wizard now collects your site's appearance and feature choices — public Fediverse feed, landing-page mode, and which navigation sections show — and writes them straight to the DB-backed site config, so a fresh install lands pre-configured with no file editing. Reuses the same validated config store the admin panel uses. (#59)
 - Optional retention sweep for cached remote federated data (#240): a new scheduler job prunes stale copies of *remote* posts (re-fetchable from their origin) and reclaims their cached media, so a long-running instance's disk doesn't grow unbounded. **Off by default** — enable it, set the sweep cadence, and choose the age window (default 90 days) from `/admin/settings`, or via `SCHEDULER_RETENTION_ENABLED` / `SCHEDULER_RETENTION_INTERVAL_SEC` / `SCHEDULER_RETENTION_DAYS`. Your own posts, interactions on your posts, follows, threads you're part of, and DMs are never pruned.
 

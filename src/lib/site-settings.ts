@@ -41,6 +41,9 @@ export const SITE_CONFIG_FIELDS: Record<string, FieldType> = {
   "footer.badgeAlt": "text",
   "footer.fundingUrl": "url",
   "footer.fundingLabel": "text",
+  "download.macos.enabled": "bool",
+  "download.macos.releaseUrl": "url",
+  "download.macos.appStoreUrl": "url",
 };
 
 export const SITE_CONFIG_KEYS = Object.keys(SITE_CONFIG_FIELDS);
@@ -60,6 +63,7 @@ export interface RuntimeSiteConfig {
     webringUrl: string; webringLabel: string; badgeSrc: string; badgeHref: string;
     badgeAlt: string; fundingUrl: string; fundingLabel: string;
   };
+  download: { macosEnabled: boolean; macosReleaseUrl: string; macosAppStoreUrl: string };
 }
 
 /** The env/default view — exactly what `siteConfig` (env-driven) exposes today. */
@@ -78,6 +82,7 @@ export function siteConfigDefaults(): RuntimeSiteConfig {
     hideSocialGraph: siteConfig.hideSocialGraph,
     nav: { ...siteConfig.nav },
     footer: { ...siteConfig.footer },
+    download: { ...siteConfig.download },
   };
 }
 
@@ -135,6 +140,11 @@ export async function getRuntimeSiteConfig(): Promise<RuntimeSiteConfig> {
         badgeAlt: textOverride(o["footer.badgeAlt"], base.footer.badgeAlt),
         fundingUrl: textOverride(o["footer.fundingUrl"], base.footer.fundingUrl),
         fundingLabel: textOverride(o["footer.fundingLabel"], base.footer.fundingLabel),
+      },
+      download: {
+        macosEnabled: boolOverride(o["download.macos.enabled"], base.download.macosEnabled),
+        macosReleaseUrl: textOverride(o["download.macos.releaseUrl"], base.download.macosReleaseUrl),
+        macosAppStoreUrl: textOverride(o["download.macos.appStoreUrl"], base.download.macosAppStoreUrl),
       },
     };
   } catch {

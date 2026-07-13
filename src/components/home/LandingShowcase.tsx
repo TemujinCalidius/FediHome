@@ -43,12 +43,15 @@ const INSTALL_ONE_LINER =
 export default function LandingShowcase({
   landing,
   footer,
+  download,
 }: {
   landing: RuntimeSiteConfig["landing"];
   footer: RuntimeSiteConfig["footer"];
+  download: RuntimeSiteConfig["download"];
 }) {
   const repo = landing.repoUrl;
   const funding = footer.fundingUrl;
+  const showMacApp = download.macosEnabled;
   return (
     <div className="relative overflow-hidden">
       {/* Subtle generated texture backdrop + fade into the page background */}
@@ -80,11 +83,19 @@ export default function LandingShowcase({
               {landing.subhead}
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
+              {/* When the macOS app is enabled it becomes the hero's primary
+                  action; "View on GitHub" then steps down to the outlined style
+                  so there's exactly one filled button. */}
+              {showMacApp && (
+                <Link href="/download" className="btn-primary text-xs">
+                  Download for Mac
+                </Link>
+              )}
               <a
                 href={repo}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="btn-primary text-xs"
+                className={showMacApp ? "btn-outlined text-xs" : "btn-primary text-xs"}
               >
                 View on GitHub
               </a>

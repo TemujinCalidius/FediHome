@@ -79,7 +79,7 @@ export default async function HomePage({
   if (site.landing.mode) {
     return (
       <div>
-        {page === 1 && <LandingShowcase landing={site.landing} footer={site.footer} />}
+        {page === 1 && <LandingShowcase landing={site.landing} footer={site.footer} download={site.download} />}
         <div className="max-w-3xl mx-auto px-6 pb-16 pt-4">{postsSection}</div>
       </div>
     );
