@@ -80,6 +80,20 @@ export const siteConfig = {
     fundingUrl: process.env.FUNDING_URL || "",
     fundingLabel: process.env.FUNDING_LABEL || "Support FediHome",
   },
+
+  // Native-app downloads (#241). When DOWNLOAD_MACOS_ENABLED=true, a "Download"
+  // nav link, a homepage hero CTA, and a /download page appear — a marketing
+  // surface for the FediHome macOS app. Off by default so a personal instance
+  // isn't advertising an app it may not use; the public demo turns it on. The
+  // release URL tracks GitHub Releases "latest" (always the newest notarized
+  // build); the App Store URL is an empty slot until the listing is approved.
+  download: {
+    macosEnabled: process.env.DOWNLOAD_MACOS_ENABLED === "true",
+    macosReleaseUrl:
+      process.env.DOWNLOAD_MACOS_RELEASE_URL ||
+      "https://github.com/TemujinCalidius/FediHome-macOS/releases/latest",
+    macosAppStoreUrl: process.env.DOWNLOAD_MACOS_APP_STORE_URL || "",
+  },
 } as const;
 
 export type SiteConfig = typeof siteConfig;

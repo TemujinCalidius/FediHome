@@ -73,6 +73,9 @@ export default function SiteSettingsClient({
       "footer.badgeAlt": cfg.footer.badgeAlt,
       "footer.fundingUrl": cfg.footer.fundingUrl,
       "footer.fundingLabel": cfg.footer.fundingLabel,
+      "download.macos.enabled": String(cfg.download.macosEnabled),
+      "download.macos.releaseUrl": cfg.download.macosReleaseUrl,
+      "download.macos.appStoreUrl": cfg.download.macosAppStoreUrl,
     };
     if (await post(settings)) setHasOverrides(true);
   };
@@ -85,6 +88,7 @@ export default function SiteSettingsClient({
         "nav.journal", "nav.articles", "nav.photography", "nav.videos", "nav.audio", "nav.about",
         "footer.webringUrl", "footer.webringLabel", "footer.badgeSrc", "footer.badgeHref",
         "footer.badgeAlt", "footer.fundingUrl", "footer.fundingLabel",
+        "download.macos.enabled", "download.macos.releaseUrl", "download.macos.appStoreUrl",
       ].map((k) => [k, null]),
     );
     if (await post(cleared)) {
@@ -97,6 +101,7 @@ export default function SiteSettingsClient({
   const setNav = (patch: Partial<RuntimeSiteConfig["nav"]>) => setCfg((c) => ({ ...c, nav: { ...c.nav, ...patch } }));
   const setLanding = (patch: Partial<RuntimeSiteConfig["landing"]>) => setCfg((c) => ({ ...c, landing: { ...c.landing, ...patch } }));
   const setFooter = (patch: Partial<RuntimeSiteConfig["footer"]>) => setCfg((c) => ({ ...c, footer: { ...c.footer, ...patch } }));
+  const setDownload = (patch: Partial<RuntimeSiteConfig["download"]>) => setCfg((c) => ({ ...c, download: { ...c.download, ...patch } }));
 
   const text = (label: string, value: string, onChange: (v: string) => void, placeholder = "") => (
     <label className="flex flex-col gap-1 text-xs text-gray-400">
@@ -172,6 +177,12 @@ export default function SiteSettingsClient({
           {text("Badge alt text", cfg.footer.badgeAlt, (v) => setFooter({ badgeAlt: v }))}
           {text("Funding URL", cfg.footer.fundingUrl, (v) => setFooter({ fundingUrl: v }), "https://…")}
           {text("Funding label", cfg.footer.fundingLabel, (v) => setFooter({ fundingLabel: v }))}
+        </>)}
+
+        {section("macOS app", <>
+          {check("Show the Download nav link, homepage CTA & /download page", cfg.download.macosEnabled, (v) => setDownload({ macosEnabled: v }))}
+          {text("Release URL (GitHub Releases)", cfg.download.macosReleaseUrl, (v) => setDownload({ macosReleaseUrl: v }), "https://…")}
+          {text("Mac App Store URL (optional)", cfg.download.macosAppStoreUrl, (v) => setDownload({ macosAppStoreUrl: v }), "https://…")}
         </>)}
 
         <div className="flex items-center gap-3 py-4">
