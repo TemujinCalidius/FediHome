@@ -18,16 +18,18 @@ beforeEach(() => {
   for (const k of [
     "SCHEDULER_PUBLISH_ENABLED", "SCHEDULER_PUBLISH_INTERVAL_SEC",
     "SCHEDULER_BLUESKY_ENABLED", "SCHEDULER_BLUESKY_INTERVAL_SEC", "BLUESKY_HANDLE",
+    "SCHEDULER_RETENTION_ENABLED", "SCHEDULER_RETENTION_INTERVAL_SEC", "SCHEDULER_RETENTION_DAYS",
   ]) delete process.env[k];
 });
 
 describe("getSchedulerConfig", () => {
-  it("defaults: publish on/60s, bluesky off (unconfigured)/900s, delivery on/60s", () => {
+  it("defaults: publish on/60s, bluesky off (unconfigured)/900s, delivery on/60s, retention off/daily/90d", () => {
     expect(getSchedulerConfig()).toEqual({
       publishScheduled: { enabled: true, intervalSec: 60 },
       blueskySync: { enabled: false, intervalSec: 900 },
       deliveryRetry: { enabled: true, intervalSec: 60 },
       crosspostRetry: { enabled: true, intervalSec: 60 },
+      retentionSweep: { enabled: false, intervalSec: 86_400, retentionDays: 90 },
     });
   });
 
@@ -49,6 +51,14 @@ describe("getSchedulerConfig", () => {
   it("ignores a non-positive interval and falls back to the default", () => {
     process.env.SCHEDULER_PUBLISH_INTERVAL_SEC = "0";
     expect(getSchedulerConfig().publishScheduled.intervalSec).toBe(60);
+  });
+
+  it("honours a valid retention env window; clamps an out-of-range one to the default", () => {
+    process.env.SCHEDULER_RETENTION_ENABLED = "true";
+    process.env.SCHEDULER_RETENTION_DAYS = "30";
+    expect(getSchedulerConfig().retentionSweep).toEqual({ enabled: true, intervalSec: 86_400, retentionDays: 30 });
+    process.env.SCHEDULER_RETENTION_DAYS = "3"; // below the 7-day floor
+    expect(getSchedulerConfig().retentionSweep.retentionDays).toBe(90);
   });
 });
 

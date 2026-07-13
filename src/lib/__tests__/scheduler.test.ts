@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const {
   getSchedulerConfig, getEffectiveSchedulerConfig,
-  publishDueScheduledPosts, syncBlueskyGraph, pollBlueskyDMs, syncBlueskyNotifications, retryFailedDeliveries, retryFailedCrossposts,
+  publishDueScheduledPosts, syncBlueskyGraph, pollBlueskyDMs, syncBlueskyNotifications, retryFailedDeliveries, retryFailedCrossposts, pruneStaleFediPosts,
 } = vi.hoisted(() => ({
   getSchedulerConfig: vi.fn(),
   getEffectiveSchedulerConfig: vi.fn(),
@@ -12,6 +12,7 @@ const {
   syncBlueskyNotifications: vi.fn(),
   retryFailedDeliveries: vi.fn(),
   retryFailedCrossposts: vi.fn(),
+  pruneStaleFediPosts: vi.fn(),
 }));
 vi.mock("@/lib/scheduler-config", () => ({ getSchedulerConfig, getEffectiveSchedulerConfig }));
 vi.mock("@/lib/publish-post", () => ({ publishDueScheduledPosts }));
@@ -20,14 +21,16 @@ vi.mock("@/lib/bluesky-dm-poll", () => ({ pollBlueskyDMs }));
 vi.mock("@/lib/bluesky-notifications", () => ({ syncBlueskyNotifications }));
 vi.mock("@/lib/delivery-retry", () => ({ retryFailedDeliveries }));
 vi.mock("@/lib/crosspost-retry", () => ({ retryFailedCrossposts }));
+vi.mock("@/lib/fedi-retention", () => ({ pruneStaleFediPosts }));
 
-import { startScheduler, runPublishTick, runBlueskySyncTick, runDeliveryRetryTick, runCrosspostRetryTick } from "@/lib/scheduler";
+import { startScheduler, runPublishTick, runBlueskySyncTick, runDeliveryRetryTick, runCrosspostRetryTick, runRetentionSweepTick } from "@/lib/scheduler";
 
 const cfg = (over: Record<string, unknown> = {}) => ({
   publishScheduled: { enabled: true, intervalSec: 60 },
   blueskySync: { enabled: true, intervalSec: 900 },
   deliveryRetry: { enabled: false, intervalSec: 60 },
   crosspostRetry: { enabled: false, intervalSec: 60 },
+  retentionSweep: { enabled: false, intervalSec: 86_400, retentionDays: 90 },
   ...over,
 });
 
@@ -43,6 +46,7 @@ beforeEach(() => {
   syncBlueskyNotifications.mockResolvedValue({ pushed: 0 });
   retryFailedDeliveries.mockResolvedValue({ claimed: 0, delivered: 0, gaveUp: 0, pruned: 0 });
   retryFailedCrossposts.mockResolvedValue({ claimed: 0, delivered: 0, gaveUp: 0, pruned: 0 });
+  pruneStaleFediPosts.mockResolvedValue({ scanned: 0, pruned: 0, filesRemoved: 0, capped: false });
 });
 
 afterEach(() => {
@@ -127,6 +131,28 @@ describe("in-app scheduler (#183/#59)", () => {
     startScheduler();
     await vi.advanceTimersByTimeAsync(600_000);
     expect(retryFailedCrossposts).not.toHaveBeenCalled();
+  });
+
+  it("dispatches the retention sweep on its cadence when enabled (#240)", async () => {
+    getEffectiveSchedulerConfig.mockResolvedValue(cfg({ retentionSweep: { enabled: true, intervalSec: 60, retentionDays: 90 } }));
+    startScheduler();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(pruneStaleFediPosts).toHaveBeenCalled();
+  });
+
+  it("never runs the retention sweep when disabled (default OFF)", async () => {
+    startScheduler();
+    await vi.advanceTimersByTimeAsync(600_000);
+    expect(pruneStaleFediPosts).not.toHaveBeenCalled();
+  });
+
+  it("runRetentionSweepTick swallows a failure (web-server safety)", async () => {
+    getEffectiveSchedulerConfig.mockResolvedValue(cfg({ retentionSweep: { enabled: true, intervalSec: 60, retentionDays: 90 } }));
+    pruneStaleFediPosts.mockRejectedValue(new Error("db down"));
+    const consoleErr = vi.spyOn(console, "error").mockImplementation(() => {});
+    await expect(runRetentionSweepTick()).resolves.toBeUndefined();
+    expect(consoleErr).toHaveBeenCalled();
+    consoleErr.mockRestore();
   });
 
   it("runCrosspostRetryTick swallows a failure (web-server safety)", async () => {

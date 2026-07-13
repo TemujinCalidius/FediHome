@@ -4,6 +4,7 @@
 
 ### Added
 - The first-run setup wizard now collects your site's appearance and feature choices — public Fediverse feed, landing-page mode, and which navigation sections show — and writes them straight to the DB-backed site config, so a fresh install lands pre-configured with no file editing. Reuses the same validated config store the admin panel uses. (#59)
+- Optional retention sweep for cached remote federated data (#240): a new scheduler job prunes stale copies of *remote* posts (re-fetchable from their origin) and reclaims their cached media, so a long-running instance's disk doesn't grow unbounded. **Off by default** — enable it, set the sweep cadence, and choose the age window (default 90 days) from `/admin/settings`, or via `SCHEDULER_RETENTION_ENABLED` / `SCHEDULER_RETENTION_INTERVAL_SEC` / `SCHEDULER_RETENTION_DAYS`. Your own posts, interactions on your posts, follows, threads you're part of, and DMs are never pruned.
 
 ### Changed
 - Refreshed dependencies (all sandbox-verified): `@atproto/api` 0.20.27 → 0.20.28, `@types/node` 26.1.0 → 26.1.1, `@eslint/eslintrc` 3.3.5 → 3.3.6, `fast-xml-parser` 5.9.0 → 5.10.0, `marked` 18.0.5 → 18.0.6, `postcss` 8.5.16 → 8.5.17, `sanitize-html` 2.17.5 → 2.17.6. (`typescript` stays pinned at 6.x — 7.0.2 breaks `next build`; tracked in #234.)
