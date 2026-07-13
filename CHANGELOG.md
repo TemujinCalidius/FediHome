@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.13.0 (2026-07-14)
 
 ### Added
 - A "Download the macOS app" marketing surface (#241): an opt-in `/download` page, a homepage hero CTA, and a nav link that advertise the native FediHome macOS app. The primary download tracks the app's GitHub Releases `latest` (always the newest notarized build), with a slot for the Mac App Store badge once the listing is live. Off by default — enable it (and edit the URLs) from **Admin → Site settings** or via `DOWNLOAD_MACOS_ENABLED` / `DOWNLOAD_MACOS_RELEASE_URL` / `DOWNLOAD_MACOS_APP_STORE_URL`.
