@@ -26,6 +26,9 @@ export default function SettingsClient({
   const [deliveryInterval, setDeliveryInterval] = useState(String(effective.deliveryRetry.intervalSec));
   const [crosspostEnabled, setCrosspostEnabled] = useState(effective.crosspostRetry.enabled);
   const [crosspostInterval, setCrosspostInterval] = useState(String(effective.crosspostRetry.intervalSec));
+  const [retentionEnabled, setRetentionEnabled] = useState(effective.retentionSweep.enabled);
+  const [retentionInterval, setRetentionInterval] = useState(String(effective.retentionSweep.intervalSec));
+  const [retentionDays, setRetentionDays] = useState(String(effective.retentionSweep.retentionDays));
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [hasOverrides, setHasOverrides] = useState(Object.keys(overrides).length > 0);
@@ -53,6 +56,9 @@ export default function SettingsClient({
       setDeliveryInterval(String(eff.deliveryRetry.intervalSec));
       setCrosspostEnabled(eff.crosspostRetry.enabled);
       setCrosspostInterval(String(eff.crosspostRetry.intervalSec));
+      setRetentionEnabled(eff.retentionSweep.enabled);
+      setRetentionInterval(String(eff.retentionSweep.intervalSec));
+      setRetentionDays(String(eff.retentionSweep.retentionDays));
       setResult({ ok: true, msg: "Saved — the scheduler applies changes within a minute." });
       return true;
     } catch {
@@ -74,6 +80,9 @@ export default function SettingsClient({
         "scheduler.delivery.intervalSec": deliveryInterval,
         "scheduler.crosspost.enabled": crosspostEnabled ? "true" : "false",
         "scheduler.crosspost.intervalSec": crosspostInterval,
+        "scheduler.retention.enabled": retentionEnabled ? "true" : "false",
+        "scheduler.retention.intervalSec": retentionInterval,
+        "scheduler.retention.days": retentionDays,
       })
     ) {
       setHasOverrides(true);
@@ -91,6 +100,9 @@ export default function SettingsClient({
         "scheduler.delivery.intervalSec": null,
         "scheduler.crosspost.enabled": null,
         "scheduler.crosspost.intervalSec": null,
+        "scheduler.retention.enabled": null,
+        "scheduler.retention.intervalSec": null,
+        "scheduler.retention.days": null,
       })
     ) {
       setHasOverrides(false);
@@ -181,6 +193,48 @@ export default function SettingsClient({
           setCrosspostInterval,
           defaults.crosspostRetry.intervalSec,
         )}
+
+        <div className="flex flex-wrap items-center gap-4 py-4 border-b border-surface-800 last:border-b-0">
+          <label className="flex items-center gap-2 min-w-56">
+            <input
+              type="checkbox"
+              checked={retentionEnabled}
+              onChange={(e) => setRetentionEnabled(e.target.checked)}
+            />
+            <span className="text-sm text-white">Federated data retention</span>
+          </label>
+          <label className="flex items-center gap-2 text-xs text-gray-400">
+            every
+            <input
+              type="number"
+              min={10}
+              max={86400}
+              value={retentionInterval}
+              onChange={(e) => setRetentionInterval(e.target.value)}
+              disabled={!retentionEnabled}
+              className="w-24 bg-surface-800 border border-surface-700 rounded-md px-2 py-1 text-xs text-white disabled:opacity-50"
+            />
+            seconds <span className="text-gray-600">(default {defaults.retentionSweep.intervalSec}s)</span>
+          </label>
+          <label className="flex items-center gap-2 text-xs text-gray-400">
+            prune remote posts older than
+            <input
+              type="number"
+              min={7}
+              max={3650}
+              value={retentionDays}
+              onChange={(e) => setRetentionDays(e.target.value)}
+              disabled={!retentionEnabled}
+              className="w-20 bg-surface-800 border border-surface-700 rounded-md px-2 py-1 text-xs text-white disabled:opacity-50"
+            />
+            days <span className="text-gray-600">(default {defaults.retentionSweep.retentionDays})</span>
+          </label>
+          <p className="w-full text-xs text-gray-500 m-0">
+            Off by default. Deletes cached copies of <strong>remote</strong> posts older than the window
+            (re-fetchable from their origin) to bound disk growth. Your own posts, interactions on your
+            posts, follows, and DMs are never pruned.
+          </p>
+        </div>
 
         <div className="flex items-center gap-3 py-4">
           <button onClick={save} disabled={saving} className="btn-primary disabled:opacity-50">

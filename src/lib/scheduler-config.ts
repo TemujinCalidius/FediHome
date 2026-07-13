@@ -17,12 +17,24 @@ export interface SchedulerJobConfig {
   intervalSec: number;
 }
 
+/** The retention sweep also carries the age window (#240). */
+export interface RetentionJobConfig extends SchedulerJobConfig {
+  retentionDays: number;
+}
+
 export interface SchedulerConfig {
   publishScheduled: SchedulerJobConfig;
   blueskySync: SchedulerJobConfig;
   deliveryRetry: SchedulerJobConfig;
   crosspostRetry: SchedulerJobConfig;
+  retentionSweep: RetentionJobConfig;
 }
+
+// Retention window bounds (#240): a 7-day floor blocks the 0-day "delete
+// everything" foot-gun; the ceiling is a sanity cap. Shared by the env default,
+// the admin override, and the /admin/settings validation.
+export const MIN_RETENTION_DAYS = 7;
+export const MAX_RETENTION_DAYS = 3650;
 
 function posNum(value: string | undefined, fallback: number): number {
   const n = Number(value);
@@ -32,6 +44,14 @@ function posNum(value: string | undefined, fallback: number): number {
 function flag(value: string | undefined, fallback: boolean): boolean {
   if (value == null || value === "") return fallback;
   return value !== "false" && value !== "0";
+}
+
+/** Retention window in days, clamped to [MIN,MAX]; out-of-range → fallback. */
+function clampDays(value: string | undefined, fallback: number): number {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  const floored = Math.floor(n);
+  return floored >= MIN_RETENTION_DAYS && floored <= MAX_RETENTION_DAYS ? floored : fallback;
 }
 
 export function getSchedulerConfig(): SchedulerConfig {
@@ -57,6 +77,13 @@ export function getSchedulerConfig(): SchedulerConfig {
       enabled: flag(process.env.SCHEDULER_CROSSPOST_ENABLED, true),
       intervalSec: posNum(process.env.SCHEDULER_CROSSPOST_INTERVAL_SEC, 60),
     },
+    // Prune stale cached REMOTE federated posts (#240). Default: OFF (opt-in —
+    // it deletes data), daily, keep 90 days.
+    retentionSweep: {
+      enabled: flag(process.env.SCHEDULER_RETENTION_ENABLED, false),
+      intervalSec: posNum(process.env.SCHEDULER_RETENTION_INTERVAL_SEC, 86_400),
+      retentionDays: clampDays(process.env.SCHEDULER_RETENTION_DAYS, 90),
+    },
   };
 }
 
@@ -72,6 +99,9 @@ export const SCHEDULER_SETTING_KEYS = [
   "scheduler.delivery.intervalSec",
   "scheduler.crosspost.enabled",
   "scheduler.crosspost.intervalSec",
+  "scheduler.retention.enabled",
+  "scheduler.retention.intervalSec",
+  "scheduler.retention.days",
 ] as const;
 
 export type SchedulerSettingKey = (typeof SCHEDULER_SETTING_KEYS)[number];
@@ -131,6 +161,11 @@ export async function getEffectiveSchedulerConfig(): Promise<SchedulerConfig> {
       crosspostRetry: {
         enabled: overrideFlag(o["scheduler.crosspost.enabled"], base.crosspostRetry.enabled),
         intervalSec: overrideNum(o["scheduler.crosspost.intervalSec"], base.crosspostRetry.intervalSec),
+      },
+      retentionSweep: {
+        enabled: overrideFlag(o["scheduler.retention.enabled"], base.retentionSweep.enabled),
+        intervalSec: overrideNum(o["scheduler.retention.intervalSec"], base.retentionSweep.intervalSec),
+        retentionDays: clampDays(o["scheduler.retention.days"], base.retentionSweep.retentionDays),
       },
     };
   } catch {

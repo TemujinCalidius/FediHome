@@ -6,6 +6,8 @@ import {
   getEffectiveSchedulerConfig,
   invalidateSchedulerConfigCache,
   SCHEDULER_SETTING_KEYS,
+  MIN_RETENTION_DAYS,
+  MAX_RETENTION_DAYS,
   type SchedulerSettingKey,
 } from "@/lib/scheduler-config";
 
@@ -22,12 +24,18 @@ import {
 
 const KEY_SET = new Set<string>(SCHEDULER_SETTING_KEYS);
 const INTERVAL_RE = /^\d{1,6}$/;
+const DAYS_RE = /^\d{1,5}$/;
 const MIN_INTERVAL_SEC = 10;
 const MAX_INTERVAL_SEC = 86_400;
 
 function validateValue(key: SchedulerSettingKey, value: string): string | null {
   if (key.endsWith(".enabled")) {
     return value === "true" || value === "false" ? value : null;
+  }
+  if (key.endsWith(".days")) {
+    if (!DAYS_RE.test(value)) return null;
+    const n = Number(value);
+    return n >= MIN_RETENTION_DAYS && n <= MAX_RETENTION_DAYS ? String(n) : null;
   }
   if (!INTERVAL_RE.test(value)) return null;
   const n = Number(value);
