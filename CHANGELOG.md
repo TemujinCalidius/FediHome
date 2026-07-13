@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- Declared `sharp` as a direct dependency (#245). Three shared-core files (`api/media/route.ts`, `lib/fedi-media.ts`, `scripts/backfill-photo-dimensions.ts`) import `sharp`, but it was only resolving transitively via Next's `optionalDependencies` — so image uploads and remote federated-media processing would throw `Cannot find module 'sharp'` under a slim install (`npm ci --omit=optional`) or a future Next that drops it. Pinned to `^0.34.5` to match Next's optional pin (no duplicate install).
+
+### Changed
+- Bumped `postcss` 8.5.18 → 8.5.19 and `tsx` 4.23.0 → 4.23.1 (patch, sandbox-verified).
+
 ## 1.13.0 (2026-07-14)
 
 ### Added
