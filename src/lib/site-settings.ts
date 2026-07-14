@@ -1,5 +1,6 @@
 import { prisma } from "./db";
 import { siteConfig } from "@/../site.config";
+import { isThemeId } from "./themes";
 
 /**
  * Runtime-editable site config (#59) — the safe display/feature settings,
@@ -44,6 +45,7 @@ export const SITE_CONFIG_FIELDS: Record<string, FieldType> = {
   "download.macos.enabled": "bool",
   "download.macos.releaseUrl": "url",
   "download.macos.appStoreUrl": "url",
+  "theme.id": "text", // validated against the theme registry (see validateSiteConfigValue)
 };
 
 export const SITE_CONFIG_KEYS = Object.keys(SITE_CONFIG_FIELDS);
@@ -64,6 +66,7 @@ export interface RuntimeSiteConfig {
     badgeAlt: string; fundingUrl: string; fundingLabel: string;
   };
   download: { macosEnabled: boolean; macosReleaseUrl: string; macosAppStoreUrl: string };
+  theme: { id: string };
 }
 
 /** The env/default view — exactly what `siteConfig` (env-driven) exposes today. */
@@ -83,6 +86,7 @@ export function siteConfigDefaults(): RuntimeSiteConfig {
     nav: { ...siteConfig.nav },
     footer: { ...siteConfig.footer },
     download: { ...siteConfig.download },
+    theme: { ...siteConfig.theme },
   };
 }
 
@@ -146,6 +150,7 @@ export async function getRuntimeSiteConfig(): Promise<RuntimeSiteConfig> {
         macosReleaseUrl: textOverride(o["download.macos.releaseUrl"], base.download.macosReleaseUrl),
         macosAppStoreUrl: textOverride(o["download.macos.appStoreUrl"], base.download.macosAppStoreUrl),
       },
+      theme: { id: textOverride(o["theme.id"], base.theme.id) },
     };
   } catch {
     return base; // DB down/mid-migration — env defaults, don't cache the failure
@@ -171,6 +176,7 @@ export function validateSiteConfigValue(key: string, value: string): string | nu
   const type = SITE_CONFIG_FIELDS[key];
   if (type === "bool") return value === "true" || value === "false" ? value : null;
   if (value.length > MAX_TEXT || CONTROL.test(value)) return null;
+  if (key === "theme.id") return isThemeId(value) ? value : null; // must be a known theme
   if (type === "url") {
     if (value === "") return value;
     if (value.startsWith("/") && !value.startsWith("//")) return value;

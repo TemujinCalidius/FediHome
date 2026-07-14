@@ -94,6 +94,13 @@ export const siteConfig = {
       "https://github.com/TemujinCalidius/FediHome-macOS/releases/latest",
     macosAppStoreUrl: process.env.DOWNLOAD_MACOS_APP_STORE_URL || "",
   },
+
+  // Visual theme (#250). Selects a built-in theme preset (see src/lib/themes).
+  // Default "default" (the "Cards" look). The active theme's tokens + the
+  // owner's accent colour are injected at runtime by the root layout.
+  theme: {
+    id: process.env.THEME || "default",
+  },
 } as const;
 
 export type SiteConfig = typeof siteConfig;
