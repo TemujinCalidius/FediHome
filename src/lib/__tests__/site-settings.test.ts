@@ -9,6 +9,7 @@ vi.mock("@/../site.config", () => ({
     nav: { showJournal: true, showArticles: true, showPhotography: true, showVideos: true, showAudio: true, showAbout: true },
     footer: { webringUrl: "", webringLabel: "Webring", badgeSrc: "", badgeHref: "", badgeAlt: "Badge", fundingUrl: "", fundingLabel: "Support" },
     download: { macosEnabled: false, macosReleaseUrl: "https://env/releases/latest", macosAppStoreUrl: "" },
+    theme: { id: "default" },
   },
 }));
 
@@ -59,6 +60,13 @@ describe("getRuntimeSiteConfig (#59)", () => {
     expect(cfg.download.macosReleaseUrl).toBe("https://env/releases/latest"); // untouched → env default
   });
 
+  it("overlays the theme id (#250): default otherwise, a saved override wins", async () => {
+    expect((await getRuntimeSiteConfig()).theme.id).toBe("default");
+    invalidateSiteConfigCache();
+    vi.mocked(prisma.siteSetting.findMany).mockResolvedValue(rows({ "theme.id": "default" }) as never);
+    expect((await getRuntimeSiteConfig()).theme.id).toBe("default");
+  });
+
   it("caches for a minute; invalidation forces a re-read", async () => {
     await getRuntimeSiteConfig();
     await getRuntimeSiteConfig();
@@ -81,6 +89,11 @@ describe("validateSiteConfigValue (#59)", () => {
     expect(validateSiteConfigValue("landing.mode", "true")).toBe("true");
     expect(validateSiteConfigValue("landing.mode", "false")).toBe("false");
     expect(validateSiteConfigValue("landing.mode", "yes")).toBeNull();
+  });
+  it("theme.id only accepts a registered theme id (#250)", () => {
+    expect(validateSiteConfigValue("theme.id", "default")).toBe("default");
+    expect(validateSiteConfigValue("theme.id", "not-a-theme")).toBeNull();
+    expect(validateSiteConfigValue("theme.id", "")).toBeNull();
   });
   it("url fields accept relative + http(s), reject javascript:/protocol-relative/control chars", () => {
     expect(validateSiteConfigValue("footer.badgeSrc", "/images/b.png")).toBe("/images/b.png");
