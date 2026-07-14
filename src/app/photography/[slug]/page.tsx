@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import Image from "next/image";
+import { localMediaSrc } from "@/lib/media-url";
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { LightboxGallery } from "@/components/ui/Lightbox";
@@ -74,7 +75,7 @@ export default async function PhotoPage({
       <LightboxGallery>
         <div className="relative w-full rounded-xl overflow-hidden bg-surface-800 mb-8">
           <Image
-            src={photo.imagePath}
+            src={localMediaSrc(photo.imagePath)}
             alt={photo.title || photo.caption || ""}
             width={1600}
             height={1200}

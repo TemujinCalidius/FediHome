@@ -6,6 +6,7 @@
 - Your instance's **accent colour now themes the whole UI** — buttons, links, card borders and badges all follow it (it could be set before but applied nowhere). Under the hood this lands the runtime theme-token contract + a theme registry (selectable via `theme.id` / the `THEME` env var) that the wider theming system builds on; default instances render identically. (#250, advances #59)
 
 ### Fixed
+- Your own post/photo images show up again on your site. Uploaded media is stored with absolute URLs (so it federates + appears in RSS correctly), but `next/image` was rejecting those absolute same-origin URLs on your own pages — a broken-image icon in feed previews, post pages, and the photo grid — because the optimizer only allows relative or allow-listed hosts. On-page rendering now uses relative URLs for your own uploads (federation and RSS still emit absolute URLs, unchanged).
 - Declared `sharp` as a direct dependency (#245). Three shared-core files (`api/media/route.ts`, `lib/fedi-media.ts`, `scripts/backfill-photo-dimensions.ts`) import `sharp`, but it was only resolving transitively via Next's `optionalDependencies` — so image uploads and remote federated-media processing would throw `Cannot find module 'sharp'` under a slim install (`npm ci --omit=optional`) or a future Next that drops it. Pinned to `^0.34.5` to match Next's optional pin (no duplicate install).
 
 ### Changed

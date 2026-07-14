@@ -1,5 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
+import { localMediaSrc } from "@/lib/media-url";
 
 function linkHashtagsHtml(text: string): string {
   // Escape HTML first, then link URLs and hashtags
@@ -82,7 +83,7 @@ export default function PostCard({
         {hasImage && imageUrl && (
           <div className="relative w-full h-56 rounded-lg mb-3 overflow-hidden bg-surface-800">
             <Image
-              src={imageUrl}
+              src={localMediaSrc(imageUrl)}
               alt={title || ""}
               fill
               className="object-cover group-hover:scale-[1.02] transition-transform duration-300"
