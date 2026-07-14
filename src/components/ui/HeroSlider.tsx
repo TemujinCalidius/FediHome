@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { localMediaSrc } from "@/lib/media-url";
 
 export interface HeroSlide {
   url: string;
@@ -112,7 +113,7 @@ export default function HeroSlider({
         const inner = (
           <>
             <Image
-              src={slide.url.split("?")[0]}
+              src={localMediaSrc(slide.url.split("?")[0])}
               alt={slide.alt}
               fill
               sizes="(max-width: 1024px) 100vw, 1024px"

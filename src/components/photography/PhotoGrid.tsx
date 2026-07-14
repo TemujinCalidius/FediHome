@@ -4,6 +4,7 @@ import { useState } from "react";
 import Image from "next/image";
 import Masonry from "react-masonry-css";
 import { Lightbox, type LightboxImage } from "@/components/ui/Lightbox";
+import { localMediaSrc } from "@/lib/media-url";
 
 function AltBadgeInline({ alt }: { alt: string }) {
   const [open, setOpen] = useState(false);
@@ -111,7 +112,7 @@ export default function PhotoGrid({
           columnClassName="masonry-grid-column"
         >
           {filtered.map((photo, i) => {
-            const src = (photo.thumbPath || photo.imagePath).split("?")[0];
+            const src = localMediaSrc((photo.thumbPath || photo.imagePath).split("?")[0]);
             const w = photo.width ?? 800;
             const h = photo.height ?? 800;
             return (
