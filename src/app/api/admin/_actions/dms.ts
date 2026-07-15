@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getBlueskyCredentials } from "@/lib/integrations";
 import { prisma } from "@/lib/db";
 import { deliverActivity } from "@/lib/http-signatures";
 import { siteConfig } from "@/../site.config";
@@ -175,11 +176,11 @@ export async function bskyDm(body: AdminBody): Promise<NextResponse> {
     );
   }
 
-  const bskyHandle = process.env.BLUESKY_HANDLE;
-  const bskyPassword = process.env.BLUESKY_APP_PASSWORD;
-  if (!bskyHandle || !bskyPassword) {
+  const creds = await getBlueskyCredentials();
+  if (!creds) {
     return NextResponse.json({ error: "Bluesky not configured" }, { status: 500 });
   }
+  const { handle: bskyHandle, password: bskyPassword } = creds;
 
   try {
     const { BskyAgent } = await import("@atproto/api");

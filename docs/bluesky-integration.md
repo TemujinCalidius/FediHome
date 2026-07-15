@@ -32,20 +32,25 @@ This app password can create posts and upload media but cannot change your accou
 
 ## Configuration
 
-Add these to your `.env.local`:
+### Preferred: the admin panel (no file editing)
+
+Go to **Admin → Integrations** (`/admin/integrations`), enter your handle and app
+password under **Bluesky**, and click **Test** then **Save**. The app password is
+stored **AES-256-GCM-encrypted at rest** (the key is derived from your
+`ADMIN_SECRET`, which never touches the database), verified on save, and never
+shown again. No restart needed. Threads is configured the same way.
+
+### Alternative: environment variables
+
+You can instead set these in `.env.local` (an admin-panel value takes precedence):
 
 ```
 BLUESKY_HANDLE=yourhandle.bsky.social
 BLUESKY_APP_PASSWORD=xxxx-xxxx-xxxx-xxxx
 ```
 
-If you use a custom domain as your Bluesky handle, use that:
-
-```
-BLUESKY_HANDLE=yourdomain.com
-```
-
-Restart FediHome after setting these variables.
+If you use a custom domain as your Bluesky handle, use that (e.g.
+`BLUESKY_HANDLE=yourdomain.com`). Restart FediHome after setting env variables.
 
 ## What Gets Crossposted
 

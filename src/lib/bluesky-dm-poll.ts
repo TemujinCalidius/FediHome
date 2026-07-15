@@ -1,13 +1,14 @@
 import { BskyAgent } from "@atproto/api";
+import { getBlueskyCredentials } from "@/lib/integrations";
 import { prisma } from "./db";
 
 /**
  * Poll Bluesky for DMs. Fetches recent conversations and stores new messages.
  */
 export async function pollBlueskyDMs(): Promise<{ convos: number; messages: number }> {
-  const handle = process.env.BLUESKY_HANDLE;
-  const password = process.env.BLUESKY_APP_PASSWORD;
-  if (!handle || !password) return { convos: 0, messages: 0 };
+  const creds = await getBlueskyCredentials();
+  if (!creds) return { convos: 0, messages: 0 };
+  const { handle, password } = creds;
 
   const agent = new BskyAgent({ service: "https://bsky.social" });
   await agent.login({ identifier: handle, password });

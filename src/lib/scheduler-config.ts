@@ -142,16 +142,21 @@ export async function getEffectiveSchedulerConfig(): Promise<SchedulerConfig> {
   let cfg = base;
   try {
     const rows = await prisma.siteSetting.findMany({
-      where: { key: { in: [...SCHEDULER_SETTING_KEYS] } },
+      // Also fetch the Bluesky integration handle (same query, no extra round-trip)
+      // so the sync job's default-enable reflects credentials set via /admin/integrations,
+      // not just the BLUESKY_HANDLE env var.
+      where: { key: { in: [...SCHEDULER_SETTING_KEYS, "integration.bluesky.handle"] } },
     });
     const o = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+    // Bluesky is "configured" when a handle exists in the DB (admin panel) or env.
+    const bskyConfigured = !!(o["integration.bluesky.handle"] || process.env.BLUESKY_HANDLE);
     cfg = {
       publishScheduled: {
         enabled: overrideFlag(o["scheduler.publish.enabled"], base.publishScheduled.enabled),
         intervalSec: overrideNum(o["scheduler.publish.intervalSec"], base.publishScheduled.intervalSec),
       },
       blueskySync: {
-        enabled: overrideFlag(o["scheduler.bluesky.enabled"], base.blueskySync.enabled),
+        enabled: overrideFlag(o["scheduler.bluesky.enabled"], base.blueskySync.enabled || bskyConfigured),
         intervalSec: overrideNum(o["scheduler.bluesky.intervalSec"], base.blueskySync.intervalSec),
       },
       deliveryRetry: {

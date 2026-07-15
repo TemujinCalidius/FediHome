@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- Connect **Bluesky and Threads for crossposting from the admin panel** (Admin → Integrations) — no more editing `.env.local` or restarting the server. The app password / access token is stored **AES-256-GCM-encrypted at rest** (the key derives from your `ADMIN_SECRET`, which never touches the database, so a DB backup leak alone can't reveal it), verified with a live **Test** before it's saved, and never shown again. The existing `BLUESKY_*` / `THREADS_*` env vars still work as a fallback. (advances #59)
 - Your instance's **accent colour now themes the whole UI** — buttons, links, card borders and badges all follow it (it could be set before but applied nowhere). Under the hood this lands the runtime theme-token contract + a theme registry (selectable via `theme.id` / the `THEME` env var) that the wider theming system builds on; default instances render identically. (#250, advances #59)
 
 ### Fixed
