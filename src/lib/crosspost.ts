@@ -1,4 +1,5 @@
 import { BskyAgent, RichText } from "@atproto/api";
+import { getBlueskyCredentials, getThreadsCredentials } from "@/lib/integrations";
 import { readFile } from "fs/promises";
 import path from "path";
 import nodemailer from "nodemailer";
@@ -26,12 +27,11 @@ export async function crosspostToBluesky(
   images?: CrosspostImage[],
   video?: CrosspostVideo
 ): Promise<{ success: boolean; uri?: string; error?: string }> {
-  const handle = process.env.BLUESKY_HANDLE;
-  const password = process.env.BLUESKY_APP_PASSWORD;
-
-  if (!handle || !password) {
+  const creds = await getBlueskyCredentials();
+  if (!creds) {
     return { success: false, error: "Bluesky credentials not configured" };
   }
+  const { handle, password } = creds;
 
   try {
     const agent = new BskyAgent({ service: "https://bsky.social" });
@@ -76,12 +76,11 @@ export async function crosspostReplyToBluesky(
   images?: CrosspostImage[],
   video?: CrosspostVideo,
 ): Promise<{ success: boolean; uri?: string; error?: string }> {
-  const handle = process.env.BLUESKY_HANDLE;
-  const password = process.env.BLUESKY_APP_PASSWORD;
-
-  if (!handle || !password) {
+  const creds = await getBlueskyCredentials();
+  if (!creds) {
     return { success: false, error: "Bluesky credentials not configured" };
   }
+  const { handle, password } = creds;
 
   try {
     const agent = new BskyAgent({ service: "https://bsky.social" });
@@ -252,12 +251,11 @@ export async function crosspostToThreads(
   content: string,
   url?: string
 ): Promise<{ success: boolean; id?: string; error?: string }> {
-  const accessToken = process.env.THREADS_ACCESS_TOKEN;
-  const userId = process.env.THREADS_USER_ID;
-
-  if (!accessToken || !userId) {
+  const creds = await getThreadsCredentials();
+  if (!creds) {
     return { success: false, error: "Threads credentials not configured" };
   }
+  const { accessToken, userId } = creds;
 
   try {
     let text = content;

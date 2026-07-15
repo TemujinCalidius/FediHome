@@ -183,6 +183,12 @@ export default async function TimelinePage() {
             Site
           </a>
           <a
+            href="/admin/integrations"
+            className="text-xs text-gray-500 hover:text-white transition-colors"
+          >
+            Integrations
+          </a>
+          <a
             href="/compose"
             className="btn-primary text-xs !py-1.5"
           >
