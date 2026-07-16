@@ -101,6 +101,13 @@ export const siteConfig = {
   theme: {
     id: process.env.THEME || "default",
   },
+
+  // Per-region layout overrides (#250, Phase 3). Empty = inherit the active
+  // theme's default variant for that region; a value picks a specific variant
+  // (validated against the region catalogue in src/lib/themes/layout.ts).
+  layout: {
+    feed: process.env.LAYOUT_FEED || "",
+  },
 } as const;
 
 export type SiteConfig = typeof siteConfig;

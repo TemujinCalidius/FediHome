@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- **Swappable feed layouts** — first step of themeable *layout*, not just colour (#250, Phase 3). The home/blog feed now renders through a region dispatcher with two variants: the default **`cards`** (today's glass cards, pixel-identical) and a new **`list`** — a compact, date-led index that fits more posts per screen. Selectable via the `LAYOUT_FEED` env var / a `layout.feed` setting (empty inherits the active theme's default). This lands the region×variant contract (`resolveLayout` + a per-theme layout preset) that the upcoming header/shell/post variants and the "Classic Blog" theme build on.
 - **Generate scoped app tokens in the admin panel** (#255) — **Admin → Apps → "Generate app token"** mints a bearer token with the scopes you pick + a label, and reveals the raw token **once** (only its hash is stored, as with OAuth tokens). Paste it into any client that accepts a token — headless/CI, a read-only reader, or App Store review — without ever sharing your `ADMIN_SECRET`. Long-lived + revocable from the same screen. Documented alongside the OAuth flow in `docs/app-api.md`.
 - `GET /api/posts` now returns a short body `preview` for each post (#253) — so a native "My Posts" list can show a snippet for title-less microblog notes instead of "Untitled". It's the explicit excerpt, else a markup-stripped body snippet, else `""` (empty stays empty). Also documented `GET /api/posts` in `docs/app-api.md`.
 

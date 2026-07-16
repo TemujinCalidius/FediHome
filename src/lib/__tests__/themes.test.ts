@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { deriveAccentScale, resolveTheme, isThemeId, buildThemeStyle, DEFAULT_THEME } from "@/lib/themes";
+import {
+  deriveAccentScale, resolveTheme, isThemeId, buildThemeStyle, DEFAULT_THEME,
+  isFeedVariant, resolveLayout, FEED_VARIANTS,
+} from "@/lib/themes";
 
 const sum = (hex: string) => {
   const n = parseInt(hex.slice(1), 16);
@@ -58,5 +61,25 @@ describe("buildThemeStyle (#250)", () => {
     // Only accent vars change — surfaces/fonts stay default (not emitted).
     expect(css).not.toContain("--color-surface-950");
     expect(css).not.toContain("--font-display");
+  });
+});
+
+describe("resolveLayout / isFeedVariant (#250 Phase 3)", () => {
+  it("isFeedVariant only accepts known feed variants", () => {
+    for (const v of FEED_VARIANTS) expect(isFeedVariant(v)).toBe(true);
+    expect(isFeedVariant("blog")).toBe(false); // not built yet
+    expect(isFeedVariant("")).toBe(false);
+  });
+
+  it("defaults to the theme's variant when there's no override", () => {
+    expect(resolveLayout("default", {}).feed).toBe("cards");
+    expect(resolveLayout("default").feed).toBe("cards"); // overrides optional
+    expect(resolveLayout("unknown-theme", {}).feed).toBe("cards"); // resolves to default theme
+  });
+
+  it("a known override wins; empty or bad values fall back to the theme default", () => {
+    expect(resolveLayout("default", { feed: "list" }).feed).toBe("list");
+    expect(resolveLayout("default", { feed: "" }).feed).toBe("cards"); // inherit
+    expect(resolveLayout("default", { feed: "nonsense" }).feed).toBe("cards"); // stale/unknown → default
   });
 });

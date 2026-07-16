@@ -3,11 +3,12 @@ export const dynamic = "force-dynamic";
 import Link from "next/link";
 import Image from "next/image";
 import { prisma } from "@/lib/db";
-import PostCard from "@/components/blog/PostCard";
+import PostFeed from "@/components/feed/PostFeed";
 import Pagination from "@/components/ui/Pagination";
 import LandingShowcase from "@/components/home/LandingShowcase";
 import { getRuntimeProfile } from "@/lib/site-profile";
 import { getRuntimeSiteConfig } from "@/lib/site-settings";
+import { resolveLayout } from "@/lib/themes";
 
 const POSTS_PER_PAGE = 10;
 
@@ -20,6 +21,9 @@ export default async function HomePage({
   const page = Math.max(1, parseInt(params.page || "1", 10));
   const profile = await getRuntimeProfile();
   const site = await getRuntimeSiteConfig();
+  // Active feed layout (#250): the theme's default variant, with the owner's
+  // per-region override applied. Default instance → "cards" (today's look).
+  const feedVariant = resolveLayout(site.theme.id, site.layout).feed;
 
   // Hide author follow-ups from the homepage feed — they appear inline on the
   // original post's page instead.
@@ -63,11 +67,7 @@ export default async function HomePage({
           </p>
         </div>
       ) : (
-        <div className="space-y-12">
-          {recentPosts.map((post) => (
-            <PostCard key={post.id} {...post} />
-          ))}
-        </div>
+        <PostFeed variant={feedVariant} posts={recentPosts} />
       )}
 
       <Pagination currentPage={page} totalPages={totalPages} basePath="/" />
