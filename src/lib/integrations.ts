@@ -47,6 +47,16 @@ export interface BlueskyCredentials {
   password: string;
 }
 
+/**
+ * Canonicalise a Bluesky handle (#257): strip a leading `@` (users very commonly
+ * paste `@name.bsky.social`), trim, and lowercase. `@atproto`'s `login()` treats
+ * a leading `@` as an empty-local-part email → `InvalidEmail`, so a raw `@handle`
+ * would otherwise fail to connect. Applied on every test + save.
+ */
+export function normalizeBlueskyHandle(handle: string): string {
+  return handle.trim().replace(/^@+/, "").toLowerCase();
+}
+
 /** Resolved Bluesky credentials: DB (decrypted) first, else the env vars. */
 export async function getBlueskyCredentials(): Promise<BlueskyCredentials | null> {
   const o = await readRows([KEYS.bskyHandle, KEYS.bskyPassword]);
@@ -65,7 +75,7 @@ export async function setBlueskyCredentials(
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const enc = encryptSecret(password);
   if (!enc) return { ok: false, error: "Encryption unavailable — ADMIN_SECRET is not set." };
-  await put(KEYS.bskyHandle, handle);
+  await put(KEYS.bskyHandle, normalizeBlueskyHandle(handle));
   await put(KEYS.bskyPassword, enc);
   return { ok: true };
 }
@@ -82,7 +92,7 @@ export async function testBlueskyLogin(
   try {
     const { BskyAgent } = await import("@atproto/api");
     const agent = new BskyAgent({ service: "https://bsky.social" });
-    await agent.login({ identifier: handle, password });
+    await agent.login({ identifier: normalizeBlueskyHandle(handle), password });
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "login failed" };
