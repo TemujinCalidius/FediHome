@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.14.0 (2026-07-16)
 
 ### Added
 - Connect **Bluesky and Threads for crossposting from the admin panel** (Admin → Integrations) — no more editing `.env.local` or restarting the server. The app password / access token is stored **AES-256-GCM-encrypted at rest** (the key derives from your `ADMIN_SECRET`, which never touches the database, so a DB backup leak alone can't reveal it), verified with a live **Test** before it's saved, and never shown again. The existing `BLUESKY_*` / `THREADS_*` env vars still work as a fallback. (advances #59)
