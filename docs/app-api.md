@@ -13,6 +13,11 @@ It receives a **scoped, revocable bearer token** and sends it as
 
 ---
 
+## Two ways to get a token
+
+1. **OAuth login** (below) — the interactive flow for apps that can open a browser.
+2. **Generate + paste** — the owner mints a scoped token at **`/admin/apps` → "Generate app token"**, picks scopes + a label, and copies the raw token **once** (only its hash is stored). Paste it into any client that accepts a bearer token — headless/CI, a read-only reader, or App Store review — and send it as `Authorization: Bearer <token>`. No OAuth round-trip, no `ADMIN_SECRET`. Long-lived + revocable from the same screen; a lost token is revoked and reissued.
+
 ## The login flow (OAuth 2.0 Authorization Code + PKCE)
 
 1. **Discover** — `GET SITE_URL/.well-known/oauth-authorization-server` → the
