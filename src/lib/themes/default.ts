@@ -37,4 +37,6 @@ export const DEFAULT_THEME: Theme = {
       mono: '"JetBrains Mono", "Fira Code", monospace',
     },
   },
+  // "Cards" renders the feed as glass cards — today's look.
+  layout: { feed: "cards" },
 };

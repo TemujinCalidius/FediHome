@@ -1,6 +1,6 @@
 import { prisma } from "./db";
 import { siteConfig } from "@/../site.config";
-import { isThemeId } from "./themes";
+import { isThemeId, isFeedVariant } from "./themes";
 
 /**
  * Runtime-editable site config (#59) — the safe display/feature settings,
@@ -46,6 +46,7 @@ export const SITE_CONFIG_FIELDS: Record<string, FieldType> = {
   "download.macos.releaseUrl": "url",
   "download.macos.appStoreUrl": "url",
   "theme.id": "text", // validated against the theme registry (see validateSiteConfigValue)
+  "layout.feed": "text", // "" (inherit theme) or a known feed variant (see validateSiteConfigValue)
 };
 
 export const SITE_CONFIG_KEYS = Object.keys(SITE_CONFIG_FIELDS);
@@ -67,6 +68,7 @@ export interface RuntimeSiteConfig {
   };
   download: { macosEnabled: boolean; macosReleaseUrl: string; macosAppStoreUrl: string };
   theme: { id: string };
+  layout: { feed: string };
 }
 
 /** The env/default view — exactly what `siteConfig` (env-driven) exposes today. */
@@ -87,6 +89,7 @@ export function siteConfigDefaults(): RuntimeSiteConfig {
     footer: { ...siteConfig.footer },
     download: { ...siteConfig.download },
     theme: { ...siteConfig.theme },
+    layout: { ...siteConfig.layout },
   };
 }
 
@@ -151,6 +154,7 @@ export async function getRuntimeSiteConfig(): Promise<RuntimeSiteConfig> {
         macosAppStoreUrl: textOverride(o["download.macos.appStoreUrl"], base.download.macosAppStoreUrl),
       },
       theme: { id: textOverride(o["theme.id"], base.theme.id) },
+      layout: { feed: textOverride(o["layout.feed"], base.layout.feed) },
     };
   } catch {
     return base; // DB down/mid-migration — env defaults, don't cache the failure
@@ -177,6 +181,7 @@ export function validateSiteConfigValue(key: string, value: string): string | nu
   if (type === "bool") return value === "true" || value === "false" ? value : null;
   if (value.length > MAX_TEXT || CONTROL.test(value)) return null;
   if (key === "theme.id") return isThemeId(value) ? value : null; // must be a known theme
+  if (key === "layout.feed") return value === "" || isFeedVariant(value) ? value : null; // "" inherits the theme
   if (type === "url") {
     if (value === "") return value;
     if (value.startsWith("/") && !value.startsWith("//")) return value;

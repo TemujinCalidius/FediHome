@@ -1,31 +1,13 @@
-import type { Theme, ThemeColors } from "./types";
+import type { ThemeColors } from "./types";
 import { DEFAULT_THEME } from "./default";
+import { resolveTheme } from "./registry";
 import { deriveAccentScale } from "./color";
 
-export type { Theme, ThemeTokens, ThemeColors, ThemeFonts, ColorToken } from "./types";
+export type { Theme, ThemeTokens, ThemeColors, ThemeFonts, ColorToken, FeedVariant, LayoutConfig } from "./types";
 export { deriveAccentScale } from "./color";
 export { DEFAULT_THEME } from "./default";
-
-/**
- * Registry of built-in themes (#250). Layout/region variants + more presets
- * (e.g. a "Classic Blog" theme) land in later phases; today there's just the
- * default, but the machinery — selection, resolution, runtime injection — is
- * in place.
- */
-export const THEMES: Record<string, Theme> = {
-  [DEFAULT_THEME.id]: DEFAULT_THEME,
-};
-
-export const THEME_IDS = Object.keys(THEMES);
-
-export function isThemeId(id: string): boolean {
-  return Object.prototype.hasOwnProperty.call(THEMES, id);
-}
-
-/** The active theme, falling back to the default for an unknown id. */
-export function resolveTheme(id: string): Theme {
-  return THEMES[id] ?? DEFAULT_THEME;
-}
+export { THEMES, THEME_IDS, isThemeId, resolveTheme } from "./registry";
+export { LAYOUT_REGIONS, FEED_VARIANTS, isFeedVariant, resolveLayout } from "./layout";
 
 // The owner's accent default (profile.accentColor, #201) — matches accent-500.
 const DEFAULT_ACCENT = "#3b82f6";
