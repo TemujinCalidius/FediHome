@@ -132,6 +132,7 @@ All are `GET` (read-only, no CSRF) with `Authorization: Bearer <token>`.
 | endpoint | returns |
 |---|---|
 | `GET /api/feed?cursor=<ISO>&replies=1&boosts=1` | `{ posts: [...], nextCursor }` — your private Fediverse timeline (paged, 20/page; `cursor` = last `publishedAt`) |
+| `GET /api/posts?cursor=<ISO_id>&status=&type=&limit=` | `{ posts: [...], nextCursor }` — **your own** posts for a content manager (incl. drafts/scheduled). Each post has `id, slug, url, title, excerpt, preview, category, type, status, published, publishedAt, updatedAt, scheduledFor, counts, media`. `preview` is a short markup-stripped body snippet (`""` when genuinely empty) so title-less notes still render. Filters: `status` = `all\|published\|draft\|scheduled`, `type` = `note\|article\|journal\|photo\|video\|audio` |
 | `GET /api/notifications` | `{ count, items, categoryCounts }` — the bell. **DM items require `dm` scope** (redacted otherwise) |
 | `GET /api/conversation?postId=<id>` | `{ thread: [...] }` — a full thread (ancestors + replies) |
 | `POST /api/fedi-post-counts` `{ postId }` | `{ likeCount, boostCount, replyCount, countsFetchedAt }` (cached ~5 min) |
