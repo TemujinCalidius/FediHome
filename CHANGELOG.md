@@ -14,6 +14,7 @@
 
 ### Changed
 - Bumped `postcss` 8.5.18 → 8.5.19 and `tsx` 4.23.0 → 4.23.1 (patch, sandbox-verified).
+- Refreshed dependencies (sandbox-verified): `@fedify/fedify` + `@fedify/next` → 2.3.2, `@atproto/api` → 0.20.29, `music-metadata` → 11.14.0, `fast-xml-parser` → 5.10.1. (`sharp` held at 0.34.5 to stay aligned with Next's optional pin and avoid a duplicate native binary; `typescript` still pinned at 6.x — 7.0.2 breaks `next build`, tracked in #234.)
 
 ## 1.13.0 (2026-07-14)
 
