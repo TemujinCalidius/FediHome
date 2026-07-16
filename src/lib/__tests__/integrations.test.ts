@@ -12,6 +12,7 @@ import {
   clearBlueskyCredentials,
   getThreadsCredentials,
   getIntegrationStatus,
+  normalizeBlueskyHandle,
 } from "@/lib/integrations";
 
 const OLD = { ...process.env };
@@ -79,6 +80,22 @@ describe("integrations — Bluesky credentials", () => {
     const r = await setBlueskyCredentials("me", "pw");
     expect(r.ok).toBe(false);
     expect(prisma.siteSetting.upsert).not.toHaveBeenCalled();
+  });
+
+  it("normalizes a handle (#257): strips a leading @, trims, lowercases", () => {
+    expect(normalizeBlueskyHandle("@name.bsky.social")).toBe("name.bsky.social");
+    expect(normalizeBlueskyHandle("  @Name.BSKY.social  ")).toBe("name.bsky.social");
+    expect(normalizeBlueskyHandle("name.bsky.social")).toBe("name.bsky.social");
+    expect(normalizeBlueskyHandle("@@x.example")).toBe("x.example");
+  });
+
+  it("stores the normalized handle (a pasted @handle is saved without the @)", async () => {
+    await setBlueskyCredentials("@Me.bsky.social", "super-secret-pw");
+    const calls = vi.mocked(prisma.siteSetting.upsert).mock.calls.map(
+      (c) => c[0] as { where: { key: string }; create: { value: string } },
+    );
+    const handle = calls.find((c) => c.where.key === "integration.bluesky.handle")!;
+    expect(handle.create.value).toBe("me.bsky.social");
   });
 
   it("clear deletes both rows", async () => {
