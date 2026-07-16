@@ -76,6 +76,7 @@ export default function SiteSettingsClient({
       "download.macos.enabled": String(cfg.download.macosEnabled),
       "download.macos.releaseUrl": cfg.download.macosReleaseUrl,
       "download.macos.appStoreUrl": cfg.download.macosAppStoreUrl,
+      "layout.feed": cfg.layout.feed || "cards",
     };
     if (await post(settings)) setHasOverrides(true);
   };
@@ -89,6 +90,7 @@ export default function SiteSettingsClient({
         "footer.webringUrl", "footer.webringLabel", "footer.badgeSrc", "footer.badgeHref",
         "footer.badgeAlt", "footer.fundingUrl", "footer.fundingLabel",
         "download.macos.enabled", "download.macos.releaseUrl", "download.macos.appStoreUrl",
+        "layout.feed",
       ].map((k) => [k, null]),
     );
     if (await post(cleared)) {
@@ -102,6 +104,7 @@ export default function SiteSettingsClient({
   const setLanding = (patch: Partial<RuntimeSiteConfig["landing"]>) => setCfg((c) => ({ ...c, landing: { ...c.landing, ...patch } }));
   const setFooter = (patch: Partial<RuntimeSiteConfig["footer"]>) => setCfg((c) => ({ ...c, footer: { ...c.footer, ...patch } }));
   const setDownload = (patch: Partial<RuntimeSiteConfig["download"]>) => setCfg((c) => ({ ...c, download: { ...c.download, ...patch } }));
+  const setLayout = (patch: Partial<RuntimeSiteConfig["layout"]>) => setCfg((c) => ({ ...c, layout: { ...c.layout, ...patch } }));
 
   const text = (label: string, value: string, onChange: (v: string) => void, placeholder = "") => (
     <label className="flex flex-col gap-1 text-xs text-gray-400">
@@ -113,6 +116,27 @@ export default function SiteSettingsClient({
         onChange={(e) => onChange(e.target.value)}
         className="bg-surface-800 border border-surface-700 rounded-md px-2 py-1.5 text-sm text-white"
       />
+    </label>
+  );
+  const select = (
+    label: string,
+    value: string,
+    options: { value: string; label: string }[],
+    onChange: (v: string) => void,
+    hint?: string,
+  ) => (
+    <label className="flex flex-col gap-1 text-xs text-gray-400">
+      <span>{label}</span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="bg-surface-800 border border-surface-700 rounded-md px-2 py-1.5 text-sm text-white"
+      >
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>{o.label}</option>
+        ))}
+      </select>
+      {hint && <span className="text-gray-600">{hint}</span>}
     </label>
   );
   const check = (label: string, value: boolean, onChange: (v: boolean) => void) => (
@@ -145,6 +169,19 @@ export default function SiteSettingsClient({
           {text("Site name", cfg.name, (v) => set({ name: v }))}
           {text("Description", cfg.description, (v) => set({ description: v }))}
           <p className="text-xs text-gray-600 m-0">Your Fediverse handle and domain are set at install and can&apos;t change here — they&apos;re part of your federated identity.</p>
+        </>)}
+
+        {section("Appearance", <>
+          {select(
+            "Feed layout",
+            cfg.layout.feed === "list" ? "list" : "cards",
+            [
+              { value: "cards", label: "Cards — glass cards with cover images" },
+              { value: "list", label: "List — compact, date-led index" },
+            ],
+            (v) => setLayout({ feed: v }),
+            "How your posts appear on the homepage and blog.",
+          )}
         </>)}
 
         {section("Landing page", <>
