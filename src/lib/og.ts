@@ -40,12 +40,17 @@ export function postOgImage(post: OgPost): string {
 
 /**
  * Human-readable preview description: an explicit excerpt, else the body with
- * its markup stripped, else the site description — never raw markdown. (#96)
+ * its markup stripped, else `fallback` — never raw markdown. (#96)
+ *
+ * `fallback` defaults to the site description (for OG/Twitter cards, which must
+ * never be imageless/textless). Pass `""` for API list payloads (#253) where a
+ * genuinely empty post should stay empty so the client can show its own
+ * placeholder rather than the site tagline.
  */
-export function postOgDescription(post: OgPost): string {
+export function postOgDescription(post: OgPost, fallback: string = siteConfig.description): string {
   if (post.excerpt?.trim()) return post.excerpt.trim();
   // Prefer the cached rendered HTML; otherwise render the markdown first so the
   // result is clean text rather than literal `**bold**` / `[text](url)` syntax.
   const html = post.contentHtml || (post.content ? (marked.parse(post.content) as string) : "");
-  return htmlToText(html, 200) || siteConfig.description;
+  return htmlToText(html, 200) || fallback;
 }

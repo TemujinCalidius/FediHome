@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { authenticateApiRequest } from "@/lib/auth";
 import { parseCursor, cursorWhere, encodeCursor, CURSOR_ORDER } from "@/lib/cursor";
+import { postOgDescription } from "@/lib/og";
 
 /**
  * List the owner's OWN posts — the backing data for a native "My Posts" content
@@ -42,6 +43,7 @@ export async function GET(req: NextRequest) {
     take: limit + 1,
     select: {
       id: true, slug: true, title: true, excerpt: true, category: true,
+      content: true, contentHtml: true, // read to derive `preview` (not shipped whole)
       photos: true, videos: true, audioPaths: true,
       published: true, publishedAt: true, updatedAt: true, scheduledFor: true,
       likeCount: true, boostCount: true,
@@ -64,6 +66,10 @@ export async function GET(req: NextRequest) {
       url: `/post/${p.slug}`,
       title: p.title,
       excerpt: p.excerpt,
+      // A short, markup-stripped body preview so title-less notes have something
+      // to show (#253). Empty ("") for a genuinely empty post — the client keeps
+      // its own placeholder rather than getting the site tagline.
+      preview: postOgDescription(p, ""),
       category: p.category,
       type: kind,
       status,
