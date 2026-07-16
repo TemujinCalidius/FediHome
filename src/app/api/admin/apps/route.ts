@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { verifyAdmin, verifyOrigin } from "@/lib/auth";
+import { verifyAdmin, verifyOrigin, generateToken } from "@/lib/auth";
 import { sanitizeScope } from "@/lib/oauth";
 
 /**
@@ -23,6 +23,24 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json().catch(() => ({}));
   const action = body?.action;
+
+  // Mint a scoped bearer token out of band (#255) — for clients that accept a
+  // pasted token (headless/CI, App Store review, read-only readers) without the
+  // OAuth/ADMIN_SECRET dance. The RAW token is returned exactly once; only its
+  // sha256 hash is stored (generateToken), so it can't be read back later — a
+  // lost token is revoked + reissued. Long-lived + revocable (no expiry).
+  if (action === "create") {
+    const rawLabel = typeof body?.label === "string" ? body.label.trim() : "";
+    if (rawLabel.length > 100 || /[\r\n]/.test(rawLabel)) {
+      return NextResponse.json({ error: "invalid label" }, { status: 400 });
+    }
+    const scope = sanitizeScope(typeof body?.scope === "string" ? body.scope : "");
+    if (!scope) {
+      return NextResponse.json({ error: "pick at least one scope" }, { status: 400 });
+    }
+    const token = await generateToken(rawLabel || "Generated token", { scope, createdVia: "manual" });
+    return NextResponse.json({ success: true, token, label: rawLabel || "Generated token", scope });
+  }
 
   if (action === "revoke") {
     const id = typeof body?.id === "string" ? body.id : "";

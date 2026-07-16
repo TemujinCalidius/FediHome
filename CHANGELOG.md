@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- **Generate scoped app tokens in the admin panel** (#255) — **Admin → Apps → "Generate app token"** mints a bearer token with the scopes you pick + a label, and reveals the raw token **once** (only its hash is stored, as with OAuth tokens). Paste it into any client that accepts a token — headless/CI, a read-only reader, or App Store review — without ever sharing your `ADMIN_SECRET`. Long-lived + revocable from the same screen. Documented alongside the OAuth flow in `docs/app-api.md`.
 - `GET /api/posts` now returns a short body `preview` for each post (#253) — so a native "My Posts" list can show a snippet for title-less microblog notes instead of "Untitled". It's the explicit excerpt, else a markup-stripped body snippet, else `""` (empty stays empty). Also documented `GET /api/posts` in `docs/app-api.md`.
 
 ## 1.14.0 (2026-07-16)
