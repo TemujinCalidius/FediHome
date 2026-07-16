@@ -1,8 +1,10 @@
 export const dynamic = "force-dynamic";
 
 import { prisma } from "@/lib/db";
-import PostCard from "@/components/blog/PostCard";
+import PostFeed from "@/components/feed/PostFeed";
 import Pagination from "@/components/ui/Pagination";
+import { getRuntimeSiteConfig } from "@/lib/site-settings";
+import { resolveLayout } from "@/lib/themes";
 
 export const metadata = {
   title: "The Journal",
@@ -34,6 +36,9 @@ export default async function JournalPage({
     skip: (page - 1) * POSTS_PER_PAGE,
   });
 
+  const site = await getRuntimeSiteConfig();
+  const feedVariant = resolveLayout(site.theme.id, site.layout).feed;
+
   return (
     <div className="max-w-3xl mx-auto px-6 py-16">
       <h1 className="font-display text-3xl font-bold text-white mb-2">
@@ -48,11 +53,7 @@ export default async function JournalPage({
           <p className="text-gray-500">No journal entries yet.</p>
         </div>
       ) : (
-        <div className="space-y-12">
-          {posts.map((post) => (
-            <PostCard key={post.id} {...post} />
-          ))}
-        </div>
+        <PostFeed variant={feedVariant} posts={posts} />
       )}
 
       <Pagination currentPage={page} totalPages={totalPages} basePath="/journal" />
