@@ -9,6 +9,7 @@ import { postOgImage, postOgDescription } from "@/lib/og";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { LightboxGallery } from "@/components/ui/Lightbox";
 import { iframeSrcFor } from "@/lib/peertube";
+import { localMediaSrc } from "@/lib/media-url";
 import { getPathHits, getKudosForPath } from "@/lib/tinylytics";
 import GuestCommentForm from "@/components/fedi/GuestCommentForm";
 import FediInteractions from "@/components/fedi/FediInteractions";
@@ -246,7 +247,7 @@ export default async function PostPage({
         {post.coverImage && (
           <div className="relative w-full aspect-[16/9] rounded-xl overflow-hidden mb-8 bg-surface-800">
             <Image
-              src={post.coverImage}
+              src={localMediaSrc(post.coverImage)}
               alt={post.title || ""}
               fill
               className="object-cover"
@@ -263,7 +264,7 @@ export default async function PostPage({
                 className="relative w-full rounded-xl overflow-hidden bg-surface-800"
               >
                 <Image
-                  src={photo}
+                  src={localMediaSrc(photo)}
                   alt={post.photoCaptions?.[i] || `Photo ${i + 1}`}
                   width={1200}
                   height={800}

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getBlueskyCredentials } from "@/lib/integrations";
 import { prisma } from "@/lib/db";
 import { deliverToFollowers } from "@/lib/http-signatures";
 import { siteConfig } from "@/../site.config";
@@ -18,11 +19,11 @@ export async function bskyReply(body: AdminBody): Promise<NextResponse> {
   if (!bskyReplyContent || !parentUri) {
     return NextResponse.json({ error: "content and blueskyUri required" }, { status: 400 });
   }
-  const bskyHandle = process.env.BLUESKY_HANDLE;
-  const bskyPassword = process.env.BLUESKY_APP_PASSWORD;
-  if (!bskyHandle || !bskyPassword) {
+  const creds = await getBlueskyCredentials();
+  if (!creds) {
     return NextResponse.json({ error: "Bluesky not configured" }, { status: 500 });
   }
+  const { handle: bskyHandle, password: bskyPassword } = creds;
   try {
     const { BskyAgent } = await import("@atproto/api");
     const agent = new BskyAgent({ service: "https://bsky.social" });

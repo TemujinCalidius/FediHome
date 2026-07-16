@@ -41,10 +41,7 @@ export default function MobileMenu({
 
       {/* Dropdown menu */}
       {open && (
-        <div
-          className="absolute left-0 right-0 top-14 z-50 border-b border-surface-800 shadow-2xl"
-          style={{ backgroundColor: "#0a0a0f" }}
-        >
+        <div className="absolute left-0 right-0 top-14 z-50 border-b border-surface-800 bg-surface-950 shadow-2xl">
           <nav className="flex flex-col px-6 py-4 space-y-1">
             {links.map((link) => (
               <Link

@@ -8,6 +8,7 @@ import Tinylytics from "@/components/analytics/Tinylytics";
 import { siteConfig } from "@/../site.config";
 import { getRuntimeSiteConfig } from "@/lib/site-settings";
 import { getRuntimeProfile } from "@/lib/site-profile";
+import { buildThemeStyle } from "@/lib/themes";
 
 export async function generateMetadata(): Promise<Metadata> {
   const [site, profile] = await Promise.all([getRuntimeSiteConfig(), getRuntimeProfile()]);
@@ -68,14 +69,21 @@ export const viewport: Viewport = {
   themeColor: "#0a0a0f",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const [site, profile] = await Promise.all([getRuntimeSiteConfig(), getRuntimeProfile()]);
+  // Runtime theme tokens (#250): the active theme's tokens + the owner's accent
+  // colour, as a `:root:root{…}` block that overrides the static @theme :root.
+  // Empty (nothing injected) for a default instance with the default accent, so
+  // it renders identically.
+  const themeStyle = buildThemeStyle(site.theme.id, profile.accentColor);
   return (
     <html lang="en">
       <head>
+        {themeStyle && <style dangerouslySetInnerHTML={{ __html: themeStyle }} />}
         <link rel="micropub" href={`${siteConfig.url}/api/micropub`} />
         {/* IndieAuth/OAuth discovery — point at the real OAuth endpoints (not Micropub) */}
         <link rel="authorization_endpoint" href={`${siteConfig.url}/api/oauth/authorize`} />

@@ -1,4 +1,5 @@
 import { BskyAgent } from "@atproto/api";
+import { getBlueskyCredentials } from "@/lib/integrations";
 import { prisma } from "./db";
 
 // In-memory throttle so a post page doesn't re-poll Bluesky on every render.
@@ -23,9 +24,9 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
  * repeated renders within the window are skipped.
  */
 export async function pollBlueskyReplies(postId: string, blueskyUri: string): Promise<number> {
-  const handle = process.env.BLUESKY_HANDLE;
-  const password = process.env.BLUESKY_APP_PASSWORD;
-  if (!handle || !password) return 0;
+  const creds = await getBlueskyCredentials();
+  if (!creds) return 0;
+  const { handle, password } = creds;
 
   // Skip if this post was polled within the TTL window.
   const last = lastPolledAt.get(postId);

@@ -1,0 +1,33 @@
+/**
+ * Theme token contract (#250). A theme is pure data: the design tokens the UI
+ * resolves to at runtime. Everything visual references `var(--color-*)` /
+ * `var(--font-*)` (see globals.css), so overriding these at `:root:root`
+ * re-themes the whole site. Layout/region theming builds on top of this later.
+ */
+
+/** Colour tokens, keyed by their `--color-<token>` custom-property suffix. */
+export type ColorToken =
+  | "surface-950" | "surface-900" | "surface-800" | "surface-700" | "surface-600"
+  | "accent-50" | "accent-100" | "accent-200" | "accent-300" | "accent-400"
+  | "accent-500" | "accent-600" | "accent-700" | "accent-800" | "accent-900"
+  | "moss-400" | "moss-500" | "moss-600";
+
+export type ThemeColors = Record<ColorToken, string>;
+
+export interface ThemeFonts {
+  display: string;
+  body: string;
+  mono: string;
+}
+
+export interface ThemeTokens {
+  colors: ThemeColors;
+  fonts: ThemeFonts;
+}
+
+export interface Theme {
+  id: string;
+  name: string;
+  description?: string;
+  tokens: ThemeTokens;
+}

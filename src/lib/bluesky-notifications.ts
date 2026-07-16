@@ -1,4 +1,5 @@
 import { BskyAgent } from "@atproto/api";
+import { getBlueskyCredentials } from "@/lib/integrations";
 import { prisma } from "./db";
 import { sendPushToOwner } from "./push";
 
@@ -65,9 +66,9 @@ export async function syncBlueskyNotifications(): Promise<{
 }> {
   const counts = { likes: 0, reposts: 0, replies: 0, mentions: 0, quotes: 0, follows: 0, pushed: 0 };
 
-  const handle = process.env.BLUESKY_HANDLE;
-  const password = process.env.BLUESKY_APP_PASSWORD;
-  if (!handle || !password) return counts;
+  const creds = await getBlueskyCredentials();
+  if (!creds) return counts;
+  const { handle, password } = creds;
 
   const agent = new BskyAgent({ service: "https://bsky.social" });
   await agent.login({ identifier: handle, password });

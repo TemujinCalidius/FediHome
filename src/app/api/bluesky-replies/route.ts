@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getBlueskyCredentials } from "@/lib/integrations";
 import { prisma } from "@/lib/db";
 import { BskyAgent } from "@atproto/api";
 import { verifyAdmin } from "@/lib/auth";
@@ -15,11 +16,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const handle = process.env.BLUESKY_HANDLE;
-  const password = process.env.BLUESKY_APP_PASSWORD;
-  if (!handle || !password) {
+  const creds = await getBlueskyCredentials();
+  if (!creds) {
     return NextResponse.json({ error: "Bluesky not configured" }, { status: 500 });
   }
+  const { handle, password } = creds;
 
   // Login to Bluesky
   const agent = new BskyAgent({ service: "https://bsky.social" });

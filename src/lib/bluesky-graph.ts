@@ -1,4 +1,5 @@
 import { BskyAgent } from "@atproto/api";
+import { getBlueskyCredentials } from "@/lib/integrations";
 import { prisma } from "./db";
 
 type ProfileView = {
@@ -15,9 +16,9 @@ type ProfileView = {
  * in this run are deleted, so unfollows propagate.
  */
 export async function syncBlueskyGraph(): Promise<{ followers: number; following: number }> {
-  const handle = process.env.BLUESKY_HANDLE;
-  const password = process.env.BLUESKY_APP_PASSWORD;
-  if (!handle || !password) return { followers: 0, following: 0 };
+  const creds = await getBlueskyCredentials();
+  if (!creds) return { followers: 0, following: 0 };
+  const { handle, password } = creds;
 
   const agent = new BskyAgent({ service: "https://bsky.social" });
   await agent.login({ identifier: handle, password });
@@ -92,9 +93,9 @@ export async function syncBlueskyGraph(): Promise<{ followers: number; following
  * can unfollow later (deleteFollow requires the record URI, not the DID).
  */
 export async function followBlueskyAccount(did: string): Promise<void> {
-  const handle = process.env.BLUESKY_HANDLE;
-  const password = process.env.BLUESKY_APP_PASSWORD;
-  if (!handle || !password) throw new Error("Bluesky credentials not configured");
+  const creds = await getBlueskyCredentials();
+  if (!creds) throw new Error("Bluesky credentials not configured");
+  const { handle, password } = creds;
 
   const agent = new BskyAgent({ service: "https://bsky.social" });
   await agent.login({ identifier: handle, password });
@@ -131,9 +132,9 @@ export async function unfollowBlueskyAccount(followingId: string): Promise<void>
   if (!row) throw new Error("Following row not found");
   if (!row.followUri) throw new Error("Missing followUri — sync Bluesky graph and retry");
 
-  const handle = process.env.BLUESKY_HANDLE;
-  const password = process.env.BLUESKY_APP_PASSWORD;
-  if (!handle || !password) throw new Error("Bluesky credentials not configured");
+  const creds = await getBlueskyCredentials();
+  if (!creds) throw new Error("Bluesky credentials not configured");
+  const { handle, password } = creds;
 
   const agent = new BskyAgent({ service: "https://bsky.social" });
   await agent.login({ identifier: handle, password });
@@ -150,9 +151,9 @@ export async function resolveBlueskyActor(handleOrDid: string): Promise<string> 
   const trimmed = handleOrDid.trim().replace(/^@/, "");
   if (trimmed.startsWith("did:")) return trimmed;
 
-  const handle = process.env.BLUESKY_HANDLE;
-  const password = process.env.BLUESKY_APP_PASSWORD;
-  if (!handle || !password) throw new Error("Bluesky credentials not configured");
+  const creds = await getBlueskyCredentials();
+  if (!creds) throw new Error("Bluesky credentials not configured");
+  const { handle, password } = creds;
 
   const agent = new BskyAgent({ service: "https://bsky.social" });
   await agent.login({ identifier: handle, password });
