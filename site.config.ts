@@ -108,6 +108,17 @@ export const siteConfig = {
   layout: {
     feed: process.env.LAYOUT_FEED || "",
   },
+
+  // /audio podcast RSS feed overrides (#59). Empty = derive from your profile
+  // (title "<author> — Audio", author = your name, etc.). All web-editable in
+  // Admin → Site settings; env vars remain as defaults.
+  podcast: {
+    title: process.env.PODCAST_TITLE || "",
+    author: process.env.PODCAST_AUTHOR || "",
+    description: process.env.PODCAST_DESCRIPTION || "",
+    email: process.env.PODCAST_EMAIL || "",
+    image: process.env.PODCAST_IMAGE || "",
+  },
 } as const;
 
 export type SiteConfig = typeof siteConfig;

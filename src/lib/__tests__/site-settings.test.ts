@@ -11,6 +11,8 @@ vi.mock("@/../site.config", () => ({
     download: { macosEnabled: false, macosReleaseUrl: "https://env/releases/latest", macosAppStoreUrl: "" },
     theme: { id: "default" },
     layout: { feed: "" },
+    contactEmail: "env@example.com",
+    podcast: { title: "", author: "", description: "", email: "", image: "" },
   },
 }));
 
@@ -73,6 +75,21 @@ describe("getRuntimeSiteConfig (#59)", () => {
     invalidateSiteConfigCache();
     vi.mocked(prisma.siteSetting.findMany).mockResolvedValue(rows({ "layout.feed": "list" }) as never);
     expect((await getRuntimeSiteConfig()).layout.feed).toBe("list");
+  });
+
+  it("overlays contact email + podcast feed fields (#59): env defaults, saved overrides win", async () => {
+    const base = await getRuntimeSiteConfig();
+    expect(base.contact.email).toBe("env@example.com");
+    expect(base.podcast).toEqual({ title: "", author: "", description: "", email: "", image: "" });
+    invalidateSiteConfigCache();
+    vi.mocked(prisma.siteSetting.findMany).mockResolvedValue(
+      rows({ "contact.email": "me@site.dev", "podcast.title": "Field Notes", "podcast.image": "https://cdn/x.jpg" }) as never,
+    );
+    const cfg = await getRuntimeSiteConfig();
+    expect(cfg.contact.email).toBe("me@site.dev");
+    expect(cfg.podcast.title).toBe("Field Notes");
+    expect(cfg.podcast.image).toBe("https://cdn/x.jpg");
+    expect(cfg.podcast.author).toBe(""); // untouched → env default (derived downstream)
   });
 
   it("caches for a minute; invalidation forces a re-read", async () => {

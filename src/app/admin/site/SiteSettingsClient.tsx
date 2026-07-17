@@ -157,6 +157,12 @@ export default function SiteSettingsClient({
       // "cards" here would pin an override on first save and stop a theme's own
       // preset (e.g. Editorial's list) from ever applying.
       "layout.feed": cfg.layout.feed,
+      "contact.email": cfg.contact.email,
+      "podcast.title": cfg.podcast.title,
+      "podcast.author": cfg.podcast.author,
+      "podcast.description": cfg.podcast.description,
+      "podcast.email": cfg.podcast.email,
+      "podcast.image": cfg.podcast.image,
     };
     const okConfig = await post(settings);
     const okAccent = await saveAccent(); // separate overlay (profile); no-op if unchanged
@@ -176,7 +182,8 @@ export default function SiteSettingsClient({
         "footer.webringUrl", "footer.webringLabel", "footer.badgeSrc", "footer.badgeHref",
         "footer.badgeAlt", "footer.fundingUrl", "footer.fundingLabel",
         "download.macos.enabled", "download.macos.releaseUrl", "download.macos.appStoreUrl",
-        "theme.id", "layout.feed",
+        "theme.id", "layout.feed", "contact.email",
+        "podcast.title", "podcast.author", "podcast.description", "podcast.email", "podcast.image",
       ].map((k) => [k, null]),
     );
     if (await post(cleared)) {
@@ -191,6 +198,8 @@ export default function SiteSettingsClient({
   const setFooter = (patch: Partial<RuntimeSiteConfig["footer"]>) => setCfg((c) => ({ ...c, footer: { ...c.footer, ...patch } }));
   const setDownload = (patch: Partial<RuntimeSiteConfig["download"]>) => setCfg((c) => ({ ...c, download: { ...c.download, ...patch } }));
   const setLayout = (patch: Partial<RuntimeSiteConfig["layout"]>) => setCfg((c) => ({ ...c, layout: { ...c.layout, ...patch } }));
+  const setContact = (patch: Partial<RuntimeSiteConfig["contact"]>) => setCfg((c) => ({ ...c, contact: { ...c.contact, ...patch } }));
+  const setPodcast = (patch: Partial<RuntimeSiteConfig["podcast"]>) => setCfg((c) => ({ ...c, podcast: { ...c.podcast, ...patch } }));
 
   const text = (label: string, value: string, onChange: (v: string) => void, placeholder = "") => (
     <label className="flex flex-col gap-1 text-xs text-gray-400">
@@ -346,6 +355,16 @@ export default function SiteSettingsClient({
           {check("Show the Download nav link, homepage CTA & /download page", cfg.download.macosEnabled, (v) => setDownload({ macosEnabled: v }))}
           {text("Release URL (GitHub Releases)", cfg.download.macosReleaseUrl, (v) => setDownload({ macosReleaseUrl: v }), "https://…")}
           {text("Mac App Store URL (optional)", cfg.download.macosAppStoreUrl, (v) => setDownload({ macosAppStoreUrl: v }), "https://…")}
+        </>)}
+
+        {section("Contact & podcast", <>
+          {text("Contact email", cfg.contact.email, (v) => setContact({ email: v }), "you@example.com")}
+          <p className="text-xs text-gray-600 m-0">Podcast feed for <code>/audio</code>. Leave any field blank to derive it from your profile.</p>
+          {text("Podcast title", cfg.podcast.title, (v) => setPodcast({ title: v }), "e.g. Field Notes")}
+          {text("Podcast author", cfg.podcast.author, (v) => setPodcast({ author: v }))}
+          {text("Podcast description", cfg.podcast.description, (v) => setPodcast({ description: v }))}
+          {text("Podcast email", cfg.podcast.email, (v) => setPodcast({ email: v }), "defaults to your contact email")}
+          {text("Podcast cover image URL", cfg.podcast.image, (v) => setPodcast({ image: v }), "https://…")}
         </>)}
 
         <div className="flex items-center gap-3 py-4">
