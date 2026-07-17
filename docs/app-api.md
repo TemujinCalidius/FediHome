@@ -18,6 +18,25 @@ It receives a **scoped, revocable bearer token** and sends it as
 1. **OAuth login** (below) — the interactive flow for apps that can open a browser.
 2. **Generate + paste** — the owner mints a scoped token at **`/admin/apps` → "Generate app token"**, picks scopes + a label, and copies the raw token **once** (only its hash is stored). Paste it into any client that accepts a bearer token — headless/CI, a read-only reader, or App Store review — and send it as `Authorization: Bearer <token>`. No OAuth round-trip, no `ADMIN_SECRET`. Long-lived + revocable from the same screen; a lost token is revoked and reissued.
 
+### One-paste sign-in link
+
+The generate-token reveal also offers a **sign-in link** that bundles the
+instance URL and the token, so a native app can onboard from a single copy (or,
+in future, a scan) instead of two fields:
+
+```
+fedihome://connect?instance=<SITE_URL>&token=<token>
+```
+
+Both values are `encodeURIComponent`-escaped. An app registers the `fedihome://`
+URL scheme, parses `instance` + `token`, and connects — same as pasting the two
+fields. The token is still shown once and never persisted; the link is only
+displayed in the same reveal box.
+
+> **Status: proposed onboarding contract.** The web side emits this format
+> today; the exact scheme/params should be confirmed against the macOS/iOS app
+> before it's treated as stable.
+
 ## The login flow (OAuth 2.0 Authorization Code + PKCE)
 
 1. **Discover** — `GET SITE_URL/.well-known/oauth-authorization-server` → the
