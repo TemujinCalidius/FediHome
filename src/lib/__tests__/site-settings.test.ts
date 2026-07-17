@@ -100,6 +100,7 @@ describe("validateSiteConfigValue (#59)", () => {
   });
   it("theme.id only accepts a registered theme id (#250)", () => {
     expect(validateSiteConfigValue("theme.id", "default")).toBe("default");
+    expect(validateSiteConfigValue("theme.id", "editorial")).toBe("editorial");
     expect(validateSiteConfigValue("theme.id", "not-a-theme")).toBeNull();
     expect(validateSiteConfigValue("theme.id", "")).toBeNull();
   });
