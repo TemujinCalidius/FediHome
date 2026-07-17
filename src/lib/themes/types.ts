@@ -25,9 +25,24 @@ export interface ThemeTokens {
   fonts: ThemeFonts;
 }
 
+/**
+ * Layout regions (#250, Phase 3). Each region of the page picks one variant from
+ * a curated catalogue — that's what makes layout swappable without arbitrary
+ * markup. Today only `feed` is wired (cards ↔ list); header/shell/post/footer
+ * land in later phases behind the same dispatch pattern.
+ */
+export type FeedVariant = "cards" | "list";
+
+export interface LayoutConfig {
+  /** How the home/blog feed renders its posts. */
+  feed: FeedVariant;
+}
+
 export interface Theme {
   id: string;
   name: string;
   description?: string;
   tokens: ThemeTokens;
+  /** The variant this theme picks for each region (its layout preset). */
+  layout: LayoutConfig;
 }

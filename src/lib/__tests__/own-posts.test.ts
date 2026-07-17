@@ -17,6 +17,7 @@ function req(params: Record<string, string> = {}): NextRequest {
 
 const row = (over: Record<string, unknown> = {}) => ({
   id: "post_1", slug: "hello", title: "Hello", excerpt: "x", category: "article",
+  content: null, contentHtml: null,
   photos: [], videos: [], audioPaths: [],
   published: true, publishedAt: new Date("2026-01-02"), updatedAt: new Date("2026-01-03"),
   scheduledFor: null,
@@ -45,6 +46,20 @@ describe("GET /api/posts (My Posts)", () => {
     expect(body.posts).toHaveLength(2);
     expect(body.posts[0]).toMatchObject({ id: "post_1", slug: "hello", url: "/post/hello", type: "article", counts: { likes: 2, boosts: 1 } });
     expect(body.posts[1]).toMatchObject({ type: "photo", media: { photos: 2, videos: 0, audio: 0 } });
+  });
+
+  it("returns a body preview for title-less notes, and '' for an empty post (#253)", async () => {
+    authenticateApiRequest.mockResolvedValue(ok);
+    vi.mocked(prisma.post.findMany).mockResolvedValue([
+      row({ id: "n1", slug: "note1", title: null, excerpt: null, category: "note", content: "Just a quick **microblog** note." }),
+      row({ id: "n2", slug: "note2", title: null, excerpt: null, category: "note", content: "" }),
+      row({ id: "a1", slug: "art", excerpt: "My summary" }),
+    ] as never);
+    const body = await (await GET(req())).json();
+    expect(body.posts[0].preview).toContain("Just a quick"); // derived from content
+    expect(body.posts[0].preview).not.toContain("**"); // markdown stripped
+    expect(body.posts[1].preview).toBe(""); // empty stays empty (not the site tagline)
+    expect(body.posts[2].preview).toBe("My summary"); // explicit excerpt wins
   });
 
   it("status=draft filters to unpublished with NO scheduledFor", async () => {

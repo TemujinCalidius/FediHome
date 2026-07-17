@@ -10,6 +10,7 @@ vi.mock("@/../site.config", () => ({
     footer: { webringUrl: "", webringLabel: "Webring", badgeSrc: "", badgeHref: "", badgeAlt: "Badge", fundingUrl: "", fundingLabel: "Support" },
     download: { macosEnabled: false, macosReleaseUrl: "https://env/releases/latest", macosAppStoreUrl: "" },
     theme: { id: "default" },
+    layout: { feed: "" },
   },
 }));
 
@@ -67,6 +68,13 @@ describe("getRuntimeSiteConfig (#59)", () => {
     expect((await getRuntimeSiteConfig()).theme.id).toBe("default");
   });
 
+  it("overlays the feed layout override (#250): empty (inherit) by default, a saved variant wins", async () => {
+    expect((await getRuntimeSiteConfig()).layout.feed).toBe(""); // empty = inherit the theme default
+    invalidateSiteConfigCache();
+    vi.mocked(prisma.siteSetting.findMany).mockResolvedValue(rows({ "layout.feed": "list" }) as never);
+    expect((await getRuntimeSiteConfig()).layout.feed).toBe("list");
+  });
+
   it("caches for a minute; invalidation forces a re-read", async () => {
     await getRuntimeSiteConfig();
     await getRuntimeSiteConfig();
@@ -94,6 +102,13 @@ describe("validateSiteConfigValue (#59)", () => {
     expect(validateSiteConfigValue("theme.id", "default")).toBe("default");
     expect(validateSiteConfigValue("theme.id", "not-a-theme")).toBeNull();
     expect(validateSiteConfigValue("theme.id", "")).toBeNull();
+  });
+  it("layout.feed accepts a known variant or empty (inherit), rejects anything else (#250)", () => {
+    expect(validateSiteConfigValue("layout.feed", "cards")).toBe("cards");
+    expect(validateSiteConfigValue("layout.feed", "list")).toBe("list");
+    expect(validateSiteConfigValue("layout.feed", "")).toBe(""); // inherit the theme default
+    expect(validateSiteConfigValue("layout.feed", "blog")).toBeNull(); // not a variant yet
+    expect(validateSiteConfigValue("layout.feed", "nope")).toBeNull();
   });
   it("url fields accept relative + http(s), reject javascript:/protocol-relative/control chars", () => {
     expect(validateSiteConfigValue("footer.badgeSrc", "/images/b.png")).toBe("/images/b.png");

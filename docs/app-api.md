@@ -13,6 +13,11 @@ It receives a **scoped, revocable bearer token** and sends it as
 
 ---
 
+## Two ways to get a token
+
+1. **OAuth login** (below) — the interactive flow for apps that can open a browser.
+2. **Generate + paste** — the owner mints a scoped token at **`/admin/apps` → "Generate app token"**, picks scopes + a label, and copies the raw token **once** (only its hash is stored). Paste it into any client that accepts a bearer token — headless/CI, a read-only reader, or App Store review — and send it as `Authorization: Bearer <token>`. No OAuth round-trip, no `ADMIN_SECRET`. Long-lived + revocable from the same screen; a lost token is revoked and reissued.
+
 ## The login flow (OAuth 2.0 Authorization Code + PKCE)
 
 1. **Discover** — `GET SITE_URL/.well-known/oauth-authorization-server` → the
@@ -132,6 +137,7 @@ All are `GET` (read-only, no CSRF) with `Authorization: Bearer <token>`.
 | endpoint | returns |
 |---|---|
 | `GET /api/feed?cursor=<ISO>&replies=1&boosts=1` | `{ posts: [...], nextCursor }` — your private Fediverse timeline (paged, 20/page; `cursor` = last `publishedAt`) |
+| `GET /api/posts?cursor=<ISO_id>&status=&type=&limit=` | `{ posts: [...], nextCursor }` — **your own** posts for a content manager (incl. drafts/scheduled). Each post has `id, slug, url, title, excerpt, preview, category, type, status, published, publishedAt, updatedAt, scheduledFor, counts, media`. `preview` is a short markup-stripped body snippet (`""` when genuinely empty) so title-less notes still render. Filters: `status` = `all\|published\|draft\|scheduled`, `type` = `note\|article\|journal\|photo\|video\|audio` |
 | `GET /api/notifications` | `{ count, items, categoryCounts }` — the bell. **DM items require `dm` scope** (redacted otherwise) |
 | `GET /api/conversation?postId=<id>` | `{ thread: [...] }` — a full thread (ancestors + replies) |
 | `POST /api/fedi-post-counts` `{ postId }` | `{ likeCount, boostCount, replyCount, countsFetchedAt }` (cached ~5 min) |
