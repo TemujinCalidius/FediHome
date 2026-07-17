@@ -47,6 +47,12 @@ export const SITE_CONFIG_FIELDS: Record<string, FieldType> = {
   "download.macos.appStoreUrl": "url",
   "theme.id": "text", // validated against the theme registry (see validateSiteConfigValue)
   "layout.feed": "text", // "" (inherit theme) or a known feed variant (see validateSiteConfigValue)
+  "contact.email": "text",
+  "podcast.title": "text",
+  "podcast.author": "text",
+  "podcast.description": "text",
+  "podcast.email": "text",
+  "podcast.image": "url",
 };
 
 export const SITE_CONFIG_KEYS = Object.keys(SITE_CONFIG_FIELDS);
@@ -69,6 +75,9 @@ export interface RuntimeSiteConfig {
   download: { macosEnabled: boolean; macosReleaseUrl: string; macosAppStoreUrl: string };
   theme: { id: string };
   layout: { feed: string };
+  contact: { email: string };
+  // /audio podcast feed overrides — empty means "derive from your profile".
+  podcast: { title: string; author: string; description: string; email: string; image: string };
 }
 
 /** The env/default view — exactly what `siteConfig` (env-driven) exposes today. */
@@ -90,6 +99,8 @@ export function siteConfigDefaults(): RuntimeSiteConfig {
     download: { ...siteConfig.download },
     theme: { ...siteConfig.theme },
     layout: { ...siteConfig.layout },
+    contact: { email: siteConfig.contactEmail },
+    podcast: { ...siteConfig.podcast },
   };
 }
 
@@ -155,6 +166,14 @@ export async function getRuntimeSiteConfig(): Promise<RuntimeSiteConfig> {
       },
       theme: { id: textOverride(o["theme.id"], base.theme.id) },
       layout: { feed: textOverride(o["layout.feed"], base.layout.feed) },
+      contact: { email: textOverride(o["contact.email"], base.contact.email) },
+      podcast: {
+        title: textOverride(o["podcast.title"], base.podcast.title),
+        author: textOverride(o["podcast.author"], base.podcast.author),
+        description: textOverride(o["podcast.description"], base.podcast.description),
+        email: textOverride(o["podcast.email"], base.podcast.email),
+        image: textOverride(o["podcast.image"], base.podcast.image),
+      },
     };
   } catch {
     return base; // DB down/mid-migration — env defaults, don't cache the failure
