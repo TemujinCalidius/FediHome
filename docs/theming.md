@@ -45,9 +45,14 @@ The default theme is a dark palette with blue accents:
 
 The accent color is used for links, buttons, borders, badges, and interactive elements throughout the UI.
 
-### Method 1: Admin Panel
+### Method 1: Admin Panel (per theme)
 
-The simplest way is to change the accent color in the admin panel settings. This sets the `accentColor` field in the `SiteSettings` database table.
+The simplest way is **Admin → Site settings → Appearance**: pick a colour under
+"Accent colour" and Save — it applies live, no restart. The accent is **per
+theme**: each theme (Cards, Editorial, …) remembers its own, so switching themes
+restores the accent you chose for it. Use **"Use theme's accent"** to fall back
+to the theme's built-in accent. (Stored in the `SiteSettings` profile row —
+`accentColor` for the default theme, `themeAccents` for the rest.)
 
 ### Method 2: Edit globals.css
 

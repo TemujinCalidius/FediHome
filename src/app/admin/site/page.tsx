@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { prisma } from "@/lib/db";
 import { verifyAdminSession } from "@/lib/auth";
 import { siteConfigDefaults, getRuntimeSiteConfig, SITE_CONFIG_KEYS } from "@/lib/site-settings";
+import { getRuntimeProfile } from "@/lib/site-profile";
 import TimelineLogin from "../../timeline/TimelineLogin";
 import SiteSettingsClient from "./SiteSettingsClient";
 
@@ -20,13 +21,17 @@ export default async function AdminSitePage() {
     return <TimelineLogin />;
   }
 
-  const rows = await prisma.siteSetting.findMany({ where: { key: { in: SITE_CONFIG_KEYS } } });
+  const [rows, profile] = await Promise.all([
+    prisma.siteSetting.findMany({ where: { key: { in: SITE_CONFIG_KEYS } } }),
+    getRuntimeProfile(),
+  ]);
 
   return (
     <SiteSettingsClient
       defaults={siteConfigDefaults()}
       effective={await getRuntimeSiteConfig()}
       overrides={Object.fromEntries(rows.map((r) => [r.key, r.value]))}
+      accent={{ accentColor: profile.accentColor, themeAccents: profile.themeAccents }}
     />
   );
 }

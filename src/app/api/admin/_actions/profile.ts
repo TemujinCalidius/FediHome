@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { deliverToFollowers } from "@/lib/http-signatures";
 import { getActorProfile } from "@/lib/federation";
 import { getRuntimeProfile, invalidateProfileCache } from "@/lib/site-profile";
+import { isThemeId } from "@/lib/themes";
 import { siteConfig } from "@/../site.config";
 import type { AdminBody } from "./types";
 
@@ -38,18 +39,28 @@ function imagePath(name: string, value: unknown): string {
   return path;
 }
 
+// Fields that appear in the AP actor document (getActorProfile: name, summary,
+// icon, image). Only a change to one of these warrants federating an `Update`;
+// accent / bio / tagline are local display and must NOT blast a pointless,
+// byte-identical actor Update to every follower (#276).
+const FEDERATED_FIELDS = ["authorName", "actorSummary", "avatarPath", "bannerPath"] as const;
+
 /**
- * Edit the owner's profile post-setup (#201): name/bio/tagline/summary/accent
- * and avatar/banner (paths from a prior POST /api/media upload). Writes the
- * `SiteSettings` overlay that getRuntimeProfile() reads, so the change takes
- * effect on the actor + /api/account immediately, and federates an actor
- * `Update` so remote servers refresh their cached profile.
+ * Edit the owner's profile post-setup (#201): name/bio/tagline/summary, avatar/
+ * banner (paths from a prior POST /api/media upload), the legacy default-theme
+ * `accentColor`, and per-theme accent overrides (`themeAccents`, #276). Writes
+ * the `SiteSettings` overlay that getRuntimeProfile() reads, so the change takes
+ * effect on the actor + /api/account immediately. Federates an actor `Update`
+ * ONLY when a federated field changed (see FEDERATED_FIELDS).
  *
  * `manage` scope (gated by the caller) + owner cookie. Only provided fields are
  * written; omitted ones are left unchanged.
  */
 export async function updateProfile(body: AdminBody): Promise<NextResponse> {
   const data: Record<string, string> = {};
+  // Per-theme accent overrides are merged (a partial `{ themeId: hex|"" }`),
+  // written separately since the column is JSON, not a string.
+  let themeAccentsUpdate: Record<string, string> | undefined;
   try {
     if (body.authorName !== undefined) data.authorName = textField("authorName", body.authorName);
     if (body.authorBio !== undefined) data.authorBio = textField("authorBio", body.authorBio);
@@ -61,33 +72,40 @@ export async function updateProfile(body: AdminBody): Promise<NextResponse> {
       }
       data.accentColor = body.accentColor;
     }
+    if (body.themeAccents !== undefined) {
+      themeAccentsUpdate = await mergeThemeAccents(body.themeAccents);
+    }
     if (body.avatarPath !== undefined) data.avatarPath = imagePath("avatarPath", body.avatarPath);
     if (body.bannerPath !== undefined) data.bannerPath = imagePath("bannerPath", body.bannerPath);
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 400 });
   }
 
-  if (Object.keys(data).length === 0) {
+  if (Object.keys(data).length === 0 && themeAccentsUpdate === undefined) {
     return NextResponse.json({ error: "no profile fields provided" }, { status: 400 });
   }
 
+  const update = { ...data, ...(themeAccentsUpdate !== undefined ? { themeAccents: themeAccentsUpdate } : {}) };
   await prisma.siteSettings.upsert({
     where: { id: "main" },
-    update: data,
-    create: { id: "main", setupDone: true, ...data },
+    update,
+    create: { id: "main", setupDone: true, ...update },
   });
   invalidateProfileCache();
 
-  // Federate an actor Update so Mastodon etc. refresh the cached profile.
-  const actor = await getActorProfile();
-  void deliverToFollowers({
-    "@context": "https://www.w3.org/ns/activitystreams",
-    id: `${siteUrl}/ap/actor#update-${Date.now()}`,
-    type: "Update",
-    actor: `${siteUrl}/ap/actor`,
-    to: ["https://www.w3.org/ns/activitystreams#Public"],
-    object: actor,
-  }).catch((err) => console.error("Failed to federate profile update:", err));
+  // Federate an actor Update so Mastodon etc. refresh the cached profile — but
+  // only when a federated field actually changed (#276).
+  if (FEDERATED_FIELDS.some((f) => f in data)) {
+    const actor = await getActorProfile();
+    void deliverToFollowers({
+      "@context": "https://www.w3.org/ns/activitystreams",
+      id: `${siteUrl}/ap/actor#update-${Date.now()}`,
+      type: "Update",
+      actor: `${siteUrl}/ap/actor`,
+      to: ["https://www.w3.org/ns/activitystreams#Public"],
+      object: actor,
+    }).catch((err) => console.error("Failed to federate profile update:", err));
+  }
 
   const profile = await getRuntimeProfile();
   return NextResponse.json({
@@ -98,8 +116,33 @@ export async function updateProfile(body: AdminBody): Promise<NextResponse> {
       tagline: profile.authorTagline,
       summary: profile.actorSummary,
       accentColor: profile.accentColor,
+      themeAccents: profile.themeAccents,
       avatar: `${siteUrl}${profile.avatarPath}`,
       banner: `${siteUrl}${profile.bannerPath}`,
     },
   });
+}
+
+/**
+ * Merge a partial per-theme accent map onto the currently-stored overrides.
+ * Each value is a `#RRGGBB` hex to set for a known theme, or `""`/`null` to
+ * clear that theme (→ inherit the theme's own accent). Throws on a bad value.
+ */
+async function mergeThemeAccents(input: unknown): Promise<Record<string, string>> {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    throw new Error("themeAccents must be an object");
+  }
+  const merged = { ...(await getRuntimeProfile()).themeAccents };
+  for (const [themeId, value] of Object.entries(input as Record<string, unknown>)) {
+    if (!isThemeId(themeId)) throw new Error(`unknown theme: ${themeId}`);
+    if (value === "" || value === null) {
+      delete merged[themeId]; // clear → inherit
+      continue;
+    }
+    if (typeof value !== "string" || !ACCENT_RE.test(value)) {
+      throw new Error(`themeAccents.${themeId} must be a #RRGGBB hex color`);
+    }
+    merged[themeId] = value.toLowerCase();
+  }
+  return merged;
 }
