@@ -3,7 +3,7 @@ import { DEFAULT_THEME } from "./default";
 import { resolveTheme } from "./registry";
 import { deriveAccentScale } from "./color";
 
-export type { Theme, ThemeTokens, ThemeColors, ThemeFonts, ColorToken, FeedVariant, LayoutConfig } from "./types";
+export type { Theme, ThemeTokens, ThemeColors, ThemeFonts, ThemeFeel, ColorToken, FeedVariant, LayoutConfig } from "./types";
 export { deriveAccentScale } from "./color";
 export { DEFAULT_THEME } from "./default";
 export { THEMES, THEME_IDS, isThemeId, resolveTheme } from "./registry";
@@ -77,6 +77,16 @@ export function buildThemeStyle(themeId: string, accentColor?: string | null): s
   }
   for (const key of ["display", "body", "mono"] as const) {
     if (theme.tokens.fonts[key] !== def.fonts[key]) lines.push(`--font-${key}:${theme.tokens.fonts[key]}`);
+  }
+  // Feel tokens (#250): texture. Emit only what differs, keyed to the CSS vars in
+  // globals.css. All values are theme constants, so no injection risk.
+  const feelVars: Array<[keyof typeof def.feel, string]> = [
+    ["radiusCard", "--radius-card"],
+    ["radiusButton", "--radius-button"],
+    ["glassFilter", "--glass-filter"],
+  ];
+  for (const [key, cssVar] of feelVars) {
+    if (theme.tokens.feel[key] !== def.feel[key]) lines.push(`${cssVar}:${theme.tokens.feel[key]}`);
   }
 
   return lines.length ? `:root:root{${lines.join(";")}}` : "";

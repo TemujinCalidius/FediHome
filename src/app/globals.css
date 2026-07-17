@@ -79,11 +79,20 @@ iframe {
 
 /* === Component Utilities === */
 
+/* "Feel" tokens (#250) — texture the active theme can override. Declared at
+   plain `:root` (specificity 0-1-0) so buildThemeStyle's injected `:root:root`
+   (0-2-0) wins. Defaults equal the literals they replace → zero visual change. */
+:root {
+  --radius-card: 12px;
+  --radius-button: 8px;
+  --glass-filter: blur(12px);
+}
+
 .glass-card {
   background: color-mix(in srgb, var(--color-surface-900) 85%, transparent);
-  backdrop-filter: blur(12px);
+  backdrop-filter: var(--glass-filter);
   border: 1px solid color-mix(in srgb, var(--color-accent-500) 10%, transparent);
-  border-radius: 12px;
+  border-radius: var(--radius-card);
   transition: border-color 0.2s ease;
 }
 
@@ -109,7 +118,7 @@ iframe {
   justify-content: center;
   gap: 0.5rem;
   padding: 0.625rem 1.5rem;
-  border-radius: 8px;
+  border-radius: var(--radius-button);
   font-weight: 600;
   font-size: 0.875rem;
   letter-spacing: 0.025em;
@@ -130,7 +139,7 @@ iframe {
   justify-content: center;
   gap: 0.5rem;
   padding: 0.625rem 1.5rem;
-  border-radius: 8px;
+  border-radius: var(--radius-button);
   font-weight: 600;
   font-size: 0.875rem;
   letter-spacing: 0.025em;

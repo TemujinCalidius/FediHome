@@ -36,6 +36,13 @@ export const DEFAULT_THEME: Theme = {
       body: '"Inter", system-ui, -apple-system, sans-serif',
       mono: '"JetBrains Mono", "Fira Code", monospace',
     },
+    // Today's texture, verbatim from globals.css — so a default instance emits
+    // no feel overrides and renders byte-identically.
+    feel: {
+      radiusCard: "12px",
+      radiusButton: "8px",
+      glassFilter: "blur(12px)",
+    },
   },
   // "Cards" renders the feed as glass cards — today's look.
   layout: { feed: "cards" },
