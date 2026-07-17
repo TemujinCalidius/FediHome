@@ -57,16 +57,25 @@ export function normalizeBlueskyHandle(handle: string): string {
   return handle.trim().replace(/^@+/, "").toLowerCase();
 }
 
-/** Resolved Bluesky credentials: DB (decrypted) first, else the env vars. */
+/**
+ * Resolved Bluesky credentials: DB (decrypted) first, else the env vars.
+ *
+ * Normalizes on READ (#257), not just on write. Every caller feeds `handle`
+ * straight into `agent.login()`, so a raw `@handle` from either source fails
+ * with `InvalidEmail` — silently, since most callers are background jobs
+ * (crosspost, polls). Both branches need it: `BLUESKY_HANDLE` is never
+ * normalized at all, and DB rows written before #258 were stored raw with no
+ * migration to backfill them. Normalizing here covers every call site at once.
+ */
 export async function getBlueskyCredentials(): Promise<BlueskyCredentials | null> {
   const o = await readRows([KEYS.bskyHandle, KEYS.bskyPassword]);
   if (o[KEYS.bskyHandle] && o[KEYS.bskyPassword]) {
     const password = decryptSecret(o[KEYS.bskyPassword]);
-    if (password) return { handle: o[KEYS.bskyHandle], password };
+    if (password) return { handle: normalizeBlueskyHandle(o[KEYS.bskyHandle]), password };
   }
   const eh = process.env.BLUESKY_HANDLE;
   const ep = process.env.BLUESKY_APP_PASSWORD;
-  return eh && ep ? { handle: eh, password: ep } : null;
+  return eh && ep ? { handle: normalizeBlueskyHandle(eh), password: ep } : null;
 }
 
 export async function setBlueskyCredentials(
@@ -166,7 +175,12 @@ export async function getIntegrationStatus(): Promise<IntegrationStatus> {
   return {
     bluesky: {
       configured: bskyDb || bskyEnv,
-      handle: o[KEYS.bskyHandle] ?? process.env.BLUESKY_HANDLE ?? null,
+      // Normalized so the admin panel shows the same handle we actually log in
+      // with, whichever source it came from (#257).
+      handle: (() => {
+        const h = o[KEYS.bskyHandle] ?? process.env.BLUESKY_HANDLE;
+        return h ? normalizeBlueskyHandle(h) : null;
+      })(),
       source: bskyDb ? "db" : bskyEnv ? "env" : null,
     },
     threads: {

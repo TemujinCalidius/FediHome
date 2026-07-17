@@ -52,6 +52,9 @@ BLUESKY_APP_PASSWORD=xxxx-xxxx-xxxx-xxxx
 If you use a custom domain as your Bluesky handle, use that (e.g.
 `BLUESKY_HANDLE=yourdomain.com`). Restart FediHome after setting env variables.
 
+Write the handle **without a leading `@`**. A pasted `@you.bsky.social` is
+stripped (and trimmed + lowercased) automatically, so either form works.
+
 ## What Gets Crossposted
 
 | Content Type | Bluesky Format |
@@ -112,6 +115,8 @@ The `BLUESKY_HANDLE` or `BLUESKY_APP_PASSWORD` env var is missing or empty. Chec
 - Make sure `BLUESKY_HANDLE` is your full handle (e.g., `name.bsky.social`, not just `name`)
 - Verify the app password is correct — regenerate it if unsure
 - If you changed your Bluesky handle recently, update the env var
+- A leading `@` is handled for you — if you're on a build older than v1.16.0, a
+  `@`-prefixed handle failed with a misleading `InvalidEmail` error (#257)
 
 ### Images not appearing on Bluesky
 

@@ -98,6 +98,33 @@ describe("integrations — Bluesky credentials", () => {
     expect(handle.create.value).toBe("me.bsky.social");
   });
 
+  // #257: every caller feeds this handle straight into agent.login(), so a raw
+  // `@handle` from EITHER source fails with InvalidEmail — silently, in
+  // background jobs. Normalizing only on write missed both of these.
+  it("normalizes the env-fallback handle (#257) — BLUESKY_HANDLE is never normalized at write", async () => {
+    process.env.BLUESKY_HANDLE = "  @Env.BSKY.social  ";
+    process.env.BLUESKY_APP_PASSWORD = "env-pw";
+    expect(await getBlueskyCredentials()).toEqual({ handle: "env.bsky.social", password: "env-pw" });
+  });
+
+  it("normalizes a DB handle stored raw before #258 (no migration backfills those rows)", async () => {
+    const enc = encryptSecret("db-pw")!;
+    vi.mocked(prisma.siteSetting.findMany).mockResolvedValue(
+      rows({ "integration.bluesky.handle": "@Db.bsky.social", "integration.bluesky.password": enc }) as never,
+    );
+    expect(await getBlueskyCredentials()).toEqual({ handle: "db.bsky.social", password: "db-pw" });
+  });
+
+  it("reports a normalized handle in the integration status, from either source (#257)", async () => {
+    process.env.BLUESKY_HANDLE = "@Env.BSKY.social";
+    process.env.BLUESKY_APP_PASSWORD = "env-pw";
+    expect((await getIntegrationStatus()).bluesky).toMatchObject({
+      configured: true,
+      handle: "env.bsky.social",
+      source: "env",
+    });
+  });
+
   it("clear deletes both rows", async () => {
     await clearBlueskyCredentials();
     expect(prisma.siteSetting.deleteMany).toHaveBeenCalledWith({
