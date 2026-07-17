@@ -3,6 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import type { RuntimeSiteConfig } from "@/lib/site-settings";
+// Pure data + math (no prisma / server-only), so it's safe in a client bundle.
+import { THEMES } from "@/lib/themes";
 
 /**
  * Site settings (#59): the safe appearance/feature config, editable in-app.
@@ -76,7 +78,11 @@ export default function SiteSettingsClient({
       "download.macos.enabled": String(cfg.download.macosEnabled),
       "download.macos.releaseUrl": cfg.download.macosReleaseUrl,
       "download.macos.appStoreUrl": cfg.download.macosAppStoreUrl,
-      "layout.feed": cfg.layout.feed || "cards",
+      "theme.id": cfg.theme.id || "default", // "" would fail validation and 400 the whole batch
+      // Sent as-is: "" means "inherit the theme's feed variant". Coercing it to
+      // "cards" here would pin an override on first save and stop a theme's own
+      // preset (e.g. Editorial's list) from ever applying.
+      "layout.feed": cfg.layout.feed,
     };
     if (await post(settings)) setHasOverrides(true);
   };
@@ -90,7 +96,7 @@ export default function SiteSettingsClient({
         "footer.webringUrl", "footer.webringLabel", "footer.badgeSrc", "footer.badgeHref",
         "footer.badgeAlt", "footer.fundingUrl", "footer.fundingLabel",
         "download.macos.enabled", "download.macos.releaseUrl", "download.macos.appStoreUrl",
-        "layout.feed",
+        "theme.id", "layout.feed",
       ].map((k) => [k, null]),
     );
     if (await post(cleared)) {
@@ -105,6 +111,7 @@ export default function SiteSettingsClient({
   const setFooter = (patch: Partial<RuntimeSiteConfig["footer"]>) => setCfg((c) => ({ ...c, footer: { ...c.footer, ...patch } }));
   const setDownload = (patch: Partial<RuntimeSiteConfig["download"]>) => setCfg((c) => ({ ...c, download: { ...c.download, ...patch } }));
   const setLayout = (patch: Partial<RuntimeSiteConfig["layout"]>) => setCfg((c) => ({ ...c, layout: { ...c.layout, ...patch } }));
+  const setTheme = (patch: Partial<RuntimeSiteConfig["theme"]>) => setCfg((c) => ({ ...c, theme: { ...c.theme, ...patch } }));
 
   const text = (label: string, value: string, onChange: (v: string) => void, placeholder = "") => (
     <label className="flex flex-col gap-1 text-xs text-gray-400">
@@ -173,14 +180,22 @@ export default function SiteSettingsClient({
 
         {section("Appearance", <>
           {select(
+            "Theme",
+            cfg.theme.id,
+            Object.values(THEMES).map((t) => ({ value: t.id, label: `${t.name} — ${t.description ?? ""}` })),
+            (v) => setTheme({ id: v }),
+            "Colours and typography across your whole site.",
+          )}
+          {select(
             "Feed layout",
-            cfg.layout.feed === "list" ? "list" : "cards",
+            cfg.layout.feed,
             [
+              { value: "", label: "Inherit from theme" },
               { value: "cards", label: "Cards — glass cards with cover images" },
               { value: "list", label: "List — compact, date-led index" },
             ],
             (v) => setLayout({ feed: v }),
-            "How your posts appear on the homepage and blog.",
+            "How your posts appear on the homepage and blog. Each theme picks a default; override it here.",
           )}
         </>)}
 
