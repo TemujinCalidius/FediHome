@@ -2,10 +2,16 @@
 
 ## Unreleased
 
+### Added
+- **A second theme — "Editorial"** (#250) — warm sepia surfaces, a terracotta accent, serif body copy under sans headlines, and the compact list feed: a reading-first counterpoint to the default's cool glassy Cards. Pick it in **Admin → Site settings → Appearance → Theme** (no restart), or set `THEME=editorial`. Default instances render **identically** — nothing changes unless you choose it.
+- **A theme picker** in the admin panel, alongside the feed-layout control. Feed layout gained an explicit **"Inherit from theme"** option, so each theme's own preset applies unless you deliberately override it.
+
 ### Changed
 - Dependency refresh: `@atproto/api` 0.20.30, `tailwindcss` + `@tailwindcss/postcss` 4.3.3.
 
 ### Fixed
+- The **browser/PWA theme colour now follows your active theme** (#250) — the address-bar tint, iOS status bar and installed-app splash were hardcoded to the default theme's near-black, so they clashed the moment a different theme was selected.
+- **Saving Site settings no longer silently pins your feed layout** (#250) — the first save wrote an explicit `cards` override even if you'd never touched the control, which stopped a theme's own feed preset from ever applying. Feed layout now defaults to "Inherit from theme".
 - **Bluesky crossposting now works when your handle is configured as `@you.bsky.social`** (#257) — the leading `@` is stripped (and the handle trimmed + lowercased) wherever credentials are read, not just when saved from the admin panel. Previously a `BLUESKY_HANDLE=@you.bsky.social` in `.env.local` — or a handle saved before v1.14.0 — failed every crosspost, poll and DM sync with a misleading `InvalidEmail` error, **silently**, because those run as background jobs.
 
 ## 1.15.0 (2026-07-17)

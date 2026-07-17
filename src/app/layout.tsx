@@ -8,7 +8,7 @@ import Tinylytics from "@/components/analytics/Tinylytics";
 import { siteConfig } from "@/../site.config";
 import { getRuntimeSiteConfig } from "@/lib/site-settings";
 import { getRuntimeProfile } from "@/lib/site-profile";
-import { buildThemeStyle } from "@/lib/themes";
+import { buildThemeStyle, resolveTheme } from "@/lib/themes";
 
 export async function generateMetadata(): Promise<Metadata> {
   const [site, profile] = await Promise.all([getRuntimeSiteConfig(), getRuntimeProfile()]);
@@ -65,9 +65,13 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-export const viewport: Viewport = {
-  themeColor: "#0a0a0f",
-};
+// Follows the active theme's darkest surface (the browser chrome / iOS status
+// bar colour), rather than being frozen to the default theme's near-black.
+// Must be `generateViewport`, not a static `viewport` — Next forbids both.
+export async function generateViewport(): Promise<Viewport> {
+  const site = await getRuntimeSiteConfig();
+  return { themeColor: resolveTheme(site.theme.id).tokens.colors["surface-950"] };
+}
 
 export default async function RootLayout({
   children,

@@ -1,15 +1,20 @@
 import type { Theme } from "./types";
 import { DEFAULT_THEME } from "./default";
+import { EDITORIAL_THEME } from "./editorial";
 
 /**
- * Registry of built-in themes (#250). Layout/region variants + more presets
- * (e.g. a "Classic Blog" theme) land in later phases; today there's just the
- * default, but the machinery — selection, resolution, runtime injection — is
- * in place. Kept in its own module so `layout.ts` can resolve a theme without a
- * barrel-import cycle through `index.ts`.
+ * Registry of built-in themes (#250). Adding a theme is one entry here plus one
+ * data file — `buildThemeStyle` diffs its tokens against the default and injects
+ * the delta at runtime, and `resolveLayout` picks up its layout preset, so no
+ * other wiring is needed. Kept in its own module so `layout.ts` can resolve a
+ * theme without a barrel-import cycle through `index.ts`.
+ *
+ * Note every theme must be DARK for now — see the contrast constraint documented
+ * in `editorial.ts` and enforced by the invariant in `themes.test.ts`.
  */
 export const THEMES: Record<string, Theme> = {
   [DEFAULT_THEME.id]: DEFAULT_THEME,
+  [EDITORIAL_THEME.id]: EDITORIAL_THEME,
 };
 
 export const THEME_IDS = Object.keys(THEMES);
