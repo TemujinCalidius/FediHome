@@ -57,6 +57,13 @@ export const EDITORIAL_THEME: Theme = {
       body: '"Source Serif 4", "Georgia", serif',
       mono: '"JetBrains Mono", "Fira Code", monospace',
     },
+    // Crisp and flat, not glassy: tight corners and no backdrop blur — the print/
+    // editorial counterpoint to the default's rounded frosted glass.
+    feel: {
+      radiusCard: "4px",
+      radiusButton: "4px",
+      glassFilter: "none",
+    },
   },
   // Reading-first: the compact index, not glass cards. An owner can still
   // override this per-region from Site settings.

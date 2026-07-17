@@ -121,6 +121,13 @@ describe("Editorial theme (#250)", () => {
     expect(css).not.toContain("--font-mono");
   });
 
+  it("emits its crisp/flat feel tokens (texture), diffing out the ones it shares (#250)", () => {
+    const css = buildThemeStyle("editorial", null);
+    expect(css).toContain("--radius-card:4px");
+    expect(css).toContain("--radius-button:4px");
+    expect(css).toContain("--glass-filter:none");
+  });
+
   it("defaults to the list feed, and an explicit override still wins", () => {
     expect(resolveLayout("editorial", {}).feed).toBe("list");
     expect(resolveLayout("editorial", { feed: "cards" }).feed).toBe("cards");
