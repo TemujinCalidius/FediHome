@@ -38,6 +38,7 @@ export async function GET(req: NextRequest) {
     tagline: profile.authorTagline,
     summary: profile.actorSummary,
     accentColor: profile.accentColor,
+    themeAccents: profile.themeAccents,
     avatar: `${siteConfig.url}${profile.avatarPath}`,
     banner: `${siteConfig.url}${profile.bannerPath}`,
     counts: {

@@ -21,7 +21,7 @@ describe("getRuntimeProfile (#201)", () => {
   it("returns env defaults when no SiteSettings row exists", async () => {
     expect(await getRuntimeProfile()).toEqual({
       authorName: "Env Name", authorBio: "env bio", authorTagline: "env tag",
-      actorSummary: "env summary", accentColor: "#3b82f6",
+      actorSummary: "env summary", accentColor: "#3b82f6", themeAccents: {},
       avatarPath: "/images/avatar.png", bannerPath: "/images/banner.webp",
     });
   });
@@ -29,15 +29,25 @@ describe("getRuntimeProfile (#201)", () => {
   it("overlays non-null SiteSettings columns on the env defaults", async () => {
     vi.mocked(prisma.siteSettings.findUnique).mockResolvedValue({
       authorName: "DB Name", authorBio: null, authorTagline: null,
-      actorSummary: null, accentColor: "#ff0000",
+      actorSummary: null, accentColor: "#ff0000", themeAccents: null,
       avatarPath: "/uploads/2026/07/me.jpg", bannerPath: null,
     } as never);
     const p = await getRuntimeProfile();
     expect(p.authorName).toBe("DB Name"); // overridden
     expect(p.authorBio).toBe("env bio"); // null → env default
     expect(p.accentColor).toBe("#ff0000");
+    expect(p.themeAccents).toEqual({}); // null Json → {}
     expect(p.avatarPath).toBe("/uploads/2026/07/me.jpg");
     expect(p.bannerPath).toBe("/images/banner.webp"); // null → env default
+  });
+
+  it("parses per-theme accents from the row, dropping junk entries (#276)", async () => {
+    vi.mocked(prisma.siteSettings.findUnique).mockResolvedValue({
+      authorName: null, authorBio: null, authorTagline: null, actorSummary: null,
+      accentColor: null, avatarPath: null, bannerPath: null,
+      themeAccents: { editorial: "#22C55E", default: "not-a-hex", bad: 123 },
+    } as never);
+    expect((await getRuntimeProfile()).themeAccents).toEqual({ editorial: "#22c55e" });
   });
 
   it("caches for a minute; invalidation forces a re-read", async () => {

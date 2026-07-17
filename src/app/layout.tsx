@@ -8,7 +8,7 @@ import Tinylytics from "@/components/analytics/Tinylytics";
 import { siteConfig } from "@/../site.config";
 import { getRuntimeSiteConfig } from "@/lib/site-settings";
 import { getRuntimeProfile } from "@/lib/site-profile";
-import { buildThemeStyle, resolveTheme } from "@/lib/themes";
+import { buildThemeStyle, resolveTheme, resolveAccent } from "@/lib/themes";
 
 export async function generateMetadata(): Promise<Metadata> {
   const [site, profile] = await Promise.all([getRuntimeSiteConfig(), getRuntimeProfile()]);
@@ -80,10 +80,12 @@ export default async function RootLayout({
 }) {
   const [site, profile] = await Promise.all([getRuntimeSiteConfig(), getRuntimeProfile()]);
   // Runtime theme tokens (#250): the active theme's tokens + the owner's accent
-  // colour, as a `:root:root{…}` block that overrides the static @theme :root.
-  // Empty (nothing injected) for a default instance with the default accent, so
-  // it renders identically.
-  const themeStyle = buildThemeStyle(site.theme.id, profile.accentColor);
+  // for THAT theme (#276 — per-theme accent, inherit when unset), as a
+  // `:root:root{…}` block that overrides the static @theme :root. Empty (nothing
+  // injected) for a default instance inheriting its accent, so it renders
+  // identically.
+  const accent = resolveAccent(site.theme.id, profile);
+  const themeStyle = buildThemeStyle(site.theme.id, accent);
   return (
     <html lang="en">
       <head>

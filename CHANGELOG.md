@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **Set your accent colour from the web admin** (#276) — **Admin → Site settings → Appearance** now has an accent-colour picker, so you no longer need the macOS app (or a rebuild) to change it. It's **per theme**: each theme remembers its own accent, and "Use theme's accent" falls back to the theme's built-in colour — so choosing a custom accent no longer silently overrides a theme's identity, and (finally) you can pick any colour, including the default blue, on any theme. Saving the accent alone no longer federates a redundant ActivityPub actor `Update` to your followers. (The docs claimed this control existed since v1.0 — now it actually does.)
+
 ## 1.16.0 (2026-07-18)
 
 ### Added
