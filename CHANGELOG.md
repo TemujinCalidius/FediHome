@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.15.0 (2026-07-17)
 
 ### Added
 - **Swappable feed layouts** — first step of themeable *layout*, not just colour (#250, Phase 3). Every feed renders through a region dispatcher with two variants: the default **`cards`** (today's glass cards, pixel-identical) and a new **`list`** — a compact, date-led index that fits more posts per screen. Applies across **all** your feeds — home, journal, articles, and the public Fediverse feed (#267) — selectable in **Admin → Site settings → Appearance** (no restart) or via the `LAYOUT_FEED` env var. This lands the region×variant contract (`resolveLayout` + a per-theme layout preset) that the upcoming header/shell/post variants and the "Classic Blog" theme build on.
