@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Changed
+- Dependency refresh: `@atproto/api` 0.20.30, `tailwindcss` + `@tailwindcss/postcss` 4.3.3.
+
 ### Fixed
 - **Bluesky crossposting now works when your handle is configured as `@you.bsky.social`** (#257) — the leading `@` is stripped (and the handle trimmed + lowercased) wherever credentials are read, not just when saved from the admin panel. Previously a `BLUESKY_HANDLE=@you.bsky.social` in `.env.local` — or a handle saved before v1.14.0 — failed every crosspost, poll and DM sync with a misleading `InvalidEmail` error, **silently**, because those run as background jobs.
 

@@ -20,12 +20,12 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@atproto/api": "^0.20.29",
+    "@atproto/api": "^0.20.30",
     "@fedify/fedify": "^2.3.2",
     "@fedify/next": "^2.3.2",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
-    "@tailwindcss/postcss": "^4.3.0",
+    "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^26.1.1",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
@@ -47,7 +47,7 @@
     "remark-gfm": "^4.0.1",
     "sanitize-html": "^2.17.6",
     "sharp": "^0.34.5",
-    "tailwindcss": "^4.3.0",
+    "tailwindcss": "^4.3.3",
     "typescript": "^6.0.3",
     "web-push": "^3.6.7"
   },
