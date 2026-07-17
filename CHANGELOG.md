@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.16.0 (2026-07-18)
 
 ### Added
 - **A second theme — "Editorial"** (#250) — warm sepia surfaces, a terracotta accent, serif body copy under sans headlines, and the compact list feed: a reading-first counterpoint to the default's cool glassy Cards. Pick it in **Admin → Site settings → Appearance → Theme** (no restart), or set `THEME=editorial`. Default instances render **identically** — nothing changes unless you choose it.
