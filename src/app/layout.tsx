@@ -103,7 +103,7 @@ export default async function RootLayout({
         <main className="flex-1">{children}</main>
         <Footer />
         <ScrollToTop />
-        <Tinylytics />
+        <Tinylytics siteCode={site.analytics.embedId || site.analytics.siteId} />
       </body>
     </html>
   );

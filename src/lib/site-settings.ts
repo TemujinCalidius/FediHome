@@ -59,6 +59,8 @@ export const SITE_CONFIG_FIELDS: Record<string, FieldType> = {
   "categories.photos": "text", // comma-separated slugs; "" = built-in defaults (see validateSiteConfigValue)
   "categories.videos": "text",
   "categories.audio": "text",
+  "analytics.siteId": "text",
+  "analytics.embedId": "text",
 };
 
 export const SITE_CONFIG_KEYS = Object.keys(SITE_CONFIG_FIELDS);
@@ -86,6 +88,8 @@ export interface RuntimeSiteConfig {
   podcast: { title: string; author: string; description: string; email: string; image: string };
   // Resolved gallery category lists (#284) — always non-empty, always incl. "general".
   categories: { photos: string[]; videos: string[]; audio: string[] };
+  // Tinylytics public embed ids (#59). API key stays env-only.
+  analytics: { siteId: string; embedId: string };
 }
 
 /** The env/default view — exactly what `siteConfig` (env-driven) exposes today. */
@@ -114,6 +118,7 @@ export function siteConfigDefaults(): RuntimeSiteConfig {
       videos: resolveCategoryList(parseCategoryList(siteConfig.categories.videos), "videos"),
       audio: resolveCategoryList(parseCategoryList(siteConfig.categories.audio), "audio"),
     },
+    analytics: { ...siteConfig.analytics },
   };
 }
 
@@ -192,6 +197,10 @@ export async function getRuntimeSiteConfig(): Promise<RuntimeSiteConfig> {
         photos: resolveCategoryList(parseCategoryList(o["categories.photos"] ?? siteConfig.categories.photos), "photos"),
         videos: resolveCategoryList(parseCategoryList(o["categories.videos"] ?? siteConfig.categories.videos), "videos"),
         audio: resolveCategoryList(parseCategoryList(o["categories.audio"] ?? siteConfig.categories.audio), "audio"),
+      },
+      analytics: {
+        siteId: textOverride(o["analytics.siteId"], base.analytics.siteId),
+        embedId: textOverride(o["analytics.embedId"], base.analytics.embedId),
       },
     };
   } catch {

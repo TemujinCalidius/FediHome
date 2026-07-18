@@ -166,6 +166,8 @@ export default function SiteSettingsClient({
       "categories.photos": catText.photos,
       "categories.videos": catText.videos,
       "categories.audio": catText.audio,
+      "analytics.siteId": cfg.analytics.siteId,
+      "analytics.embedId": cfg.analytics.embedId,
     };
     const okConfig = await post(settings);
     const okAccent = await saveAccent(); // separate overlay (profile); no-op if unchanged
@@ -188,6 +190,7 @@ export default function SiteSettingsClient({
         "theme.id", "layout.feed", "contact.email",
         "podcast.title", "podcast.author", "podcast.description", "podcast.email", "podcast.image",
         "categories.photos", "categories.videos", "categories.audio",
+        "analytics.siteId", "analytics.embedId",
       ].map((k) => [k, null]),
     );
     if (await post(cleared)) {
@@ -204,6 +207,7 @@ export default function SiteSettingsClient({
   const setLayout = (patch: Partial<RuntimeSiteConfig["layout"]>) => setCfg((c) => ({ ...c, layout: { ...c.layout, ...patch } }));
   const setContact = (patch: Partial<RuntimeSiteConfig["contact"]>) => setCfg((c) => ({ ...c, contact: { ...c.contact, ...patch } }));
   const setPodcast = (patch: Partial<RuntimeSiteConfig["podcast"]>) => setCfg((c) => ({ ...c, podcast: { ...c.podcast, ...patch } }));
+  const setAnalytics = (patch: Partial<RuntimeSiteConfig["analytics"]>) => setCfg((c) => ({ ...c, analytics: { ...c.analytics, ...patch } }));
 
   // Categories (#284) are edited as raw comma-separated TEXT (so typing a comma
   // works), and only split/normalized server-side on save. Held separately from
@@ -390,6 +394,14 @@ export default function SiteSettingsClient({
           {text("Photo categories", catText.photos, (v) => setCatText((t) => ({ ...t, photos: v })), "wildlife, macro, landscape, street, general")}
           {text("Video categories", catText.videos, (v) => setCatText((t) => ({ ...t, videos: v })), "general, lore, tutorial, walk")}
           {text("Audio categories", catText.audio, (v) => setCatText((t) => ({ ...t, audio: v })), "general, music, talk, ambient")}
+        </>)}
+
+        {section("Analytics", <>
+          <p className="text-xs text-gray-600 m-0">
+            Privacy-friendly <a href="https://tinylytics.app" target="_blank" rel="noopener noreferrer" className="text-accent-400 hover:underline">Tinylytics</a> page-view tracking. Enter your site id to turn on collection — no file editing. (The in-app dashboard also needs an API key, still set via env.)
+          </p>
+          {text("Tinylytics site id", cfg.analytics.siteId, (v) => setAnalytics({ siteId: v }))}
+          {text("Embed id (optional)", cfg.analytics.embedId, (v) => setAnalytics({ embedId: v }), "only if your embed code differs from the site id")}
         </>)}
 
         <div className="flex items-center gap-3 py-4">
