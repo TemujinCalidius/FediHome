@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect } from "react";
 import Link from "next/link";
+import { THEMES } from "@/lib/themes";
 
 const TOTAL_STEPS = 7;
 
@@ -104,6 +105,10 @@ export default function SetupWizard() {
   const [nav, setNav] = useState({
     journal: true, articles: true, photography: true, videos: true, audio: true, about: true,
   });
+  // Appearance (#250): theme + feed layout, written via the same applySiteConfig
+  // path as the feature toggles. Defaults = the env defaults (no override sent).
+  const [theme, setTheme] = useState("default");
+  const [feedLayout, setFeedLayout] = useState(""); // "" = inherit the theme's default
 
   // Domain from current URL
   const [domain, setDomain] = useState("yourdomain.com");
@@ -143,6 +148,8 @@ export default function SetupWizard() {
     (Object.keys(nav) as (keyof typeof nav)[]).forEach((k) => {
       if (!nav[k]) siteConfig[navKeys[k]] = "false"; // hidden = non-default
     });
+    if (theme && theme !== "default") siteConfig["theme.id"] = theme;
+    if (feedLayout) siteConfig["layout.feed"] = feedLayout; // "" = inherit → no override
     try {
       const res = await fetch("/api/setup", {
         method: "POST",
@@ -405,6 +412,34 @@ export default function SetupWizard() {
                     {label}
                   </label>
                 ))}
+              </div>
+
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Appearance</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
+                <label className="flex flex-col gap-1 text-xs text-gray-400">
+                  <span>Theme</span>
+                  <select
+                    value={theme}
+                    onChange={(e) => setTheme(e.target.value)}
+                    className="bg-surface-800 border border-surface-700 rounded-md px-2 py-1.5 text-sm text-white"
+                  >
+                    {Object.values(THEMES).map((t) => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1 text-xs text-gray-400">
+                  <span>Feed layout</span>
+                  <select
+                    value={feedLayout}
+                    onChange={(e) => setFeedLayout(e.target.value)}
+                    className="bg-surface-800 border border-surface-700 rounded-md px-2 py-1.5 text-sm text-white"
+                  >
+                    <option value="">Theme default</option>
+                    <option value="cards">Cards</option>
+                    <option value="list">List</option>
+                  </select>
+                </label>
               </div>
 
               <div className="flex justify-between">
