@@ -74,6 +74,67 @@ export function isTinylyticsConfigured(): boolean {
   return !!(process.env.TINYLYTICS_API_KEY && process.env.TINYLYTICS_SITE_ID);
 }
 
+/* --- Collecting-embed code resolution (#288) ------------------------------- */
+// The on-page COLLECTING embed loads `tinylytics.app/embed/<code>.js`, and that
+// endpoint needs the site's `uid` — NOT the numeric site id. A numeric id 404s
+// and silently records zero pageviews. The numeric id is only correct for the
+// API reads above (/sites/{id}). So resolve the embed code as: an explicit
+// override → a site id that's already a uid → else derive the uid from the API.
+
+const NUMERIC = /^\d+$/;
+type UidEntry = { uid: string | null; at: number };
+const uidCache = new Map<string, UidEntry>();
+const UID_OK_TTL = Infinity; // a site's uid is immutable
+const UID_FAIL_TTL = 60_000; // retry an unresolved lookup after a minute
+
+/**
+ * Resolve a numeric Tinylytics site id to its embed `uid` via the API (needs the
+ * API key). Cached in-memory (the uid never changes) since this runs on the root
+ * layout's render path; a failure is cached only briefly so it self-heals.
+ */
+export async function getSiteUid(siteId: string): Promise<string | null> {
+  const hit = uidCache.get(siteId);
+  if (hit && Date.now() - hit.at < (hit.uid ? UID_OK_TTL : UID_FAIL_TTL)) return hit.uid;
+
+  const apiKey = process.env.TINYLYTICS_API_KEY;
+  if (!apiKey) return null; // can't derive without the API key — caller warns/surfaces
+
+  let uid: string | null = null;
+  try {
+    const res = await fetch(`${API_BASE}/sites/${encodeURIComponent(siteId)}`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      cache: "no-store", // we do our own caching
+      signal: AbortSignal.timeout(4000), // never block the render on a slow API
+    });
+    if (res.ok) uid = (((await res.json()) as { uid?: string }).uid || null);
+  } catch {
+    /* network/timeout → unresolved; retry after UID_FAIL_TTL */
+  }
+  if (!uid) {
+    console.warn(
+      `[tinylytics] could not resolve an embed uid for site id "${siteId}" — pageviews are NOT being collected. Set TINYLYTICS_API_KEY, or enter the embed code (uid) directly.`,
+    );
+  }
+  uidCache.set(siteId, { uid, at: Date.now() });
+  return uid;
+}
+
+/**
+ * The code for the collecting embed, from the analytics config (#288):
+ *   1. an explicit embed id (already the uid) — override;
+ *   2. a site id that already looks like a uid (non-numeric) — used as-is;
+ *   3. a numeric site id — derived to the uid via the API;
+ *   else `null` (we deliberately never emit a numeric id — it 404s silently).
+ */
+export async function resolveTinylyticsEmbed(analytics: { siteId: string; embedId: string } | null | undefined): Promise<string | null> {
+  const embedId = analytics?.embedId?.trim();
+  if (embedId) return embedId;
+  const siteId = analytics?.siteId?.trim();
+  if (!siteId) return null;
+  if (!NUMERIC.test(siteId)) return siteId; // already a uid
+  return getSiteUid(siteId);
+}
+
 /** Raw hit from the API */
 export interface RawHit {
   id: number;

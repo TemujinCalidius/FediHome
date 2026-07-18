@@ -25,16 +25,20 @@ export default function SiteSettingsClient({
   effective,
   overrides,
   accent,
+  analyticsStatus,
 }: {
   defaults: RuntimeSiteConfig;
   effective: RuntimeSiteConfig;
   overrides: Record<string, string>;
   accent: { accentColor: string; themeAccents: Record<string, string> };
+  analyticsStatus: { embedCode: string | null; unresolved: boolean };
 }) {
   const [cfg, setCfg] = useState<RuntimeSiteConfig>(effective);
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [hasOverrides, setHasOverrides] = useState(Object.keys(overrides).length > 0);
+  // Live analytics-embed status (#288) — refreshed from each save response.
+  const [analyticsStat, setAnalyticsStat] = useState(analyticsStatus);
 
   // Per-theme accent (#276). Mirrors the server's resolveAccent; the accent
   // editor below is bound to the currently-selected theme (cfg.theme.id).
@@ -75,6 +79,7 @@ export default function SiteSettingsClient({
         return false;
       }
       setCfg(data.effective as RuntimeSiteConfig);
+      if (data.analyticsStatus) setAnalyticsStat(data.analyticsStatus);
       setResult({ ok: true, msg: "Saved — changes apply across your site within a minute." });
       return true;
     } catch {
@@ -398,10 +403,17 @@ export default function SiteSettingsClient({
 
         {section("Analytics", <>
           <p className="text-xs text-gray-600 m-0">
-            Privacy-friendly <a href="https://tinylytics.app" target="_blank" rel="noopener noreferrer" className="text-accent-400 hover:underline">Tinylytics</a> page-view tracking. Enter your site id to turn on collection — no file editing. (The in-app dashboard also needs an API key, still set via env.)
+            Privacy-friendly <a href="https://tinylytics.app" target="_blank" rel="noopener noreferrer" className="text-accent-400 hover:underline">Tinylytics</a> page-view tracking. Enter your numeric site id — the tracking embed code is derived from it automatically when an API key is set. (The in-app dashboard also needs the API key, still set via env.)
           </p>
-          {text("Tinylytics site id", cfg.analytics.siteId, (v) => setAnalytics({ siteId: v }))}
-          {text("Embed id (optional)", cfg.analytics.embedId, (v) => setAnalytics({ embedId: v }), "only if your embed code differs from the site id")}
+          {analyticsStat.embedCode ? (
+            <p className="text-xs text-green-400 m-0">✓ Collecting pageviews — embed <code className="text-green-300">{analyticsStat.embedCode}</code>.</p>
+          ) : analyticsStat.unresolved ? (
+            <p className="text-xs text-amber-400 m-0">
+              ⚠️ Analytics is set but <strong>no pageviews are being collected</strong> — the embed code couldn&apos;t be resolved from your site id. Set <code>TINYLYTICS_API_KEY</code> (so the embed code auto-derives), or paste your embed code (uid) below.
+            </p>
+          ) : null}
+          {text("Tinylytics site id (numeric)", cfg.analytics.siteId, (v) => setAnalytics({ siteId: v }), "e.g. 3461")}
+          {text("Embed code / uid (optional override)", cfg.analytics.embedId, (v) => setAnalytics({ embedId: v }), "only needed without an API key — the uid, not the numeric id")}
         </>)}
 
         <div className="flex items-center gap-3 py-4">

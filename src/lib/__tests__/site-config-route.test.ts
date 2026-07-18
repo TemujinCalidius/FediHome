@@ -11,7 +11,7 @@ vi.mock("@/lib/site-settings", async (orig) => {
   const actual = await orig<typeof import("@/lib/site-settings")>();
   return {
     ...actual,
-    getRuntimeSiteConfig: vi.fn().mockResolvedValue({ name: "x" }),
+    getRuntimeSiteConfig: vi.fn().mockResolvedValue({ name: "x", analytics: { siteId: "", embedId: "" } }),
     invalidateSiteConfigCache: vi.fn(),
     siteConfigDefaults: actual.siteConfigDefaults,
   };

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Fixed
+- **Tinylytics collected zero pageviews when only the numeric site id was set** (#288) — the on-page tracking embed needs the site's `uid` (embed code), but it was built from the numeric `TINYLYTICS_SITE_ID`, so `…/embed/3461.js` 404'd and **nothing was ever collected** — silently, while the dashboard (which correctly uses the numeric id) looked fine. Now the embed's `uid` is **derived from the API automatically** (with an API key set), so collection just works from the site id alone; Site settings → Analytics shows whether pageviews are actually being collected, and warns if not. `TINYLYTICS_EMBED_ID` still works as an explicit override.
+
 ### Added
 - **Turn on analytics from the web admin** (#59) — **Admin → Site settings → Analytics** sets your Tinylytics site id, so page-view collection starts with no `.env` editing or restart. (The in-app analytics dashboard still needs the API key via env — that stays server-side for now.)
 - **Pick your theme during setup** (#250) — the first-run wizard's Site Features step now has an Appearance section (Theme + feed layout), so a fresh install lands on the look you chose without a config file or an admin visit.
