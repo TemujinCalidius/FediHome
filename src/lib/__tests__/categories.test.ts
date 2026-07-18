@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   DEFAULT_CATEGORIES, MAX_CATEGORIES,
   parseCategoryList, resolveCategoryList, categoryLabel, unionCategories, buildCategoryTabs, normalizeCategory,
+  categoryEntries,
 } from "@/lib/categories";
 
 describe("parseCategoryList (#284)", () => {
@@ -58,6 +59,22 @@ describe("buildCategoryTabs (#284)", () => {
       { key: "all", label: "All" },
       { key: "wildlife", label: "Wildlife" },
       { key: "photo-walk", label: "Photo Walk" },
+    ]);
+  });
+});
+
+describe("categoryEntries (#284) — API-client shape", () => {
+  it("returns the union as structured {slug,label}, config order first then DB extras", () => {
+    expect(categoryEntries(["wildlife", "photo-walk"], ["street", "wildlife"])).toEqual([
+      { slug: "wildlife", label: "Wildlife" },
+      { slug: "photo-walk", label: "Photo Walk" },
+      { slug: "street", label: "Street" },
+    ]);
+  });
+  it("a removed-but-still-used category still appears (via the DB side)", () => {
+    expect(categoryEntries(["general"], ["lore"])).toEqual([
+      { slug: "general", label: "General" },
+      { slug: "lore", label: "Lore" },
     ]);
   });
 });
