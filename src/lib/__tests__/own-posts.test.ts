@@ -48,6 +48,17 @@ describe("GET /api/posts (My Posts)", () => {
     expect(body.posts[1]).toMatchObject({ type: "photo", media: { photos: 2, videos: 0, audio: 0 } });
   });
 
+  it("ships the sanitized HTML body for the in-app full-post reader (#292)", async () => {
+    authenticateApiRequest.mockResolvedValue(ok);
+    vi.mocked(prisma.post.findMany).mockResolvedValue([
+      row({ slug: "full", contentHtml: "<p>Hello <strong>world</strong></p>" }),
+      row({ slug: "empty", contentHtml: null }), // nullable — passes through as-is
+    ] as never);
+    const body = await (await GET(req())).json();
+    expect(body.posts[0].contentHtml).toBe("<p>Hello <strong>world</strong></p>");
+    expect(body.posts[1].contentHtml).toBeNull();
+  });
+
   it("returns a body preview for title-less notes, and '' for an empty post (#253)", async () => {
     authenticateApiRequest.mockResolvedValue(ok);
     vi.mocked(prisma.post.findMany).mockResolvedValue([

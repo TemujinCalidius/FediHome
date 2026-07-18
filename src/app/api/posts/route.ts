@@ -43,7 +43,8 @@ export async function GET(req: NextRequest) {
     take: limit + 1,
     select: {
       id: true, slug: true, title: true, excerpt: true, category: true,
-      content: true, contentHtml: true, // read to derive `preview` (not shipped whole)
+      content: true, // read only to derive `preview` (the raw markdown is not shipped here — use q=source)
+      contentHtml: true, // shipped whole, for the in-app full-post reader (#292)
       photos: true, videos: true, audioPaths: true,
       published: true, publishedAt: true, updatedAt: true, scheduledFor: true,
       likeCount: true, boostCount: true,
@@ -70,6 +71,10 @@ export async function GET(req: NextRequest) {
       // to show (#253). Empty ("") for a genuinely empty post — the client keeps
       // its own placeholder rather than getting the site tagline.
       preview: postOgDescription(p, ""),
+      // The sanitized HTML body, so a native content manager can render a post in
+      // FULL and styled (the app has no markdown renderer; q=source is markdown for
+      // the editor). Nullable — returned as-is (#292).
+      contentHtml: p.contentHtml,
       category: p.category,
       type: kind,
       status,
