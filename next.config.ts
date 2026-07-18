@@ -30,10 +30,13 @@ const nextConfig: NextConfig = {
   },
   async headers() {
     const frameSrc = ["'self'", ...PEERTUBE_HOSTS.map((h) => `https://${h}`)].join(" ");
-    // Allow the Tinylytics tracking embed + its beacons ONLY when configured, so
-    // the CSP stays tight for sites that don't use it (#170).
-    const tinylytics =
-      process.env.TINYLYTICS_SITE_ID || process.env.TINYLYTICS_EMBED_ID ? " https://tinylytics.app" : "";
+    // Allow the Tinylytics tracking embed + its beacons. Always allowed now that
+    // the site code is web-editable (#59) — this `headers()` is static (build
+    // time) and can't read the runtime DB config, so it can't be env-gated. The
+    // domain is only ever contacted when the embed actually renders (i.e. when
+    // analytics is configured), so listing it is inert for sites that don't use
+    // it. (#170)
+    const tinylytics = " https://tinylytics.app";
     // NOTE: 'unsafe-inline' on script-src is still required for Next.js App Router
     // hydration data scripts. Tightening to nonces is tracked separately and needs
     // every <Script> usage updated to read a nonce from middleware.

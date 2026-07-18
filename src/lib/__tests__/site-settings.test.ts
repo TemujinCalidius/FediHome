@@ -14,6 +14,7 @@ vi.mock("@/../site.config", () => ({
     contactEmail: "env@example.com",
     podcast: { title: "", author: "", description: "", email: "", image: "" },
     categories: { photos: "", videos: "", audio: "" },
+    analytics: { siteId: "", embedId: "" },
   },
 }));
 
@@ -87,6 +88,13 @@ describe("getRuntimeSiteConfig (#59)", () => {
     const cfg = await getRuntimeSiteConfig();
     expect(cfg.categories.videos).toEqual(["vlog", "review", "general"]); // general appended
     expect(cfg.categories.photos).toEqual(["wildlife", "macro", "landscape", "street", "general"]); // untouched → default
+  });
+
+  it("overlays analytics ids (#59): empty by default, a saved site id wins", async () => {
+    expect((await getRuntimeSiteConfig()).analytics).toEqual({ siteId: "", embedId: "" });
+    invalidateSiteConfigCache();
+    vi.mocked(prisma.siteSetting.findMany).mockResolvedValue(rows({ "analytics.siteId": "mysite" }) as never);
+    expect((await getRuntimeSiteConfig()).analytics.siteId).toBe("mysite");
   });
 
   it("overlays contact email + podcast feed fields (#59): env defaults, saved overrides win", async () => {

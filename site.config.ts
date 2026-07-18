@@ -128,6 +128,14 @@ export const siteConfig = {
     videos: process.env.CATEGORIES_VIDEOS || "",
     audio: process.env.CATEGORIES_AUDIO || "",
   },
+
+  // Tinylytics analytics (#170, web-editable #59). Public embed ids only — the
+  // API key (for the in-app dashboard) stays env-only. `embedId` overrides
+  // `siteId` for the collecting embed when the embed code differs.
+  analytics: {
+    siteId: process.env.TINYLYTICS_SITE_ID || "",
+    embedId: process.env.TINYLYTICS_EMBED_ID || "",
+  },
 } as const;
 
 export type SiteConfig = typeof siteConfig;
