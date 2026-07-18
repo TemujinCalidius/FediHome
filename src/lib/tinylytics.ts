@@ -99,23 +99,45 @@ export async function getSiteUid(siteId: string): Promise<string | null> {
   const apiKey = process.env.TINYLYTICS_API_KEY;
   if (!apiKey) return null; // can't derive without the API key — caller warns/surfaces
 
+  // `next build` renders across parallel workers, each with a COLD cache, so a
+  // burst of concurrent /sites/{id} calls can race a short timeout or get rate-
+  // limited. Give the build a longer timeout + one retry so it reliably resolves
+  // (and a statically-generated page bakes the real uid, never an empty embed);
+  // keep the request-path lookup short so it never stalls a page render.
+  const build = process.env.NEXT_PHASE === "phase-production-build";
+  const timeout = build ? 8_000 : 4_000;
+  const attempts = build ? 2 : 1;
+
   let uid: string | null = null;
-  try {
-    const res = await fetch(`${API_BASE}/sites/${encodeURIComponent(siteId)}`, {
-      headers: { Authorization: `Bearer ${apiKey}` },
-      cache: "no-store", // we do our own caching
-      signal: AbortSignal.timeout(4000), // never block the render on a slow API
-    });
-    if (res.ok) uid = (((await res.json()) as { uid?: string }).uid || null);
-  } catch {
-    /* network/timeout → unresolved; retry after UID_FAIL_TTL */
+  for (let i = 0; i < attempts && !uid; i++) {
+    if (i > 0) await new Promise((r) => setTimeout(r, 400)); // brief backoff so the burst subsides
+    try {
+      const res = await fetch(`${API_BASE}/sites/${encodeURIComponent(siteId)}`, {
+        headers: { Authorization: `Bearer ${apiKey}` },
+        cache: "no-store", // we do our own caching
+        signal: AbortSignal.timeout(timeout),
+      });
+      if (res.ok) uid = (((await res.json()) as { uid?: string }).uid || null);
+    } catch {
+      /* timeout / network → retry, or fall through */
+    }
   }
+
   if (!uid) {
+    // Keep the log honest. At BUILD time an unresolved uid is transient — dynamic
+    // pages resolve it per request — so don't claim collection is broken; reserve
+    // that for a genuine RUNTIME miss. Either way the admin panel surfaces the
+    // true state (Site settings → Analytics).
     console.warn(
-      `[tinylytics] could not resolve an embed uid for site id "${siteId}" — pageviews are NOT being collected. Set TINYLYTICS_API_KEY, or enter the embed code (uid) directly.`,
+      build
+        ? `[tinylytics] embed uid not resolved at build for site id "${siteId}" — fine for dynamic pages (resolved per request); only a statically-generated page would need it now.`
+        : `[tinylytics] couldn't resolve the embed uid for site id "${siteId}" — pageviews may not be collected until it resolves. Check Admin → Site settings → Analytics.`,
     );
   }
-  uidCache.set(siteId, { uid, at: Date.now() });
+  // Cache a success always (the uid is immutable); cache a MISS only at runtime
+  // (short negative TTL, self-heals). Never persist a build-time miss — the
+  // long-lived server process should retry fresh.
+  if (uid || !build) uidCache.set(siteId, { uid, at: Date.now() });
   return uid;
 }
 
