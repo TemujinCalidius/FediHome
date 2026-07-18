@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import type { RuntimeSiteConfig } from "@/lib/site-settings";
 // Pure data + math (no prisma / server-only), so it's safe in a client bundle.
@@ -163,6 +163,9 @@ export default function SiteSettingsClient({
       "podcast.description": cfg.podcast.description,
       "podcast.email": cfg.podcast.email,
       "podcast.image": cfg.podcast.image,
+      "categories.photos": catText.photos,
+      "categories.videos": catText.videos,
+      "categories.audio": catText.audio,
     };
     const okConfig = await post(settings);
     const okAccent = await saveAccent(); // separate overlay (profile); no-op if unchanged
@@ -184,6 +187,7 @@ export default function SiteSettingsClient({
         "download.macos.enabled", "download.macos.releaseUrl", "download.macos.appStoreUrl",
         "theme.id", "layout.feed", "contact.email",
         "podcast.title", "podcast.author", "podcast.description", "podcast.email", "podcast.image",
+        "categories.photos", "categories.videos", "categories.audio",
       ].map((k) => [k, null]),
     );
     if (await post(cleared)) {
@@ -200,6 +204,18 @@ export default function SiteSettingsClient({
   const setLayout = (patch: Partial<RuntimeSiteConfig["layout"]>) => setCfg((c) => ({ ...c, layout: { ...c.layout, ...patch } }));
   const setContact = (patch: Partial<RuntimeSiteConfig["contact"]>) => setCfg((c) => ({ ...c, contact: { ...c.contact, ...patch } }));
   const setPodcast = (patch: Partial<RuntimeSiteConfig["podcast"]>) => setCfg((c) => ({ ...c, podcast: { ...c.podcast, ...patch } }));
+
+  // Categories (#284) are edited as raw comma-separated TEXT (so typing a comma
+  // works), and only split/normalized server-side on save. Held separately from
+  // `cfg.categories` (always the resolved slug arrays), and re-seeded from the
+  // server's normalized response whenever cfg.categories changes (save / defaults).
+  const catCsv = (c: RuntimeSiteConfig) => ({
+    photos: c.categories.photos.join(", "),
+    videos: c.categories.videos.join(", "),
+    audio: c.categories.audio.join(", "),
+  });
+  const [catText, setCatText] = useState(catCsv(effective));
+  useEffect(() => { setCatText(catCsv(cfg)); }, [cfg.categories]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const text = (label: string, value: string, onChange: (v: string) => void, placeholder = "") => (
     <label className="flex flex-col gap-1 text-xs text-gray-400">
@@ -365,6 +381,15 @@ export default function SiteSettingsClient({
           {text("Podcast description", cfg.podcast.description, (v) => setPodcast({ description: v }))}
           {text("Podcast email", cfg.podcast.email, (v) => setPodcast({ email: v }), "defaults to your contact email")}
           {text("Podcast cover image URL", cfg.podcast.image, (v) => setPodcast({ image: v }), "https://…")}
+        </>)}
+
+        {section("Categories", <>
+          <p className="text-xs text-gray-600 m-0">
+            Gallery categories for photos, videos and audio. Comma-separated, lowercase, URL-safe (letters, numbers, hyphens). Blank = the built-in defaults. Removing a category never hides existing items.
+          </p>
+          {text("Photo categories", catText.photos, (v) => setCatText((t) => ({ ...t, photos: v })), "wildlife, macro, landscape, street, general")}
+          {text("Video categories", catText.videos, (v) => setCatText((t) => ({ ...t, videos: v })), "general, lore, tutorial, walk")}
+          {text("Audio categories", catText.audio, (v) => setCatText((t) => ({ ...t, audio: v })), "general, music, talk, ambient")}
         </>)}
 
         <div className="flex items-center gap-3 py-4">

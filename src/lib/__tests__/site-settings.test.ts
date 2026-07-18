@@ -13,6 +13,7 @@ vi.mock("@/../site.config", () => ({
     layout: { feed: "" },
     contactEmail: "env@example.com",
     podcast: { title: "", author: "", description: "", email: "", image: "" },
+    categories: { photos: "", videos: "", audio: "" },
   },
 }));
 
@@ -77,6 +78,17 @@ describe("getRuntimeSiteConfig (#59)", () => {
     expect((await getRuntimeSiteConfig()).layout.feed).toBe("list");
   });
 
+  it("resolves gallery categories (#284): defaults when unset, a saved override wins, general guaranteed", async () => {
+    const base = await getRuntimeSiteConfig();
+    expect(base.categories.photos).toEqual(["wildlife", "macro", "landscape", "street", "general"]);
+    expect(base.categories.videos).toEqual(["general", "lore", "tutorial", "walk"]);
+    invalidateSiteConfigCache();
+    vi.mocked(prisma.siteSetting.findMany).mockResolvedValue(rows({ "categories.videos": "vlog,review" }) as never);
+    const cfg = await getRuntimeSiteConfig();
+    expect(cfg.categories.videos).toEqual(["vlog", "review", "general"]); // general appended
+    expect(cfg.categories.photos).toEqual(["wildlife", "macro", "landscape", "street", "general"]); // untouched → default
+  });
+
   it("overlays contact email + podcast feed fields (#59): env defaults, saved overrides win", async () => {
     const base = await getRuntimeSiteConfig();
     expect(base.contact.email).toBe("env@example.com");
@@ -127,6 +139,14 @@ describe("validateSiteConfigValue (#59)", () => {
     expect(validateSiteConfigValue("layout.feed", "")).toBe(""); // inherit the theme default
     expect(validateSiteConfigValue("layout.feed", "blog")).toBeNull(); // not a variant yet
     expect(validateSiteConfigValue("layout.feed", "nope")).toBeNull();
+  });
+  it("categories.* accepts comma-separated slugs (normalized), empty = defaults, rejects non-slugs (#284)", () => {
+    expect(validateSiteConfigValue("categories.photos", "Wildlife, macro , wildlife")).toBe("wildlife,macro"); // lowercased, deduped
+    expect(validateSiteConfigValue("categories.videos", "")).toBe(""); // built-in defaults
+    expect(validateSiteConfigValue("categories.audio", "a, b-c")).toBe("a,b-c");
+    expect(validateSiteConfigValue("categories.photos", "photo walk")).toBeNull(); // space → not a slug
+    expect(validateSiteConfigValue("categories.photos", "ok, bad/slug")).toBeNull();
+    expect(validateSiteConfigValue("categories.photos", Array.from({ length: 25 }, (_, i) => `c${i}`).join(","))).toBeNull(); // >24
   });
   it("url fields accept relative + http(s), reject javascript:/protocol-relative/control chars", () => {
     expect(validateSiteConfigValue("footer.badgeSrc", "/images/b.png")).toBe("/images/b.png");
