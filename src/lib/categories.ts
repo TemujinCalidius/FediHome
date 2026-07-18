@@ -86,6 +86,20 @@ export function buildCategoryTabs(cats: string[]): { key: string; label: string 
   return [{ key: "all", label: "All" }, ...cats.map((c) => ({ key: c, label: categoryLabel(c) }))];
 }
 
+/**
+ * The structured category set for API clients (#284) — the same gallery union
+ * (configured ∪ in-use) the pages render, minus the "All" pseudo-tab (a UI-only
+ * filter, not a real category). Each entry carries its display `label` so a
+ * client (e.g. the native apps) can show the label but submit the `slug`, and
+ * doesn't have to re-implement the title-casing or the union.
+ */
+export function categoryEntries(
+  configured: string[],
+  present: (string | null | undefined)[],
+): { slug: string; label: string }[] {
+  return unionCategories(configured, present).map((slug) => ({ slug, label: categoryLabel(slug) }));
+}
+
 /** Write-side guard: a URL-safe slug, else the fallback bucket. */
 export function normalizeCategory(raw: string | null | undefined): string {
   const slug = (raw ?? "").trim().toLowerCase();
