@@ -8,6 +8,7 @@ import { parseMentions, linkMentions, buildApMentionTags, collectMentionInboxes 
 import { imageAttachment } from "@/lib/ap-post";
 import { buildMediaUpdate } from "@/lib/post-media";
 import { enqueueFailedCrosspost } from "@/lib/crosspost-retry";
+import { normalizeCategory } from "@/lib/categories";
 import path from "path";
 
 const siteUrl = process.env.SITE_URL || "http://localhost:3000";
@@ -307,7 +308,7 @@ async function composeHandler(req: NextRequest) {
           title: photos[i].alt || null,
           caption: photos[i].alt || null,
           imagePath: photos[i].url,
-          category: photoCategory || "general",
+          category: normalizeCategory(photoCategory),
           tags,
           published: !isScheduled,
           publishedAt: post.publishedAt,
@@ -334,7 +335,7 @@ async function composeHandler(req: NextRequest) {
           iframeSrc: v.iframeSrc,
           thumbnailUrl: v.thumbnailUrl || null,
           duration: v.duration || null,
-          category: videoCategory || "general",
+          category: normalizeCategory(videoCategory),
           tags,
           published: !isScheduled,
           publishedAt: post.publishedAt,
@@ -359,7 +360,7 @@ async function composeHandler(req: NextRequest) {
           durationSec: a.durationSec || null,
           fileSize: a.fileSize || null,
           coverImage: a.coverImage || null,
-          category: audioCategory || "general",
+          category: normalizeCategory(audioCategory),
           tags,
           published: !isScheduled,
           publishedAt: post.publishedAt,

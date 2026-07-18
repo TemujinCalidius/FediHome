@@ -1,6 +1,9 @@
 import { prisma } from "./db";
 import { siteConfig } from "@/../site.config";
 import { isThemeId, isFeedVariant } from "./themes";
+import { parseCategoryList, resolveCategoryList, MAX_CATEGORIES } from "./categories";
+
+const SLUG = /^[a-z0-9-]+$/;
 
 /**
  * Runtime-editable site config (#59) — the safe display/feature settings,
@@ -53,6 +56,9 @@ export const SITE_CONFIG_FIELDS: Record<string, FieldType> = {
   "podcast.description": "text",
   "podcast.email": "text",
   "podcast.image": "url",
+  "categories.photos": "text", // comma-separated slugs; "" = built-in defaults (see validateSiteConfigValue)
+  "categories.videos": "text",
+  "categories.audio": "text",
 };
 
 export const SITE_CONFIG_KEYS = Object.keys(SITE_CONFIG_FIELDS);
@@ -78,6 +84,8 @@ export interface RuntimeSiteConfig {
   contact: { email: string };
   // /audio podcast feed overrides — empty means "derive from your profile".
   podcast: { title: string; author: string; description: string; email: string; image: string };
+  // Resolved gallery category lists (#284) — always non-empty, always incl. "general".
+  categories: { photos: string[]; videos: string[]; audio: string[] };
 }
 
 /** The env/default view — exactly what `siteConfig` (env-driven) exposes today. */
@@ -101,6 +109,11 @@ export function siteConfigDefaults(): RuntimeSiteConfig {
     layout: { ...siteConfig.layout },
     contact: { email: siteConfig.contactEmail },
     podcast: { ...siteConfig.podcast },
+    categories: {
+      photos: resolveCategoryList(parseCategoryList(siteConfig.categories.photos), "photos"),
+      videos: resolveCategoryList(parseCategoryList(siteConfig.categories.videos), "videos"),
+      audio: resolveCategoryList(parseCategoryList(siteConfig.categories.audio), "audio"),
+    },
   };
 }
 
@@ -174,6 +187,12 @@ export async function getRuntimeSiteConfig(): Promise<RuntimeSiteConfig> {
         email: textOverride(o["podcast.email"], base.podcast.email),
         image: textOverride(o["podcast.image"], base.podcast.image),
       },
+      // Resolve the override CSV (else the env CSV) into a slug list; empty → defaults.
+      categories: {
+        photos: resolveCategoryList(parseCategoryList(o["categories.photos"] ?? siteConfig.categories.photos), "photos"),
+        videos: resolveCategoryList(parseCategoryList(o["categories.videos"] ?? siteConfig.categories.videos), "videos"),
+        audio: resolveCategoryList(parseCategoryList(o["categories.audio"] ?? siteConfig.categories.audio), "audio"),
+      },
     };
   } catch {
     return base; // DB down/mid-migration — env defaults, don't cache the failure
@@ -201,6 +220,14 @@ export function validateSiteConfigValue(key: string, value: string): string | nu
   if (value.length > MAX_TEXT || CONTROL.test(value)) return null;
   if (key === "theme.id") return isThemeId(value) ? value : null; // must be a known theme
   if (key === "layout.feed") return value === "" || isFeedVariant(value) ? value : null; // "" inherits the theme
+  if (key === "categories.photos" || key === "categories.videos" || key === "categories.audio") {
+    // "" = built-in defaults. Else comma-separated URL-safe slugs, deduped, capped.
+    if (value.trim() === "") return "";
+    const tokens = value.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean);
+    if (tokens.length === 0 || tokens.length > MAX_CATEGORIES) return null;
+    if (!tokens.every((t) => SLUG.test(t))) return null; // reject non-slug tokens (spaces, punctuation)
+    return [...new Set(tokens)].join(",");
+  }
   if (type === "url") {
     if (value === "") return value;
     if (value.startsWith("/") && !value.startsWith("//")) return value;

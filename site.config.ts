@@ -119,6 +119,15 @@ export const siteConfig = {
     email: process.env.PODCAST_EMAIL || "",
     image: process.env.PODCAST_IMAGE || "",
   },
+
+  // Gallery categories (#284). Comma-separated URL-safe slugs, web-editable in
+  // Admin → Site settings → Categories. Blank = the built-in defaults
+  // (see src/lib/categories.ts, the single source of truth).
+  categories: {
+    photos: process.env.CATEGORIES_PHOTOS || "",
+    videos: process.env.CATEGORIES_VIDEOS || "",
+    audio: process.env.CATEGORIES_AUDIO || "",
+  },
 } as const;
 
 export type SiteConfig = typeof siteConfig;
