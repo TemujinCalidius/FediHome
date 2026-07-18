@@ -7,6 +7,14 @@ import {
   applySiteConfig,
   SITE_CONFIG_KEYS,
 } from "@/lib/site-settings";
+import { resolveTinylyticsEmbed } from "@/lib/tinylytics";
+
+/** Whether the current analytics config actually resolves a collecting embed (#288). */
+async function analyticsStatus(analytics: { siteId: string; embedId: string }) {
+  const embedCode = await resolveTinylyticsEmbed(analytics);
+  const configured = !!(analytics.siteId || analytics.embedId);
+  return { embedCode, unresolved: configured && !embedCode };
+}
 
 /**
  * Admin site config (#59) — the safe display/feature settings, editable in-app
@@ -45,5 +53,10 @@ export async function POST(req: NextRequest) {
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: 400 });
   }
-  return NextResponse.json({ success: true, effective: await getRuntimeSiteConfig() });
+  const effective = await getRuntimeSiteConfig();
+  return NextResponse.json({
+    success: true,
+    effective,
+    analyticsStatus: await analyticsStatus(effective.analytics),
+  });
 }

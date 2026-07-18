@@ -5,6 +5,7 @@ import Footer from "@/components/layout/Footer";
 import ScrollToTop from "@/components/ui/ScrollToTop";
 import PullToRefresh from "@/components/ui/PullToRefresh";
 import Tinylytics from "@/components/analytics/Tinylytics";
+import { resolveTinylyticsEmbed } from "@/lib/tinylytics";
 import { siteConfig } from "@/../site.config";
 import { getRuntimeSiteConfig } from "@/lib/site-settings";
 import { getRuntimeProfile } from "@/lib/site-profile";
@@ -86,6 +87,9 @@ export default async function RootLayout({
   // identically.
   const accent = resolveAccent(site.theme.id, profile);
   const themeStyle = buildThemeStyle(site.theme.id, accent);
+  // Resolve the collecting-embed code (#288): the embed needs the site's `uid`,
+  // not the numeric id (which 404s + silently collects nothing). Cached.
+  const analyticsCode = await resolveTinylyticsEmbed(site.analytics);
   return (
     <html lang="en">
       <head>
@@ -103,7 +107,7 @@ export default async function RootLayout({
         <main className="flex-1">{children}</main>
         <Footer />
         <ScrollToTop />
-        <Tinylytics siteCode={site.analytics.embedId || site.analytics.siteId} />
+        <Tinylytics siteCode={analyticsCode ?? ""} />
       </body>
     </html>
   );
