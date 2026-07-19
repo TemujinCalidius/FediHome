@@ -5,10 +5,11 @@ import Footer from "@/components/layout/Footer";
 import ScrollToTop from "@/components/ui/ScrollToTop";
 import PullToRefresh from "@/components/ui/PullToRefresh";
 import Tinylytics from "@/components/analytics/Tinylytics";
+import { resolveTinylyticsEmbed } from "@/lib/tinylytics";
 import { siteConfig } from "@/../site.config";
 import { getRuntimeSiteConfig } from "@/lib/site-settings";
 import { getRuntimeProfile } from "@/lib/site-profile";
-import { buildThemeStyle, resolveTheme } from "@/lib/themes";
+import { buildThemeStyle, resolveTheme, resolveAccent } from "@/lib/themes";
 
 export async function generateMetadata(): Promise<Metadata> {
   const [site, profile] = await Promise.all([getRuntimeSiteConfig(), getRuntimeProfile()]);
@@ -80,10 +81,15 @@ export default async function RootLayout({
 }) {
   const [site, profile] = await Promise.all([getRuntimeSiteConfig(), getRuntimeProfile()]);
   // Runtime theme tokens (#250): the active theme's tokens + the owner's accent
-  // colour, as a `:root:root{…}` block that overrides the static @theme :root.
-  // Empty (nothing injected) for a default instance with the default accent, so
-  // it renders identically.
-  const themeStyle = buildThemeStyle(site.theme.id, profile.accentColor);
+  // for THAT theme (#276 — per-theme accent, inherit when unset), as a
+  // `:root:root{…}` block that overrides the static @theme :root. Empty (nothing
+  // injected) for a default instance inheriting its accent, so it renders
+  // identically.
+  const accent = resolveAccent(site.theme.id, profile);
+  const themeStyle = buildThemeStyle(site.theme.id, accent);
+  // Resolve the collecting-embed code (#288): the embed needs the site's `uid`,
+  // not the numeric id (which 404s + silently collects nothing). Cached.
+  const analyticsCode = await resolveTinylyticsEmbed(site.analytics);
   return (
     <html lang="en">
       <head>
@@ -101,7 +107,7 @@ export default async function RootLayout({
         <main className="flex-1">{children}</main>
         <Footer />
         <ScrollToTop />
-        <Tinylytics />
+        <Tinylytics siteCode={analyticsCode ?? ""} />
       </body>
     </html>
   );

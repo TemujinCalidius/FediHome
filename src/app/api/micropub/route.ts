@@ -6,6 +6,39 @@ import { sanitizeHtml } from "@/lib/sanitize";
 import { marked } from "marked";
 import { publishPost } from "@/lib/publish-post";
 import { deletePostWithFederation } from "@/lib/delete-post";
+import { getRuntimeSiteConfig } from "@/lib/site-settings";
+import { categoryEntries } from "@/lib/categories";
+
+/**
+ * The resolved gallery categories for API discovery (#284) — the SAME source of
+ * truth the web galleries use, so a client (e.g. the native apps) never has to
+ * derive categories by paging existing posts (which can't see a configured-but-
+ * unused category). Per media type: the union of the owner's configured list and
+ * the categories still in use, structured `{ slug, label }` so a client can show
+ * the label but submit the slug. Keyed as `mediaCategories`, distinct from the
+ * post-type `categories` array so the two never collide.
+ *
+ * Defensive on purpose: this is an unauthenticated discovery endpoint clients
+ * poll, so if an in-use lookup fails we still return that media type's configured
+ * list (getRuntimeSiteConfig itself falls back to env) rather than 500. Settled
+ * independently, so one media type's DB hiccup degrades only its own list — it
+ * can't wipe the other two back to configured-only.
+ */
+async function resolveMediaCategories() {
+  const cfg = await getRuntimeSiteConfig();
+  const [p, v, a] = await Promise.allSettled([
+    prisma.photo.findMany({ where: { published: true }, distinct: ["category"], select: { category: true } }),
+    prisma.video.findMany({ where: { published: true }, distinct: ["category"], select: { category: true } }),
+    prisma.audio.findMany({ where: { published: true }, distinct: ["category"], select: { category: true } }),
+  ]);
+  const inUse = (r: PromiseSettledResult<{ category: string }[]>) =>
+    r.status === "fulfilled" ? r.value.map((row) => row.category) : [];
+  return {
+    photos: categoryEntries(cfg.categories.photos, inUse(p)),
+    videos: categoryEntries(cfg.categories.videos, inUse(v)),
+    audio: categoryEntries(cfg.categories.audio, inUse(a)),
+  };
+}
 
 function slugify(text: string): string {
   return text
@@ -36,6 +69,7 @@ export async function GET(req: NextRequest) {
         { type: "photo", name: "Photo" },
       ],
       categories: ["journal", "note", "article", "photo"],
+      mediaCategories: await resolveMediaCategories(),
     });
   }
 

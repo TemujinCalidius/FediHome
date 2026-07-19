@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
-import { siteConfig } from "@/../site.config";
+import { getRuntimeSiteConfig } from "@/lib/site-settings";
+import { getRuntimeProfile } from "@/lib/site-profile";
 
 export const dynamic = "force-dynamic";
 
@@ -22,12 +23,16 @@ function formatDuration(sec: number | null): string {
 
 export async function GET() {
   const siteUrl = process.env.SITE_URL || "http://localhost:3000";
-  const podcastTitle =
-    process.env.PODCAST_TITLE || `${siteConfig.authorName} — Audio`;
-  const podcastAuthor = process.env.PODCAST_AUTHOR || siteConfig.authorName;
-  const podcastDescription = process.env.PODCAST_DESCRIPTION || "Audio recordings and field notes.";
-  const podcastEmail = process.env.PODCAST_EMAIL || process.env.CONTACT_EMAIL || "noreply@example.com";
-  const podcastImage = process.env.PODCAST_IMAGE || `${siteUrl}/icon.png`;
+  // Web-editable overrides (#59) with sensible per-profile defaults, so a
+  // web-edited author name / podcast title is reflected here (previously this
+  // read process.env directly and ignored admin edits).
+  const [site, profile] = await Promise.all([getRuntimeSiteConfig(), getRuntimeProfile()]);
+  const p = site.podcast;
+  const podcastTitle = p.title || `${profile.authorName} — Audio`;
+  const podcastAuthor = p.author || profile.authorName;
+  const podcastDescription = p.description || "Audio recordings and field notes.";
+  const podcastEmail = p.email || site.contact.email || "noreply@example.com";
+  const podcastImage = p.image || `${siteUrl}/icon.png`;
 
   const audios = await prisma.audio.findMany({
     where: { published: true },

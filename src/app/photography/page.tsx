@@ -2,26 +2,23 @@ export const dynamic = "force-dynamic";
 
 import { prisma } from "@/lib/db";
 import PhotoGrid from "@/components/photography/PhotoGrid";
+import { getRuntimeSiteConfig } from "@/lib/site-settings";
+import { unionCategories, buildCategoryTabs } from "@/lib/categories";
 
 export const metadata = {
   title: "Photography",
-  description: "Photography — wildlife, macro, landscape, and more.",
+  description: "A photo gallery.",
 };
 
-const CATEGORIES = [
-  { key: "all", label: "All" },
-  { key: "wildlife", label: "Wildlife" },
-  { key: "macro", label: "Macro" },
-  { key: "landscape", label: "Landscape" },
-  { key: "street", label: "Street" },
-  { key: "general", label: "General" },
-];
-
 export default async function PhotographyPage() {
-  const photos = await prisma.photo.findMany({
-    where: { published: true },
-    orderBy: { publishedAt: "desc" },
-  });
+  const [photos, present, cfg] = await Promise.all([
+    prisma.photo.findMany({ where: { published: true }, orderBy: { publishedAt: "desc" } }),
+    prisma.photo.findMany({ where: { published: true }, distinct: ["category"], select: { category: true } }),
+    getRuntimeSiteConfig(),
+  ]);
+  // Filter tabs = the owner's configured list + any category still in use, so
+  // removing one from settings never hides existing photos (#284).
+  const categories = buildCategoryTabs(unionCategories(cfg.categories.photos, present.map((p) => p.category)));
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-16">
@@ -29,12 +26,12 @@ export default async function PhotographyPage() {
         Photography
       </h1>
       <p className="text-gray-500 mb-10">
-        Captured moments &mdash; wildlife, nature, landscapes, and everything in between.
+        Captured moments.
       </p>
 
       <PhotoGrid
         photos={JSON.parse(JSON.stringify(photos))}
-        categories={CATEGORIES}
+        categories={categories}
       />
     </div>
   );

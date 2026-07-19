@@ -1,30 +1,68 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import type { RuntimeSiteConfig } from "@/lib/site-settings";
 // Pure data + math (no prisma / server-only), so it's safe in a client bundle.
-import { THEMES } from "@/lib/themes";
+import { THEMES, DEFAULT_ACCENT } from "@/lib/themes";
+
+const HEX_RE = /^#[0-9a-fA-F]{6}$/;
 
 /**
  * Site settings (#59): the safe appearance/feature config, editable in-app.
  * Saves write `SiteSetting` overrides via /api/admin/site-config; the site
  * re-reads within a minute (60s cache), no restart. "Use env defaults" clears
  * every override.
+ *
+ * The accent colour (#276) is the exception: it lives in the profile overlay,
+ * so its control POSTs to /api/admin `update_profile` (single source of truth
+ * with /api/account + the AP actor), even though it renders here in Appearance.
+ * Accent is PER-THEME — each theme remembers its own, and "inherit" uses the
+ * theme's built-in accent.
  */
 export default function SiteSettingsClient({
   defaults,
   effective,
   overrides,
+  accent,
+  analyticsStatus,
 }: {
   defaults: RuntimeSiteConfig;
   effective: RuntimeSiteConfig;
   overrides: Record<string, string>;
+  accent: { accentColor: string; themeAccents: Record<string, string> };
+  analyticsStatus: { embedCode: string | null; unresolved: boolean };
 }) {
   const [cfg, setCfg] = useState<RuntimeSiteConfig>(effective);
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [hasOverrides, setHasOverrides] = useState(Object.keys(overrides).length > 0);
+  // Live analytics-embed status (#288) — refreshed from each save response.
+  const [analyticsStat, setAnalyticsStat] = useState(analyticsStatus);
+
+  // Per-theme accent (#276). Mirrors the server's resolveAccent; the accent
+  // editor below is bound to the currently-selected theme (cfg.theme.id).
+  const [themeAccents, setThemeAccents] = useState<Record<string, string>>(accent.themeAccents);
+  const [legacyAccent, setLegacyAccent] = useState<string>(accent.accentColor); // default theme's legacy accent
+  const themeOwnAccent = (id: string): string => THEMES[id]?.tokens.colors["accent-500"] ?? DEFAULT_ACCENT;
+  /** The stored accent for a theme, or null = inherit (mirrors themes/resolveAccent). */
+  const storedAccent = (id: string): string | null => {
+    const per = themeAccents[id];
+    if (per && HEX_RE.test(per)) return per;
+    if (id === "default" && legacyAccent && legacyAccent.toLowerCase() !== DEFAULT_ACCENT.toLowerCase()) return legacyAccent;
+    return null;
+  };
+  const selTheme = cfg.theme.id || "default";
+  const [accentInherit, setAccentInherit] = useState<boolean>(storedAccent(selTheme) === null);
+  const [accentHex, setAccentHex] = useState<string>(storedAccent(selTheme) ?? themeOwnAccent(selTheme));
+
+  // Re-seed the accent editor when the selected theme changes.
+  const selectTheme = (id: string) => {
+    setCfg((c) => ({ ...c, theme: { ...c.theme, id } }));
+    const s = storedAccent(id);
+    setAccentInherit(s === null);
+    setAccentHex(s ?? themeOwnAccent(id));
+  };
 
   async function post(settings: Record<string, string | null>): Promise<boolean> {
     setSaving(true);
@@ -41,6 +79,7 @@ export default function SiteSettingsClient({
         return false;
       }
       setCfg(data.effective as RuntimeSiteConfig);
+      if (data.analyticsStatus) setAnalyticsStat(data.analyticsStatus);
       setResult({ ok: true, msg: "Saved — changes apply across your site within a minute." });
       return true;
     } catch {
@@ -48,6 +87,46 @@ export default function SiteSettingsClient({
       return false;
     } finally {
       setSaving(false);
+    }
+  }
+
+  /** Persist the selected theme's accent via update_profile (profile overlay, #276). */
+  async function saveAccent(): Promise<boolean> {
+    const id = selTheme;
+    const desired = accentInherit ? null : accentHex.trim().toLowerCase();
+    if (desired !== null && !HEX_RE.test(desired)) {
+      setResult({ ok: false, msg: "Accent colour must be a #RRGGBB hex value." });
+      return false;
+    }
+    if (desired === storedAccent(id)) return true; // unchanged → nothing to write
+    const body: Record<string, unknown> = {
+      action: "update_profile",
+      themeAccents: { [id]: desired ?? "" }, // "" clears the entry → inherit the theme's accent
+    };
+    // Keep the legacy accentColor (what the macOS app reads) in sync for the default theme.
+    if (id === "default") body.accentColor = desired ?? DEFAULT_ACCENT;
+    try {
+      const res = await fetch("/api/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setResult({ ok: false, msg: d.error || "Couldn't save the accent colour." });
+        return false;
+      }
+      setThemeAccents((prev) => {
+        const next = { ...prev };
+        if (desired) next[id] = desired;
+        else delete next[id];
+        return next;
+      });
+      if (id === "default") setLegacyAccent(desired ?? DEFAULT_ACCENT);
+      return true;
+    } catch {
+      setResult({ ok: false, msg: "Couldn't save the accent colour." });
+      return false;
     }
   }
 
@@ -83,8 +162,25 @@ export default function SiteSettingsClient({
       // "cards" here would pin an override on first save and stop a theme's own
       // preset (e.g. Editorial's list) from ever applying.
       "layout.feed": cfg.layout.feed,
+      "contact.email": cfg.contact.email,
+      "podcast.title": cfg.podcast.title,
+      "podcast.author": cfg.podcast.author,
+      "podcast.description": cfg.podcast.description,
+      "podcast.email": cfg.podcast.email,
+      "podcast.image": cfg.podcast.image,
+      "categories.photos": catText.photos,
+      "categories.videos": catText.videos,
+      "categories.audio": catText.audio,
+      "analytics.siteId": cfg.analytics.siteId,
+      "analytics.embedId": cfg.analytics.embedId,
     };
-    if (await post(settings)) setHasOverrides(true);
+    const okConfig = await post(settings);
+    const okAccent = await saveAccent(); // separate overlay (profile); no-op if unchanged
+    if (okConfig) setHasOverrides(true);
+    if (okConfig && !okAccent) {
+      // post() set a success message; correct it if the accent write failed.
+      setResult({ ok: false, msg: "Settings saved, but the accent colour didn't." });
+    }
   };
 
   const useDefaults = async () => {
@@ -96,7 +192,10 @@ export default function SiteSettingsClient({
         "footer.webringUrl", "footer.webringLabel", "footer.badgeSrc", "footer.badgeHref",
         "footer.badgeAlt", "footer.fundingUrl", "footer.fundingLabel",
         "download.macos.enabled", "download.macos.releaseUrl", "download.macos.appStoreUrl",
-        "theme.id", "layout.feed",
+        "theme.id", "layout.feed", "contact.email",
+        "podcast.title", "podcast.author", "podcast.description", "podcast.email", "podcast.image",
+        "categories.photos", "categories.videos", "categories.audio",
+        "analytics.siteId", "analytics.embedId",
       ].map((k) => [k, null]),
     );
     if (await post(cleared)) {
@@ -111,7 +210,21 @@ export default function SiteSettingsClient({
   const setFooter = (patch: Partial<RuntimeSiteConfig["footer"]>) => setCfg((c) => ({ ...c, footer: { ...c.footer, ...patch } }));
   const setDownload = (patch: Partial<RuntimeSiteConfig["download"]>) => setCfg((c) => ({ ...c, download: { ...c.download, ...patch } }));
   const setLayout = (patch: Partial<RuntimeSiteConfig["layout"]>) => setCfg((c) => ({ ...c, layout: { ...c.layout, ...patch } }));
-  const setTheme = (patch: Partial<RuntimeSiteConfig["theme"]>) => setCfg((c) => ({ ...c, theme: { ...c.theme, ...patch } }));
+  const setContact = (patch: Partial<RuntimeSiteConfig["contact"]>) => setCfg((c) => ({ ...c, contact: { ...c.contact, ...patch } }));
+  const setPodcast = (patch: Partial<RuntimeSiteConfig["podcast"]>) => setCfg((c) => ({ ...c, podcast: { ...c.podcast, ...patch } }));
+  const setAnalytics = (patch: Partial<RuntimeSiteConfig["analytics"]>) => setCfg((c) => ({ ...c, analytics: { ...c.analytics, ...patch } }));
+
+  // Categories (#284) are edited as raw comma-separated TEXT (so typing a comma
+  // works), and only split/normalized server-side on save. Held separately from
+  // `cfg.categories` (always the resolved slug arrays), and re-seeded from the
+  // server's normalized response whenever cfg.categories changes (save / defaults).
+  const catCsv = (c: RuntimeSiteConfig) => ({
+    photos: c.categories.photos.join(", "),
+    videos: c.categories.videos.join(", "),
+    audio: c.categories.audio.join(", "),
+  });
+  const [catText, setCatText] = useState(catCsv(effective));
+  useEffect(() => { setCatText(catCsv(cfg)); }, [cfg.categories]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const text = (label: string, value: string, onChange: (v: string) => void, placeholder = "") => (
     <label className="flex flex-col gap-1 text-xs text-gray-400">
@@ -183,9 +296,41 @@ export default function SiteSettingsClient({
             "Theme",
             cfg.theme.id,
             Object.values(THEMES).map((t) => ({ value: t.id, label: `${t.name} — ${t.description ?? ""}` })),
-            (v) => setTheme({ id: v }),
+            selectTheme,
             "Colours and typography across your whole site.",
           )}
+          {/* Accent colour — per theme (#276). Writes the profile overlay, not site-config. */}
+          <div className="flex flex-col gap-1.5 text-xs text-gray-400">
+            <span>Accent colour for {THEMES[selTheme]?.name ?? "this theme"}</span>
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="color"
+                aria-label="Accent colour"
+                value={HEX_RE.test(accentHex) ? accentHex : themeOwnAccent(selTheme)}
+                onChange={(e) => { setAccentHex(e.target.value); setAccentInherit(false); }}
+                className="h-8 w-10 rounded border border-surface-700 bg-surface-800 p-0.5"
+              />
+              <input
+                type="text"
+                value={accentHex}
+                placeholder="#3b82f6"
+                onChange={(e) => { setAccentHex(e.target.value); setAccentInherit(false); }}
+                className="w-28 bg-surface-800 border border-surface-700 rounded-md px-2 py-1.5 text-sm text-white font-mono"
+              />
+              {accentInherit ? (
+                <span className="text-gray-600">using the theme&apos;s own accent</span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => { setAccentInherit(true); setAccentHex(themeOwnAccent(selTheme)); }}
+                  className="text-gray-400 hover:text-white underline"
+                >
+                  Use theme&apos;s accent
+                </button>
+              )}
+            </div>
+            <span className="text-gray-600">Links, buttons, borders and badges. Each theme remembers its own.</span>
+          </div>
           {select(
             "Feed layout",
             cfg.layout.feed,
@@ -235,6 +380,40 @@ export default function SiteSettingsClient({
           {check("Show the Download nav link, homepage CTA & /download page", cfg.download.macosEnabled, (v) => setDownload({ macosEnabled: v }))}
           {text("Release URL (GitHub Releases)", cfg.download.macosReleaseUrl, (v) => setDownload({ macosReleaseUrl: v }), "https://…")}
           {text("Mac App Store URL (optional)", cfg.download.macosAppStoreUrl, (v) => setDownload({ macosAppStoreUrl: v }), "https://…")}
+        </>)}
+
+        {section("Contact & podcast", <>
+          {text("Contact email", cfg.contact.email, (v) => setContact({ email: v }), "you@example.com")}
+          <p className="text-xs text-gray-600 m-0">Podcast feed for <code>/audio</code>. Leave any field blank to derive it from your profile.</p>
+          {text("Podcast title", cfg.podcast.title, (v) => setPodcast({ title: v }), "e.g. Field Notes")}
+          {text("Podcast author", cfg.podcast.author, (v) => setPodcast({ author: v }))}
+          {text("Podcast description", cfg.podcast.description, (v) => setPodcast({ description: v }))}
+          {text("Podcast email", cfg.podcast.email, (v) => setPodcast({ email: v }), "defaults to your contact email")}
+          {text("Podcast cover image URL", cfg.podcast.image, (v) => setPodcast({ image: v }), "https://…")}
+        </>)}
+
+        {section("Categories", <>
+          <p className="text-xs text-gray-600 m-0">
+            Gallery categories for photos, videos and audio. Comma-separated, lowercase, URL-safe (letters, numbers, hyphens). Blank = the built-in defaults. Removing a category never hides existing items.
+          </p>
+          {text("Photo categories", catText.photos, (v) => setCatText((t) => ({ ...t, photos: v })), "wildlife, macro, landscape, street, general")}
+          {text("Video categories", catText.videos, (v) => setCatText((t) => ({ ...t, videos: v })), "general, lore, tutorial, walk")}
+          {text("Audio categories", catText.audio, (v) => setCatText((t) => ({ ...t, audio: v })), "general, music, talk, ambient")}
+        </>)}
+
+        {section("Analytics", <>
+          <p className="text-xs text-gray-600 m-0">
+            Privacy-friendly <a href="https://tinylytics.app" target="_blank" rel="noopener noreferrer" className="text-accent-400 hover:underline">Tinylytics</a> page-view tracking. Enter your numeric site id — the tracking embed code is derived from it automatically when an API key is set. (The in-app dashboard also needs the API key, still set via env.)
+          </p>
+          {analyticsStat.embedCode ? (
+            <p className="text-xs text-green-400 m-0">✓ Collecting pageviews — embed <code className="text-green-300">{analyticsStat.embedCode}</code>.</p>
+          ) : analyticsStat.unresolved ? (
+            <p className="text-xs text-amber-400 m-0">
+              ⚠️ Analytics is set but <strong>no pageviews are being collected</strong> — the embed code couldn&apos;t be resolved from your site id. Set <code>TINYLYTICS_API_KEY</code> (so the embed code auto-derives), or paste your embed code (uid) below.
+            </p>
+          ) : null}
+          {text("Tinylytics site id (numeric)", cfg.analytics.siteId, (v) => setAnalytics({ siteId: v }), "e.g. 3461")}
+          {text("Embed code / uid (optional override)", cfg.analytics.embedId, (v) => setAnalytics({ embedId: v }), "only needed without an API key — the uid, not the numeric id")}
         </>)}
 
         <div className="flex items-center gap-3 py-4">

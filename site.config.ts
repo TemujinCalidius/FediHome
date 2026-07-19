@@ -108,6 +108,34 @@ export const siteConfig = {
   layout: {
     feed: process.env.LAYOUT_FEED || "",
   },
+
+  // /audio podcast RSS feed overrides (#59). Empty = derive from your profile
+  // (title "<author> — Audio", author = your name, etc.). All web-editable in
+  // Admin → Site settings; env vars remain as defaults.
+  podcast: {
+    title: process.env.PODCAST_TITLE || "",
+    author: process.env.PODCAST_AUTHOR || "",
+    description: process.env.PODCAST_DESCRIPTION || "",
+    email: process.env.PODCAST_EMAIL || "",
+    image: process.env.PODCAST_IMAGE || "",
+  },
+
+  // Gallery categories (#284). Comma-separated URL-safe slugs, web-editable in
+  // Admin → Site settings → Categories. Blank = the built-in defaults
+  // (see src/lib/categories.ts, the single source of truth).
+  categories: {
+    photos: process.env.CATEGORIES_PHOTOS || "",
+    videos: process.env.CATEGORIES_VIDEOS || "",
+    audio: process.env.CATEGORIES_AUDIO || "",
+  },
+
+  // Tinylytics analytics (#170, web-editable #59). Public embed ids only — the
+  // API key (for the in-app dashboard) stays env-only. `embedId` overrides
+  // `siteId` for the collecting embed when the embed code differs.
+  analytics: {
+    siteId: process.env.TINYLYTICS_SITE_ID || "",
+    embedId: process.env.TINYLYTICS_EMBED_ID || "",
+  },
 } as const;
 
 export type SiteConfig = typeof siteConfig;

@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import { verifyAdminSession } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { getRuntimeSiteConfig } from "@/lib/site-settings";
 import ComposeClient, { type InitialValues } from "./ComposeClient";
 import TimelineLogin from "../timeline/TimelineLogin";
 
@@ -57,6 +58,9 @@ export default async function ComposePage({
     };
   }
 
+  // Resolved gallery categories for the media dropdowns (#284).
+  const { categories } = await getRuntimeSiteConfig();
+
   return (
     <div className="max-w-2xl mx-auto px-6 py-16">
       <div className="flex items-center justify-between mb-8">
@@ -70,7 +74,7 @@ export default async function ComposePage({
           Back to Timeline
         </a>
       </div>
-      <ComposeClient editingPostId={editingPostId} initialValues={initialValues} />
+      <ComposeClient editingPostId={editingPostId} initialValues={initialValues} categories={categories} />
     </div>
   );
 }

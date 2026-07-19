@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  deriveAccentScale, resolveTheme, isThemeId, buildThemeStyle, DEFAULT_THEME,
+  deriveAccentScale, resolveTheme, isThemeId, buildThemeStyle, resolveAccent, DEFAULT_ACCENT, DEFAULT_THEME,
   isFeedVariant, resolveLayout, FEED_VARIANTS, THEMES,
 } from "@/lib/themes";
 
@@ -45,15 +45,14 @@ describe("resolveTheme / isThemeId (#250)", () => {
 });
 
 describe("buildThemeStyle (#250)", () => {
-  it("injects NOTHING for a default instance with the default accent", () => {
+  it("injects NOTHING for the default theme with no accent (inherit)", () => {
     expect(buildThemeStyle("default", null)).toBe("");
     expect(buildThemeStyle("default", undefined)).toBe("");
-    expect(buildThemeStyle("default", "#3b82f6")).toBe("");
-    expect(buildThemeStyle("default", "#3B82F6")).toBe(""); // case-insensitive
+    expect(buildThemeStyle("default", "")).toBe("");
     expect(buildThemeStyle("unknown-id", null)).toBe(""); // resolves to default
   });
 
-  it("emits a :root:root override scale for a custom accent colour", () => {
+  it("emits a :root:root override scale for any custom accent colour", () => {
     const css = buildThemeStyle("default", "#22c55e");
     expect(css.startsWith(":root:root{")).toBe(true);
     expect(css).toContain("--color-accent-500:#22c55e");
@@ -61,6 +60,43 @@ describe("buildThemeStyle (#250)", () => {
     // Only accent vars change — surfaces/fonts stay default (not emitted).
     expect(css).not.toContain("--color-surface-950");
     expect(css).not.toContain("--font-display");
+  });
+
+  it("overlays ANY valid hex now — the inherit-vs-custom decision lives in resolveAccent (#276)", () => {
+    // The old DEFAULT_ACCENT no-op guard is gone: a resolved accent is always
+    // overlaid. So blue is finally selectable on Editorial (the trap fix).
+    const derived = deriveAccentScale(DEFAULT_ACCENT);
+    const css = buildThemeStyle("editorial", DEFAULT_ACCENT);
+    // accent-500 == the default theme's accent-500, so it diffs out (falls through
+    // to the @theme base); a derived shade proves the blue overlay was applied.
+    expect(css).toContain(`--color-accent-600:${derived["accent-600"]}`);
+    expect(css).toContain("--color-surface-950:#17120e"); // Editorial's surfaces still there
+  });
+});
+
+describe("resolveAccent (#276) — per-theme accent with inherit", () => {
+  it("an unset default instance inherits (→ null → no injection, pixel-identical)", () => {
+    expect(resolveAccent("default", { accentColor: DEFAULT_ACCENT, themeAccents: {} })).toBeNull();
+    expect(resolveAccent("default", { accentColor: "#3B82F6", themeAccents: {} })).toBeNull(); // case-insensitive
+    expect(buildThemeStyle("default", resolveAccent("default", { accentColor: DEFAULT_ACCENT, themeAccents: {} }))).toBe("");
+  });
+
+  it("a legacy custom accentColor applies to the DEFAULT theme only", () => {
+    expect(resolveAccent("default", { accentColor: "#22c55e", themeAccents: {} })).toBe("#22c55e");
+    // ...and does NOT bleed onto other themes anymore (the per-theme fix):
+    expect(resolveAccent("editorial", { accentColor: "#22c55e", themeAccents: {} })).toBeNull();
+  });
+
+  it("a per-theme override wins, and lets you pick blue on Editorial", () => {
+    expect(resolveAccent("editorial", { accentColor: DEFAULT_ACCENT, themeAccents: { editorial: "#22c55e" } })).toBe("#22c55e");
+    expect(resolveAccent("editorial", { themeAccents: { editorial: DEFAULT_ACCENT } })).toBe(DEFAULT_ACCENT);
+    expect(resolveAccent("default", { accentColor: DEFAULT_ACCENT, themeAccents: { default: "#22c55e" } })).toBe("#22c55e");
+  });
+
+  it("ignores junk / missing entries and inherits", () => {
+    expect(resolveAccent("editorial", { themeAccents: { editorial: "not-a-hex" } })).toBeNull();
+    expect(resolveAccent("editorial", {})).toBeNull();
+    expect(resolveAccent("default", {})).toBeNull();
   });
 });
 
@@ -83,6 +119,13 @@ describe("Editorial theme (#250)", () => {
     expect(css).toContain("--font-display:");
     expect(css).toContain("--font-body:");
     expect(css).not.toContain("--font-mono");
+  });
+
+  it("emits its crisp/flat feel tokens (texture), diffing out the ones it shares (#250)", () => {
+    const css = buildThemeStyle("editorial", null);
+    expect(css).toContain("--radius-card:4px");
+    expect(css).toContain("--radius-button:4px");
+    expect(css).toContain("--glass-filter:none");
   });
 
   it("defaults to the list feed, and an explicit override still wins", () => {

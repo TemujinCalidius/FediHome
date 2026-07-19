@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/db";
 import { verifyAdminSession } from "@/lib/auth";
+import { siteConfig } from "@/../site.config";
 import TimelineLogin from "../../timeline/TimelineLogin";
 import AppsClient from "./AppsClient";
 
@@ -40,7 +41,7 @@ export default async function AdminAppsPage() {
         apps you signed in via OAuth, plus any Micropub tokens. Revoke anything you
         don&apos;t recognise; a revoked token stops working on its next request.
       </p>
-      <AppsClient tokens={rows} />
+      <AppsClient tokens={rows} instanceUrl={siteConfig.url} />
     </div>
   );
 }

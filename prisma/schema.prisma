@@ -503,6 +503,11 @@ model SiteSettings {
   contactEmail  String?
   verifiedEmail String?
   accentColor   String?  @default("#3b82f6")
+  // Per-theme accent overrides (#276): { "&lt;themeId&gt;": "#rrggbb" }. A theme with
+  // an entry uses that accent; absent = inherit the theme's own accent. The
+  // legacy `accentColor` above stays the DEFAULT theme's accent (what the macOS
+  // app reads/writes), so this is purely additive + backward-compatible.
+  themeAccents  Json?
   // Runtime-editable profile (#201) — overlaid on the site.config.ts env
   // defaults by getRuntimeProfile(). Null = use the env/default value.
   actorSummary  String?

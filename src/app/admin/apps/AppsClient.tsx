@@ -41,7 +41,7 @@ const scopeBadges = (scope: string) => (
   </div>
 );
 
-export default function AppsClient({ tokens }: { tokens: TokenRow[] }) {
+export default function AppsClient({ tokens, instanceUrl }: { tokens: TokenRow[]; instanceUrl: string }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -54,6 +54,15 @@ export default function AppsClient({ tokens }: { tokens: TokenRow[] }) {
   const [genScopes, setGenScopes] = useState<string[]>(["read"]);
   const [minted, setMinted] = useState<{ token: string; label: string; scope: string } | null>(null);
   const [copied, setCopied] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
+
+  // One-paste sign-in link (#255): bundles the instance URL + token so a native
+  // app (macOS/iOS) can onboard from a single copy instead of two fields. Custom
+  // scheme so tapping it can open the app directly. Proposed onboarding contract
+  // — documented in docs/app-api.md; confirm the exact shape against the app.
+  const connectLink = minted
+    ? `fedihome://connect?instance=${encodeURIComponent(instanceUrl)}&token=${encodeURIComponent(minted.token)}`
+    : "";
 
   function post(body: Record<string, unknown>): Promise<Response> {
     return fetch("/api/admin/apps", {
@@ -143,6 +152,7 @@ export default function AppsClient({ tokens }: { tokens: TokenRow[] }) {
       setGenLabel("");
       setGenScopes(["read"]);
       setCopied(false);
+      setCopiedLink(false);
       router.refresh();
     } catch {
       setError("Couldn't generate a token.");
@@ -158,6 +168,16 @@ export default function AppsClient({ tokens }: { tokens: TokenRow[] }) {
       setCopied(true);
     } catch {
       /* clipboard blocked — the token is selectable in the box */
+    }
+  }
+
+  async function copyConnectLink() {
+    if (!connectLink) return;
+    try {
+      await navigator.clipboard.writeText(connectLink);
+      setCopiedLink(true);
+    } catch {
+      /* clipboard blocked — the link is selectable in the box */
     }
   }
 
@@ -181,6 +201,22 @@ export default function AppsClient({ tokens }: { tokens: TokenRow[] }) {
             </button>
           </div>
           {scopeBadges(minted.scope)}
+
+          {/* One-paste app sign-in link (#255) — instance URL + token bundled. */}
+          <div className="mt-3 border-t border-surface-700 pt-3">
+            <p className="text-xs text-gray-400">
+              Or paste this <strong>sign-in link</strong> into a FediHome app to connect in one step (it bundles this instance&apos;s URL + the token):
+            </p>
+            <div className="mt-2 flex items-center gap-2">
+              <code className="flex-1 min-w-0 break-all bg-surface-950 border border-surface-700 rounded px-2 py-1.5 text-xs text-gray-300 font-mono">
+                {connectLink}
+              </code>
+              <button onClick={copyConnectLink} className="btn-outlined text-xs !py-1.5 whitespace-nowrap">
+                {copiedLink ? "Copied ✓" : "Copy link"}
+              </button>
+            </div>
+          </div>
+
           <button onClick={() => setMinted(null)} className="mt-3 text-xs text-gray-400 hover:text-white">
             Done
           </button>

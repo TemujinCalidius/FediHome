@@ -4,6 +4,7 @@ import { useState } from "react";
 import Image from "next/image";
 import Masonry from "react-masonry-css";
 import { Lightbox, type LightboxImage } from "@/components/ui/Lightbox";
+import CategoryTabs from "@/components/ui/CategoryTabs";
 import { localMediaSrc } from "@/lib/media-url";
 
 function AltBadgeInline({ alt }: { alt: string }) {
@@ -82,24 +83,11 @@ export default function PhotoGrid({
 
   return (
     <div>
-      <div className="flex flex-wrap gap-2 mb-8">
-        {categories.map((cat) => (
-          <button
-            key={cat.key}
-            onClick={() => {
-              setActiveCategory(cat.key);
-              setLightboxIndex(null);
-            }}
-            className={`px-3 py-1.5 text-xs font-semibold uppercase tracking-wider rounded-lg border transition-colors ${
-              activeCategory === cat.key
-                ? "border-accent-400/30 bg-accent-400/10 text-accent-400"
-                : "border-surface-700 text-gray-500 hover:text-gray-300 hover:border-surface-600"
-            }`}
-          >
-            {cat.label}
-          </button>
-        ))}
-      </div>
+      <CategoryTabs
+        categories={categories}
+        active={activeCategory}
+        onSelect={(key) => { setActiveCategory(key); setLightboxIndex(null); }}
+      />
 
       {filtered.length === 0 ? (
         <div className="glass-card p-8 text-center">

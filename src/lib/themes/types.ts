@@ -20,9 +20,24 @@ export interface ThemeFonts {
   mono: string;
 }
 
+/**
+ * "Feel" tokens (#250) — texture, not colour: how rounded and how glassy the UI
+ * is, so themes can differ in *feel* and not just hue/type. Values are whole CSS
+ * values (e.g. `"12px"`, `"blur(12px)"`, `"none"`) — `glassFilter` is the entire
+ * `backdrop-filter`, so a theme can turn glass off with `"none"` (a `blur(0px)`
+ * would still create a compositing layer). Keyed to `--radius-card` /
+ * `--radius-button` / `--glass-filter` in globals.css.
+ */
+export interface ThemeFeel {
+  radiusCard: string;
+  radiusButton: string;
+  glassFilter: string;
+}
+
 export interface ThemeTokens {
   colors: ThemeColors;
   fonts: ThemeFonts;
+  feel: ThemeFeel;
 }
 
 /**

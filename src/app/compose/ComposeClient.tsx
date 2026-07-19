@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback } from "react";
 import { useMentionAutocomplete } from "@/components/ui/MentionAutocomplete";
+import { categoryLabel } from "@/lib/categories";
 
 interface PhotoAttachment {
   url: string;
@@ -39,9 +40,11 @@ export interface InitialValues {
 interface ComposeClientProps {
   editingPostId?: string | null;
   initialValues?: InitialValues | null;
+  /** Web-configured gallery categories (#284), resolved server-side. */
+  categories: { photos: string[]; videos: string[]; audio: string[] };
 }
 
-export default function ComposeClient({ editingPostId = null, initialValues = null }: ComposeClientProps) {
+export default function ComposeClient({ editingPostId = null, initialValues = null, categories }: ComposeClientProps) {
   const isEditing = !!editingPostId;
   const [title, setTitle] = useState(initialValues?.title ?? "");
   const [content, setContent] = useState(initialValues?.content ?? "");
@@ -672,11 +675,9 @@ export default function ComposeClient({ editingPostId = null, initialValues = nu
               onChange={(e) => setPhotoCategory(e.target.value)}
               className="text-xs bg-surface-800 border border-surface-600 rounded px-2 py-1 text-gray-400"
             >
-              <option value="general">General</option>
-              <option value="wildlife">Wildlife</option>
-              <option value="macro">Macro</option>
-              <option value="landscape">Landscape</option>
-              <option value="street">Street</option>
+              {categories.photos.map((c) => (
+                <option key={c} value={c}>{categoryLabel(c)}</option>
+              ))}
             </select>
           )}
         </div>
@@ -700,10 +701,9 @@ export default function ComposeClient({ editingPostId = null, initialValues = nu
               onChange={(e) => setVideoCategory(e.target.value)}
               className="text-xs bg-surface-800 border border-surface-600 rounded px-2 py-1 text-gray-400"
             >
-              <option value="general">General</option>
-              <option value="lore">Lore</option>
-              <option value="tutorial">Tutorial</option>
-              <option value="walk">Photo walk</option>
+              {categories.videos.map((c) => (
+                <option key={c} value={c}>{categoryLabel(c)}</option>
+              ))}
             </select>
           )}
         </div>
@@ -727,10 +727,9 @@ export default function ComposeClient({ editingPostId = null, initialValues = nu
               onChange={(e) => setAudioCategory(e.target.value)}
               className="text-xs bg-surface-800 border border-surface-600 rounded px-2 py-1 text-gray-400"
             >
-              <option value="general">General</option>
-              <option value="music">Music</option>
-              <option value="talk">Talk</option>
-              <option value="ambient">Ambient</option>
+              {categories.audio.map((c) => (
+                <option key={c} value={c}>{categoryLabel(c)}</option>
+              ))}
             </select>
           )}
         </div>
