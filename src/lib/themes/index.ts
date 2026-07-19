@@ -3,11 +3,11 @@ import { DEFAULT_THEME } from "./default";
 import { resolveTheme } from "./registry";
 import { deriveAccentScale } from "./color";
 
-export type { Theme, ThemeTokens, ThemeColors, ThemeFonts, ThemeFeel, ColorToken, FeedVariant, LayoutConfig } from "./types";
+export type { Theme, ThemeTokens, ThemeColors, ThemeFonts, ThemeFeel, ColorToken, FeedVariant, HeaderVariant, LayoutConfig } from "./types";
 export { deriveAccentScale } from "./color";
 export { DEFAULT_THEME } from "./default";
 export { THEMES, THEME_IDS, isThemeId, resolveTheme } from "./registry";
-export { LAYOUT_REGIONS, FEED_VARIANTS, isFeedVariant, resolveLayout } from "./layout";
+export { LAYOUT_REGIONS, FEED_VARIANTS, HEADER_VARIANTS, isFeedVariant, isHeaderVariant, resolveLayout } from "./layout";
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
 

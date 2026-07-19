@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   deriveAccentScale, resolveTheme, isThemeId, buildThemeStyle, resolveAccent, DEFAULT_ACCENT, DEFAULT_THEME,
-  isFeedVariant, resolveLayout, FEED_VARIANTS, THEMES,
+  isFeedVariant, isHeaderVariant, resolveLayout, FEED_VARIANTS, HEADER_VARIANTS, THEMES,
 } from "@/lib/themes";
 
 const sum = (hex: string) => {
@@ -191,5 +191,31 @@ describe("resolveLayout / isFeedVariant (#250 Phase 3)", () => {
     expect(resolveLayout("default", { feed: "list" }).feed).toBe("list");
     expect(resolveLayout("default", { feed: "" }).feed).toBe("cards"); // inherit
     expect(resolveLayout("default", { feed: "nonsense" }).feed).toBe("cards"); // stale/unknown → default
+  });
+});
+
+describe("resolveLayout / isHeaderVariant (#250 Phase 4 — header region)", () => {
+  it("isHeaderVariant only accepts known header variants", () => {
+    for (const v of HEADER_VARIANTS) expect(isHeaderVariant(v)).toBe(true);
+    expect(isHeaderVariant("sidebar")).toBe(false); // not built yet
+    expect(isHeaderVariant("")).toBe(false);
+  });
+
+  it("both built-in themes default to the bar header (existing instances unchanged)", () => {
+    expect(resolveLayout("default", {}).header).toBe("bar");
+    expect(resolveLayout("editorial", {}).header).toBe("bar");
+    expect(resolveLayout("unknown-theme", {}).header).toBe("bar"); // resolves to default theme
+  });
+
+  it("a known override wins; empty or bad values fall back to the theme default", () => {
+    expect(resolveLayout("default", { header: "centered" }).header).toBe("centered");
+    expect(resolveLayout("default", { header: "minimal" }).header).toBe("minimal");
+    expect(resolveLayout("default", { header: "" }).header).toBe("bar"); // inherit
+    expect(resolveLayout("default", { header: "nonsense" }).header).toBe("bar"); // stale/unknown → default
+  });
+
+  it("resolves feed and header independently", () => {
+    const r = resolveLayout("default", { feed: "list", header: "minimal" });
+    expect(r).toEqual({ feed: "list", header: "minimal" });
   });
 });

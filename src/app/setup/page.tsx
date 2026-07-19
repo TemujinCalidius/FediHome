@@ -109,6 +109,7 @@ export default function SetupWizard() {
   // path as the feature toggles. Defaults = the env defaults (no override sent).
   const [theme, setTheme] = useState("default");
   const [feedLayout, setFeedLayout] = useState(""); // "" = inherit the theme's default
+  const [headerLayout, setHeaderLayout] = useState(""); // "" = inherit the theme's default
 
   // Domain from current URL
   const [domain, setDomain] = useState("yourdomain.com");
@@ -150,6 +151,7 @@ export default function SetupWizard() {
     });
     if (theme && theme !== "default") siteConfig["theme.id"] = theme;
     if (feedLayout) siteConfig["layout.feed"] = feedLayout; // "" = inherit → no override
+    if (headerLayout) siteConfig["layout.header"] = headerLayout; // "" = inherit → no override
     try {
       const res = await fetch("/api/setup", {
         method: "POST",
@@ -438,6 +440,19 @@ export default function SetupWizard() {
                     <option value="">Theme default</option>
                     <option value="cards">Cards</option>
                     <option value="list">List</option>
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1 text-xs text-gray-400">
+                  <span>Header layout</span>
+                  <select
+                    value={headerLayout}
+                    onChange={(e) => setHeaderLayout(e.target.value)}
+                    className="bg-surface-800 border border-surface-700 rounded-md px-2 py-1.5 text-sm text-white"
+                  >
+                    <option value="">Theme default</option>
+                    <option value="bar">Bar</option>
+                    <option value="centered">Centered</option>
+                    <option value="minimal">Minimal</option>
                   </select>
                 </label>
               </div>

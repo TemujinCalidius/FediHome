@@ -196,6 +196,7 @@ export default function SiteSettingsClient({
       // "cards" here would pin an override on first save and stop a theme's own
       // preset (e.g. Editorial's list) from ever applying.
       "layout.feed": cfg.layout.feed,
+      "layout.header": cfg.layout.header,
       "contact.email": cfg.contact.email,
       "podcast.title": cfg.podcast.title,
       "podcast.author": cfg.podcast.author,
@@ -226,7 +227,7 @@ export default function SiteSettingsClient({
         "footer.webringUrl", "footer.webringLabel", "footer.badgeSrc", "footer.badgeHref",
         "footer.badgeAlt", "footer.fundingUrl", "footer.fundingLabel",
         "download.macos.enabled", "download.macos.releaseUrl", "download.macos.appStoreUrl",
-        "theme.id", "layout.feed", "contact.email",
+        "theme.id", "layout.feed", "layout.header", "contact.email",
         "podcast.title", "podcast.author", "podcast.description", "podcast.email", "podcast.image",
         "categories.photos", "categories.videos", "categories.audio",
         "analytics.siteId", "analytics.embedId",
@@ -375,6 +376,18 @@ export default function SiteSettingsClient({
             ],
             (v) => setLayout({ feed: v }),
             "How your posts appear on the homepage and blog. Each theme picks a default; override it here.",
+          )}
+          {select(
+            "Header layout",
+            cfg.layout.header,
+            [
+              { value: "", label: "Inherit from theme" },
+              { value: "bar", label: "Bar — sticky top bar, links inline" },
+              { value: "centered", label: "Centered — masthead over a centered nav row" },
+              { value: "minimal", label: "Minimal — just your name and a menu button" },
+            ],
+            (v) => setLayout({ header: v }),
+            "How the header renders across every page. Each theme picks a default; override it here.",
           )}
         </>)}
 
