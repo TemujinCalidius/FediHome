@@ -108,6 +108,7 @@ export const siteConfig = {
   layout: {
     feed: process.env.LAYOUT_FEED || "",
     header: process.env.LAYOUT_HEADER || "",
+    footer: process.env.LAYOUT_FOOTER || "",
   },
 
   // /audio podcast RSS feed overrides (#59). Empty = derive from your profile
