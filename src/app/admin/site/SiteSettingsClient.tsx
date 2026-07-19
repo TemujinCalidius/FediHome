@@ -198,6 +198,7 @@ export default function SiteSettingsClient({
       "layout.feed": cfg.layout.feed,
       "layout.header": cfg.layout.header,
       "layout.footer": cfg.layout.footer,
+      "layout.shell": cfg.layout.shell,
       "contact.email": cfg.contact.email,
       "podcast.title": cfg.podcast.title,
       "podcast.author": cfg.podcast.author,
@@ -228,7 +229,7 @@ export default function SiteSettingsClient({
         "footer.webringUrl", "footer.webringLabel", "footer.badgeSrc", "footer.badgeHref",
         "footer.badgeAlt", "footer.fundingUrl", "footer.fundingLabel",
         "download.macos.enabled", "download.macos.releaseUrl", "download.macos.appStoreUrl",
-        "theme.id", "layout.feed", "layout.header", "layout.footer", "contact.email",
+        "theme.id", "layout.feed", "layout.header", "layout.footer", "layout.shell", "contact.email",
         "podcast.title", "podcast.author", "podcast.description", "podcast.email", "podcast.image",
         "categories.photos", "categories.videos", "categories.audio",
         "analytics.siteId", "analytics.embedId",
@@ -401,6 +402,17 @@ export default function SiteSettingsClient({
             ],
             (v) => setLayout({ footer: v }),
             "How the footer renders across every page. Each theme picks a default; override it here.",
+          )}
+          {select(
+            "Page width",
+            cfg.layout.shell,
+            [
+              { value: "", label: "Inherit from theme" },
+              { value: "normal", label: "Normal — each page uses its natural width" },
+              { value: "narrow", label: "Narrow — a tighter reading column" },
+            ],
+            (v) => setLayout({ shell: v }),
+            "The frame around your public pages (your admin screens are unaffected).",
           )}
         </>)}
 

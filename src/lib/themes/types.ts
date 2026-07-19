@@ -51,6 +51,12 @@ export type FeedVariant = "cards" | "list";
 export type HeaderVariant = "bar" | "centered" | "minimal";
 /** How the site footer renders: the default 3-region `row`, a one-line `minimal`, or a `columns` sitemap. */
 export type FooterVariant = "row" | "minimal" | "columns";
+/**
+ * The public page frame: `normal` (each page keeps its own width — today's look)
+ * or `narrow` (a tighter reading column). `sidebar`/`wide` join here in a later
+ * phase — see the region table in #250.
+ */
+export type ShellVariant = "normal" | "narrow";
 
 export interface LayoutConfig {
   /** How the home/blog feed renders its posts. */
@@ -59,6 +65,8 @@ export interface LayoutConfig {
   header: HeaderVariant;
   /** How the site footer renders across every page. */
   footer: FooterVariant;
+  /** The frame around every PUBLIC page (the (public) route group). */
+  shell: ShellVariant;
 }
 
 export interface Theme {

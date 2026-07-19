@@ -1,4 +1,4 @@
-import type { FeedVariant, HeaderVariant, FooterVariant, LayoutConfig } from "./types";
+import type { FeedVariant, HeaderVariant, FooterVariant, ShellVariant, LayoutConfig } from "./types";
 import { resolveTheme } from "./registry";
 
 /**
@@ -38,11 +38,20 @@ export const LAYOUT_REGIONS = {
       columns: "A sitemap footer — sections, connect links and credit in columns.",
     } as Record<FooterVariant, string>,
   },
+  shell: {
+    label: "Page width",
+    variants: ["normal", "narrow"] as ShellVariant[],
+    describe: {
+      normal: "Each page uses its natural width. The default.",
+      narrow: "A tighter reading column across the whole public site.",
+    } as Record<ShellVariant, string>,
+  },
 } as const;
 
 export const FEED_VARIANTS = LAYOUT_REGIONS.feed.variants;
 export const HEADER_VARIANTS = LAYOUT_REGIONS.header.variants;
 export const FOOTER_VARIANTS = LAYOUT_REGIONS.footer.variants;
+export const SHELL_VARIANTS = LAYOUT_REGIONS.shell.variants;
 
 export function isFeedVariant(v: string): v is FeedVariant {
   return (FEED_VARIANTS as readonly string[]).includes(v);
@@ -52,6 +61,9 @@ export function isHeaderVariant(v: string): v is HeaderVariant {
 }
 export function isFooterVariant(v: string): v is FooterVariant {
   return (FOOTER_VARIANTS as readonly string[]).includes(v);
+}
+export function isShellVariant(v: string): v is ShellVariant {
+  return (SHELL_VARIANTS as readonly string[]).includes(v);
 }
 
 /**
@@ -69,5 +81,6 @@ export function resolveLayout(
     feed: isFeedVariant(overrides.feed ?? "") ? (overrides.feed as FeedVariant) : base.feed,
     header: isHeaderVariant(overrides.header ?? "") ? (overrides.header as HeaderVariant) : base.header,
     footer: isFooterVariant(overrides.footer ?? "") ? (overrides.footer as FooterVariant) : base.footer,
+    shell: isShellVariant(overrides.shell ?? "") ? (overrides.shell as ShellVariant) : base.shell,
   };
 }

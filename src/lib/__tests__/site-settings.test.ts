@@ -10,7 +10,7 @@ vi.mock("@/../site.config", () => ({
     footer: { webringUrl: "", webringLabel: "Webring", badgeSrc: "", badgeHref: "", badgeAlt: "Badge", fundingUrl: "", fundingLabel: "Support" },
     download: { macosEnabled: false, macosReleaseUrl: "https://env/releases/latest", macosAppStoreUrl: "" },
     theme: { id: "default" },
-    layout: { feed: "", header: "", footer: "" },
+    layout: { feed: "", header: "", footer: "", shell: "" },
     contactEmail: "env@example.com",
     podcast: { title: "", author: "", description: "", email: "", image: "" },
     categories: { photos: "", videos: "", audio: "" },
@@ -91,6 +91,13 @@ describe("getRuntimeSiteConfig (#59)", () => {
     invalidateSiteConfigCache();
     vi.mocked(prisma.siteSetting.findMany).mockResolvedValue(rows({ "layout.footer": "columns" }) as never);
     expect((await getRuntimeSiteConfig()).layout.footer).toBe("columns");
+  });
+
+  it("overlays the shell (page width) override (#250): empty (inherit) by default, a saved variant wins", async () => {
+    expect((await getRuntimeSiteConfig()).layout.shell).toBe(""); // empty = inherit the theme default
+    invalidateSiteConfigCache();
+    vi.mocked(prisma.siteSetting.findMany).mockResolvedValue(rows({ "layout.shell": "narrow" }) as never);
+    expect((await getRuntimeSiteConfig()).layout.shell).toBe("narrow");
   });
 
   it("resolves gallery categories (#284): defaults when unset, a saved override wins, general guaranteed", async () => {
@@ -175,6 +182,13 @@ describe("validateSiteConfigValue (#59)", () => {
     expect(validateSiteConfigValue("layout.footer", "columns")).toBe("columns");
     expect(validateSiteConfigValue("layout.footer", "")).toBe(""); // inherit the theme default
     expect(validateSiteConfigValue("layout.footer", "bar")).toBeNull(); // header variant, not a footer one
+  });
+  it("layout.shell accepts a known variant or empty (inherit), rejects anything else (#250)", () => {
+    expect(validateSiteConfigValue("layout.shell", "normal")).toBe("normal");
+    expect(validateSiteConfigValue("layout.shell", "narrow")).toBe("narrow");
+    expect(validateSiteConfigValue("layout.shell", "")).toBe(""); // inherit the theme default
+    expect(validateSiteConfigValue("layout.shell", "sidebar")).toBeNull(); // a later phase
+    expect(validateSiteConfigValue("layout.shell", "wide")).toBeNull(); // a later phase
   });
   it("categories.* accepts comma-separated slugs (normalized), empty = defaults, rejects non-slugs (#284)", () => {
     expect(validateSiteConfigValue("categories.photos", "Wildlife, macro , wildlife")).toBe("wildlife,macro"); // lowercased, deduped
