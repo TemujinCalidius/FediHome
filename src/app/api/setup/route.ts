@@ -20,17 +20,48 @@ const FORBIDDEN_FIELD_CHARS = /[\r\n\\"$`]/;
 // Admin secret is generated client-side via window.crypto and is hex-only.
 const ADMIN_SECRET_RE = /^[A-Fa-f0-9]{64,128}$/;
 
+/** A caller-fixable validation failure — mapped to 400, never a 500. */
+class SetupValidationError extends Error {}
+
 function validateField(name: string, value: unknown): string {
   if (typeof value !== "string") {
-    throw new Error(`${name} must be a string`);
+    throw new SetupValidationError(`${name} must be a string`);
   }
   if (value.length > MAX_FIELD_LEN) {
-    throw new Error(`${name} exceeds ${MAX_FIELD_LEN} chars`);
+    throw new SetupValidationError(`${name} exceeds ${MAX_FIELD_LEN} chars`);
   }
   if (FORBIDDEN_FIELD_CHARS.test(value)) {
-    throw new Error(`${name} contains forbidden characters`);
+    throw new SetupValidationError(`${name} contains forbidden characters`);
   }
   return value;
+}
+
+/**
+ * Validate the canonical public origin. `SITE_URL` is baked into ActivityPub
+ * ids, WebFinger, signature keyIds, RSS and CSRF checks — and once setup
+ * completes the wizard is unreachable (proxy redirects away), so a bad value is
+ * only fixable by hand-editing `.env.local`. Require a clean http(s) ORIGIN:
+ * real host, no credentials, no path/query/fragment. Returns the normalized
+ * origin (trailing slash dropped) plus the host used for `FEDI_DOMAIN`.
+ */
+function validateSiteUrl(raw: unknown): { siteUrl: string; host: string } {
+  const value = validateField("siteUrl", raw).trim();
+  if (!value) throw new SetupValidationError("siteUrl is required");
+  let u: URL;
+  try {
+    u = new URL(value);
+  } catch {
+    throw new SetupValidationError("siteUrl must be a valid absolute URL, e.g. https://example.com");
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") {
+    throw new SetupValidationError("siteUrl must start with http:// or https://");
+  }
+  if (!u.hostname) throw new SetupValidationError("siteUrl must include a hostname");
+  if (u.username || u.password) throw new SetupValidationError("siteUrl must not contain credentials");
+  if ((u.pathname && u.pathname !== "/") || u.search || u.hash) {
+    throw new SetupValidationError("siteUrl must be a bare origin — no path, query or fragment");
+  }
+  return { siteUrl: u.origin, host: u.host };
 }
 
 /**
@@ -105,6 +136,36 @@ export async function POST(request: Request) {
       );
     }
 
+    // Resolve + validate EVERYTHING before claiming the setup slot. This used to
+    // happen after the claim, which meant a bad siteUrl (or an unwritable
+    // .env.local) left `setupDone=true` with NO ADMIN_SECRET written — the proxy
+    // then redirects to /setup forever while /api/setup 403s "already completed",
+    // bricking the install with no file-free recovery.
+    // Prefer the value the wizard submitted (correct protocol AND port), then any
+    // configured SITE_URL, then the request origin.
+    const { siteUrl, host: fediDomain } = validateSiteUrl(
+      body.siteUrl || process.env.SITE_URL || new URL(request.url).origin
+    );
+
+    // Build .env.local content. All field values were validated above to
+    // contain no newlines / quotes / dollar / backtick, so this construction
+    // is injection-safe. Pure string work — no I/O yet.
+    const envLines = [
+      "",
+      "# === FediHome Setup (auto-generated) ===",
+      `SITE_URL="${siteUrl}"`,
+      `SITE_NAME="${siteName || "My FediHome"}"`,
+      `AUTHOR_NAME="${authorName || "Your Name"}"`,
+      `AUTHOR_TAGLINE="${authorTagline}"`,
+      `FEDI_HANDLE="${fediHandle || "me"}"`,
+      `FEDI_DOMAIN="${fediDomain}"`,
+      `CONTACT_EMAIL="${contactEmail}"`,
+      `ADMIN_SECRET="${adminSecret}"`,
+      "",
+    ];
+
+    const envPath = path.join(process.cwd(), ".env.local");
+
     // C6: atomic claim of the setup slot. Two concurrent requests cannot both
     // succeed because the primary key collides on create, and updateMany with
     // setupDone=false matches at most one row.
@@ -143,51 +204,42 @@ export async function POST(request: Request) {
       );
     }
 
-    // Build .env.local content. All field values were validated above to
-    // contain no newlines / quotes / dollar / backtick, so this construction
-    // is injection-safe.
-    // SITE_URL is the canonical public origin (ActivityPub IDs, WebFinger, RSS,
-    // signature keyId, CSRF). Prefer the value the wizard submitted
-    // (window.location.origin — correct protocol AND port), then any configured
-    // SITE_URL, then the request origin. `.origin`/`.host` preserve the port,
-    // unlike the old `https://${hostname}` derivation which dropped it.
-    const siteUrl = validateField(
-      "siteUrl",
-      body.siteUrl || process.env.SITE_URL || new URL(request.url).origin
-    );
-    const fediDomain = validateField("siteUrlHost", new URL(siteUrl).host);
-
-    const envLines = [
-      "",
-      "# === FediHome Setup (auto-generated) ===",
-      `SITE_URL="${siteUrl}"`,
-      `SITE_NAME="${siteName || "My FediHome"}"`,
-      `AUTHOR_NAME="${authorName || "Your Name"}"`,
-      `AUTHOR_TAGLINE="${authorTagline}"`,
-      `FEDI_HANDLE="${fediHandle || "me"}"`,
-      `FEDI_DOMAIN="${fediDomain}"`,
-      `CONTACT_EMAIL="${contactEmail}"`,
-      `ADMIN_SECRET="${adminSecret}"`,
-      "",
-    ];
-
-    const envPath = path.join(process.cwd(), ".env.local");
-
-    let existingContent = "";
+    // Write .env.local. If this fails the claim above is already recorded, which
+    // would leave the instance with setupDone=true and no ADMIN_SECRET — bricked.
+    // So roll the claim back and let the operator retry. (Reopening the
+    // first-claim window is correct here: the write failed, so there is no admin
+    // secret to protect yet, and bricking is strictly worse.)
     try {
-      existingContent = fs.readFileSync(envPath, "utf-8");
-    } catch {
-      // File doesn't exist yet, that's fine
+      let existingContent = "";
+      try {
+        existingContent = fs.readFileSync(envPath, "utf-8");
+      } catch {
+        // File doesn't exist yet, that's fine
+      }
+
+      // Remove any existing FediHome setup block to avoid duplicates
+      const cleaned = existingContent.replace(
+        /\n?# === FediHome Setup \(auto-generated\) ===[\s\S]*?(?=\n#|$)/,
+        ""
+      );
+
+      const finalContent = cleaned.trimEnd() + "\n" + envLines.join("\n");
+      fs.writeFileSync(envPath, finalContent, { encoding: "utf-8", mode: 0o600 });
+    } catch (writeErr) {
+      console.error("Setup: failed to write .env.local — rolling back the setup claim:", writeErr);
+      try {
+        await prisma.siteSettings.updateMany({ where: { id: "main" }, data: { setupDone: false } });
+      } catch (rollbackErr) {
+        console.error("Setup: ROLLBACK FAILED — setupDone is stuck true, fix .env.local manually:", rollbackErr);
+      }
+      return NextResponse.json(
+        {
+          error:
+            "Couldn't write .env.local — check that the install directory is writable, then run setup again.",
+        },
+        { status: 500 }
+      );
     }
-
-    // Remove any existing FediHome setup block to avoid duplicates
-    const cleaned = existingContent.replace(
-      /\n?# === FediHome Setup \(auto-generated\) ===[\s\S]*?(?=\n#|$)/,
-      ""
-    );
-
-    const finalContent = cleaned.trimEnd() + "\n" + envLines.join("\n");
-    fs.writeFileSync(envPath, finalContent, { encoding: "utf-8", mode: 0o600 });
 
     // Apply the wizard's appearance/feature choices (#59) to the DB-backed site
     // config, so a fresh install is configured with no file editing. Validated
@@ -210,7 +262,9 @@ export async function POST(request: Request) {
 
     return response;
   } catch (err) {
-    if (err instanceof Error && /forbidden characters|exceeds|must be a string/.test(err.message)) {
+    // Caller-fixable input problems (incl. a malformed siteUrl, which previously
+    // fell through to a confusing 500) are 400s.
+    if (err instanceof SetupValidationError) {
       return NextResponse.json({ error: err.message }, { status: 400 });
     }
     console.error("Setup error:", err);

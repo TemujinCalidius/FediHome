@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect } from "react";
 import Link from "next/link";
 import { THEMES } from "@/lib/themes";
 
-const TOTAL_STEPS = 7;
+const TOTAL_STEPS = 8;
 
 function StepIndicator({ current }: { current: number }) {
   return (
@@ -114,10 +114,43 @@ export default function SetupWizard() {
 
   // Domain from current URL
   const [domain, setDomain] = useState("yourdomain.com");
+  // The canonical public origin (#59). Seeded from the browser location, but
+  // EDITABLE — behind a proxy/tunnel the browser origin is often not the public
+  // one, and SITE_URL is baked into ActivityPub ids, WebFinger, RSS and CSRF.
+  // Once setup completes the wizard is unreachable, so a wrong guess previously
+  // meant hand-editing .env.local.
+  const [siteUrl, setSiteUrl] = useState("");
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time init of the domain from the browser location on mount
+    /* eslint-disable react-hooks/set-state-in-effect -- one-time init from the browser location on mount */
     setDomain(window.location.hostname);
+    setSiteUrl(window.location.origin);
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, []);
+
+  /** Host derived from siteUrl — this becomes FEDI_DOMAIN. "" when unparseable. */
+  const siteUrlHost = (() => {
+    try {
+      return new URL(siteUrl).host;
+    } catch {
+      return "";
+    }
+  })();
+  /** Inline warnings for origins that usually aren't the real public one. */
+  const siteUrlWarning = (() => {
+    if (!siteUrl) return null;
+    if (!siteUrlHost) return "That doesn't look like a valid URL — use a full origin, e.g. https://example.com";
+    const h = new URL(siteUrl).hostname;
+    if (h === "localhost" || h.startsWith("127.") || h === "::1") {
+      return "This is a local address — federation and links will break for anyone else. Use your real public domain.";
+    }
+    if (/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(h)) {
+      return "This is a private network address — it won't be reachable from the Fediverse.";
+    }
+    if (siteUrl.startsWith("http://") && h !== "localhost") {
+      return "Plain http:// — most Fediverse servers require https for federation.";
+    }
+    return null;
+  })();
 
   // Generate admin secret when reaching the password step (6)
   useEffect(() => {
@@ -165,7 +198,7 @@ export default function SetupWizard() {
           fediHandle: fediHandle || "me",
           contactEmail,
           adminSecret,
-          siteUrl: window.location.origin,
+          siteUrl,
           setupToken,
           ...(Object.keys(siteConfig).length ? { siteConfig } : {}),
         }),
@@ -263,6 +296,25 @@ export default function SetupWizard() {
                     className={inputClass}
                   />
                 </div>
+                <div>
+                  <label className={labelClass}>Public site address</label>
+                  <input
+                    type="url"
+                    value={siteUrl}
+                    onChange={(e) => setSiteUrl(e.target.value)}
+                    placeholder="https://example.com"
+                    className={inputClass}
+                  />
+                  {siteUrlWarning ? (
+                    <p className="text-amber-500 text-xs mt-1.5 leading-relaxed">⚠️ {siteUrlWarning}</p>
+                  ) : (
+                    <p className="text-gray-500 text-xs mt-1.5 leading-relaxed">
+                      The canonical public URL people will visit. It&apos;s baked into your Fediverse
+                      identity, feeds and links, so get it right now —{" "}
+                      <strong className="text-gray-400">changing it later means editing files on the server.</strong>
+                    </p>
+                  )}
+                </div>
               </div>
 
               {/* Preview */}
@@ -310,7 +362,7 @@ export default function SetupWizard() {
               <div className="rounded-lg bg-surface-800/50 border border-surface-700 p-4 mb-4">
                 <p className="text-xs text-surface-600 uppercase tracking-wider font-semibold mb-2">Your Fediverse Address</p>
                 <p className="text-accent-400 font-mono text-lg">
-                  @{fediHandle || "me"}@{domain}
+                  @{fediHandle || "me"}@{siteUrlHost || domain}
                 </p>
               </div>
 
@@ -541,6 +593,67 @@ export default function SetupWizard() {
                 </p>
               </div>
 
+              <div className="flex justify-between">
+                <button onClick={prev} className="btn-outlined cursor-pointer">Back</button>
+                <button
+                  onClick={next}
+                  disabled={!savedPassword}
+                  className={`btn-primary cursor-pointer ${!savedPassword ? "opacity-40 cursor-not-allowed" : ""}`}
+                >
+                  Continue
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Step 7: Review & confirm — the last chance to change anything before
+              install. SITE_URL and the handle in particular are effectively
+              permanent once written. */}
+          {step === 7 && (
+            <div>
+              <div className="mb-6">
+                <p className="text-xs font-semibold text-accent-400 uppercase tracking-wider mb-1">Step 6 of 6</p>
+                <h2 className="text-2xl font-bold text-white font-display">Review &amp; confirm</h2>
+                <p className="text-gray-500 text-sm mt-1">
+                  Check everything before we write your configuration.
+                </p>
+              </div>
+
+              <div className="rounded-lg bg-surface-800/50 border border-surface-700 p-4 mb-4 text-left">
+                <div className="space-y-3">
+                  {[
+                    ["Site name", siteName || "My FediHome"],
+                    ["Display name", authorName || "Your Name"],
+                    ...(authorTagline ? [["Tagline", authorTagline]] : []),
+                    ["Fediverse handle", `@${fediHandle || "me"}@${siteUrlHost || domain}`],
+                    ...(contactEmail ? [["Contact email", contactEmail]] : []),
+                    ["Public site address", siteUrl || "—"],
+                    ["Federation domain", siteUrlHost || "—"],
+                    ["Theme", theme],
+                    ["Feed layout", feedLayout || "Theme default"],
+                    ["Header layout", headerLayout || "Theme default"],
+                    ["Footer layout", footerLayout || "Theme default"],
+                  ].map(([label, value], i) => (
+                    <div key={label as string}>
+                      {i > 0 && <div className="divider mb-3" />}
+                      <div className="flex justify-between gap-4 text-sm">
+                        <span className="text-gray-500 shrink-0">{label}</span>
+                        <span className="text-white font-medium text-right break-all">{value}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {siteUrlWarning && (
+                <div className="rounded-lg bg-amber-950/30 border border-amber-800/40 p-3 mb-4">
+                  <p className="text-amber-400 text-sm">⚠️ {siteUrlWarning}</p>
+                  <p className="text-amber-500/70 text-xs mt-1">
+                    Go back to Your Identity to change the public site address.
+                  </p>
+                </div>
+              )}
+
               {error && (
                 <div className="rounded-lg bg-red-950/30 border border-red-800/40 p-3 mb-4">
                   <p className="text-red-400 text-sm">{error}</p>
@@ -548,22 +661,23 @@ export default function SetupWizard() {
               )}
 
               <div className="flex justify-between">
-                <button onClick={prev} className="btn-outlined cursor-pointer">Back</button>
+                <button onClick={prev} disabled={isSubmitting} className="btn-outlined cursor-pointer">Back</button>
                 <button
                   onClick={handleComplete}
-                  disabled={!savedPassword || isSubmitting}
+                  disabled={isSubmitting || !siteUrl.trim()}
+                  title={!siteUrl.trim() ? "Set your public site address on the Your Identity step" : undefined}
                   className={`btn-primary cursor-pointer ${
-                    !savedPassword || isSubmitting ? "opacity-40 cursor-not-allowed" : ""
+                    isSubmitting || !siteUrl.trim() ? "opacity-40 cursor-not-allowed" : ""
                   }`}
                 >
-                  {isSubmitting ? "Setting up..." : "Complete Setup"}
+                  {isSubmitting ? "Setting up..." : "Confirm & install"}
                 </button>
               </div>
             </div>
           )}
 
-          {/* Step 6: Complete */}
-          {step === 7 && (
+          {/* Step 8: Complete */}
+          {step === 8 && (
             <div className="text-center">
               <div className="mb-6">
                 <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-moss-500/15 border border-moss-500/25 mb-4">
@@ -589,7 +703,7 @@ export default function SetupWizard() {
                   <div className="divider" />
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-500">Fediverse Handle</span>
-                    <span className="text-accent-400 font-mono">@{fediHandle || "me"}@{domain}</span>
+                    <span className="text-accent-400 font-mono">@{fediHandle || "me"}@{siteUrlHost || domain}</span>
                   </div>
                   <div className="divider" />
                   <div className="flex justify-between text-sm">
