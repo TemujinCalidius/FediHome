@@ -49,12 +49,16 @@ export interface ThemeTokens {
 export type FeedVariant = "cards" | "list";
 /** How the site header renders: the default top `bar`, a `centered` masthead, or a `minimal` name+menu. */
 export type HeaderVariant = "bar" | "centered" | "minimal";
+/** How the site footer renders: the default 3-region `row`, a one-line `minimal`, or a `columns` sitemap. */
+export type FooterVariant = "row" | "minimal" | "columns";
 
 export interface LayoutConfig {
   /** How the home/blog feed renders its posts. */
   feed: FeedVariant;
   /** How the site header renders across every page. */
   header: HeaderVariant;
+  /** How the site footer renders across every page. */
+  footer: FooterVariant;
 }
 
 export interface Theme {

@@ -1,4 +1,4 @@
-import type { FeedVariant, HeaderVariant, LayoutConfig } from "./types";
+import type { FeedVariant, HeaderVariant, FooterVariant, LayoutConfig } from "./types";
 import { resolveTheme } from "./registry";
 
 /**
@@ -29,16 +29,29 @@ export const LAYOUT_REGIONS = {
       minimal: "Just your site name and a menu button — the leanest header.",
     } as Record<HeaderVariant, string>,
   },
+  footer: {
+    label: "Footer",
+    variants: ["row", "minimal", "columns"] as FooterVariant[],
+    describe: {
+      row: "Credit, badges and links across one row. The default.",
+      minimal: "A single quiet line — credit, handle and feed.",
+      columns: "A sitemap footer — sections, connect links and credit in columns.",
+    } as Record<FooterVariant, string>,
+  },
 } as const;
 
 export const FEED_VARIANTS = LAYOUT_REGIONS.feed.variants;
 export const HEADER_VARIANTS = LAYOUT_REGIONS.header.variants;
+export const FOOTER_VARIANTS = LAYOUT_REGIONS.footer.variants;
 
 export function isFeedVariant(v: string): v is FeedVariant {
   return (FEED_VARIANTS as readonly string[]).includes(v);
 }
 export function isHeaderVariant(v: string): v is HeaderVariant {
   return (HEADER_VARIANTS as readonly string[]).includes(v);
+}
+export function isFooterVariant(v: string): v is FooterVariant {
+  return (FOOTER_VARIANTS as readonly string[]).includes(v);
 }
 
 /**
@@ -55,5 +68,6 @@ export function resolveLayout(
   return {
     feed: isFeedVariant(overrides.feed ?? "") ? (overrides.feed as FeedVariant) : base.feed,
     header: isHeaderVariant(overrides.header ?? "") ? (overrides.header as HeaderVariant) : base.header,
+    footer: isFooterVariant(overrides.footer ?? "") ? (overrides.footer as FooterVariant) : base.footer,
   };
 }

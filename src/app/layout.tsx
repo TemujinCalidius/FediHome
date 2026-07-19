@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import SiteHeader from "@/components/layout/SiteHeader";
-import Footer from "@/components/layout/Footer";
+import SiteFooter from "@/components/layout/SiteFooter";
 import ScrollToTop from "@/components/ui/ScrollToTop";
 import PullToRefresh from "@/components/ui/PullToRefresh";
 import Tinylytics from "@/components/analytics/Tinylytics";
@@ -87,6 +87,8 @@ export default async function RootLayout({
   // identically.
   const accent = resolveAccent(site.theme.id, profile);
   const themeStyle = buildThemeStyle(site.theme.id, accent);
+  // The active layout variant per region (#250): theme preset + owner override.
+  const layout = resolveLayout(site.theme.id, site.layout);
   // Resolve the collecting-embed code (#288): the embed needs the site's `uid`,
   // not the numeric id (which 404s + silently collects nothing). Cached.
   const analyticsCode = await resolveTinylyticsEmbed(site.analytics);
@@ -103,9 +105,9 @@ export default async function RootLayout({
       </head>
       <body className="bg-surface-950 text-gray-200 min-h-screen flex flex-col font-body">
         <PullToRefresh />
-        <SiteHeader variant={resolveLayout(site.theme.id, site.layout).header} />
+        <SiteHeader variant={layout.header} />
         <main className="flex-1">{children}</main>
-        <Footer />
+        <SiteFooter variant={layout.footer} />
         <ScrollToTop />
         <Tinylytics siteCode={analyticsCode ?? ""} />
       </body>

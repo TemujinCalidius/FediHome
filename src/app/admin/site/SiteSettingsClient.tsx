@@ -197,6 +197,7 @@ export default function SiteSettingsClient({
       // preset (e.g. Editorial's list) from ever applying.
       "layout.feed": cfg.layout.feed,
       "layout.header": cfg.layout.header,
+      "layout.footer": cfg.layout.footer,
       "contact.email": cfg.contact.email,
       "podcast.title": cfg.podcast.title,
       "podcast.author": cfg.podcast.author,
@@ -227,7 +228,7 @@ export default function SiteSettingsClient({
         "footer.webringUrl", "footer.webringLabel", "footer.badgeSrc", "footer.badgeHref",
         "footer.badgeAlt", "footer.fundingUrl", "footer.fundingLabel",
         "download.macos.enabled", "download.macos.releaseUrl", "download.macos.appStoreUrl",
-        "theme.id", "layout.feed", "layout.header", "contact.email",
+        "theme.id", "layout.feed", "layout.header", "layout.footer", "contact.email",
         "podcast.title", "podcast.author", "podcast.description", "podcast.email", "podcast.image",
         "categories.photos", "categories.videos", "categories.audio",
         "analytics.siteId", "analytics.embedId",
@@ -388,6 +389,18 @@ export default function SiteSettingsClient({
             ],
             (v) => setLayout({ header: v }),
             "How the header renders across every page. Each theme picks a default; override it here.",
+          )}
+          {select(
+            "Footer layout",
+            cfg.layout.footer,
+            [
+              { value: "", label: "Inherit from theme" },
+              { value: "row", label: "Row — credit, badges and links in one row" },
+              { value: "minimal", label: "Minimal — a single quiet line" },
+              { value: "columns", label: "Columns — a sitemap footer" },
+            ],
+            (v) => setLayout({ footer: v }),
+            "How the footer renders across every page. Each theme picks a default; override it here.",
           )}
         </>)}
 

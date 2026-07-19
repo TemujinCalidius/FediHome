@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   deriveAccentScale, resolveTheme, isThemeId, buildThemeStyle, resolveAccent, DEFAULT_ACCENT, DEFAULT_THEME,
-  isFeedVariant, isHeaderVariant, resolveLayout, FEED_VARIANTS, HEADER_VARIANTS, THEMES,
+  isFeedVariant, isHeaderVariant, isFooterVariant, resolveLayout,
+  FEED_VARIANTS, HEADER_VARIANTS, FOOTER_VARIANTS, THEMES,
 } from "@/lib/themes";
 
 const sum = (hex: string) => {
@@ -216,6 +217,32 @@ describe("resolveLayout / isHeaderVariant (#250 Phase 4 — header region)", () 
 
   it("resolves feed and header independently", () => {
     const r = resolveLayout("default", { feed: "list", header: "minimal" });
-    expect(r).toEqual({ feed: "list", header: "minimal" });
+    expect(r).toMatchObject({ feed: "list", header: "minimal" });
+  });
+});
+
+describe("resolveLayout / isFooterVariant (#250 — footer region)", () => {
+  it("isFooterVariant only accepts known footer variants", () => {
+    for (const v of FOOTER_VARIANTS) expect(isFooterVariant(v)).toBe(true);
+    expect(isFooterVariant("sidebar")).toBe(false); // not a footer variant
+    expect(isFooterVariant("")).toBe(false);
+  });
+
+  it("both built-in themes default to the row footer (existing instances unchanged)", () => {
+    expect(resolveLayout("default", {}).footer).toBe("row");
+    expect(resolveLayout("editorial", {}).footer).toBe("row");
+    expect(resolveLayout("unknown-theme", {}).footer).toBe("row"); // resolves to default theme
+  });
+
+  it("a known override wins; empty or bad values fall back to the theme default", () => {
+    expect(resolveLayout("default", { footer: "minimal" }).footer).toBe("minimal");
+    expect(resolveLayout("default", { footer: "columns" }).footer).toBe("columns");
+    expect(resolveLayout("default", { footer: "" }).footer).toBe("row"); // inherit
+    expect(resolveLayout("default", { footer: "nonsense" }).footer).toBe("row"); // stale/unknown → default
+  });
+
+  it("resolves all three regions independently", () => {
+    expect(resolveLayout("default", { feed: "list", header: "minimal", footer: "columns" }))
+      .toEqual({ feed: "list", header: "minimal", footer: "columns" });
   });
 });
