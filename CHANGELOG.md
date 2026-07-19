@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- **Themeable header layout** (#250) — the header is now a swappable **layout region** like the feed, with three variants: **Bar** (the default sticky top bar), **Centered** (a masthead — site name over a centered nav row), and **Minimal** (just your name + a menu button). Pick it per site in **Admin → Site settings → Appearance → Header layout** or during first-run setup, or let each theme choose its own. Default instances are unchanged (both built-in themes use Bar). This is the first non-feed region on the region×variant contract — the groundwork the upcoming sidebar/"Classic Blog" shell builds on.
 - **Set your Tinylytics API key from the web admin** (#59) — **Admin → Site settings → Analytics** now takes the analytics **API key**, not just the site id, so the in-app **dashboard, kudos and leaderboard** work with no `.env` editing or restart. The key is **stored AES-256-GCM-encrypted at rest** (same `secret-box` used for crosspost credentials — a DB leak alone can't reveal it) and is never returned to the browser; a saved key/id takes precedence over the `TINYLYTICS_*` env vars, which still work as a fallback. Setting the key also finishes the site-id story: the dashboard now honours a **web-set** site id, not only the env var.
 
 ## 1.17.0 (2026-07-19)

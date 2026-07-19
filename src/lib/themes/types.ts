@@ -41,16 +41,20 @@ export interface ThemeTokens {
 }
 
 /**
- * Layout regions (#250, Phase 3). Each region of the page picks one variant from
- * a curated catalogue — that's what makes layout swappable without arbitrary
- * markup. Today only `feed` is wired (cards ↔ list); header/shell/post/footer
- * land in later phases behind the same dispatch pattern.
+ * Layout regions (#250). Each region of the page picks one variant from a
+ * curated catalogue — that's what makes layout swappable without arbitrary
+ * markup. `feed` (Phase 3) and `header` (Phase 4) are wired; shell/post/footer
+ * join later behind the same dispatch pattern.
  */
 export type FeedVariant = "cards" | "list";
+/** How the site header renders: the default top `bar`, a `centered` masthead, or a `minimal` name+menu. */
+export type HeaderVariant = "bar" | "centered" | "minimal";
 
 export interface LayoutConfig {
   /** How the home/blog feed renders its posts. */
   feed: FeedVariant;
+  /** How the site header renders across every page. */
+  header: HeaderVariant;
 }
 
 export interface Theme {

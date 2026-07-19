@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
-import Navbar from "@/components/layout/Navbar";
+import SiteHeader from "@/components/layout/SiteHeader";
 import Footer from "@/components/layout/Footer";
 import ScrollToTop from "@/components/ui/ScrollToTop";
 import PullToRefresh from "@/components/ui/PullToRefresh";
@@ -9,7 +9,7 @@ import { resolveTinylyticsEmbed } from "@/lib/tinylytics";
 import { siteConfig } from "@/../site.config";
 import { getRuntimeSiteConfig } from "@/lib/site-settings";
 import { getRuntimeProfile } from "@/lib/site-profile";
-import { buildThemeStyle, resolveTheme, resolveAccent } from "@/lib/themes";
+import { buildThemeStyle, resolveTheme, resolveAccent, resolveLayout } from "@/lib/themes";
 
 export async function generateMetadata(): Promise<Metadata> {
   const [site, profile] = await Promise.all([getRuntimeSiteConfig(), getRuntimeProfile()]);
@@ -103,7 +103,7 @@ export default async function RootLayout({
       </head>
       <body className="bg-surface-950 text-gray-200 min-h-screen flex flex-col font-body">
         <PullToRefresh />
-        <Navbar />
+        <SiteHeader variant={resolveLayout(site.theme.id, site.layout).header} />
         <main className="flex-1">{children}</main>
         <Footer />
         <ScrollToTop />
