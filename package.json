@@ -1,6 +1,6 @@
 {
   "name": "fedihome",
-  "version": "1.16.0",
+  "version": "1.17.0",
   "description": "Your home on the Fediverse — self-hosted publishing for blog, photos, and federated social.",
   "main": "index.js",
   "scripts": {
