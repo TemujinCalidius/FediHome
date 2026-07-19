@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.17.0 (2026-07-19)
 
 ### Fixed
 - **Tinylytics collected zero pageviews when only the numeric site id was set** (#288) — the on-page tracking embed needs the site's `uid` (embed code), but it was built from the numeric `TINYLYTICS_SITE_ID`, so `…/embed/3461.js` 404'd and **nothing was ever collected** — silently, while the dashboard (which correctly uses the numeric id) looked fine. Now the embed's `uid` is **derived from the API automatically** (with an API key set), so collection just works from the site id alone; Site settings → Analytics shows whether pageviews are actually being collected, and warns if not. `TINYLYTICS_EMBED_ID` still works as an explicit override. The build-time uid lookup is also hardened (longer timeout + a retry, so parallel `next build` workers don't race it) and its log no longer alarmingly claims "not being collected" during a build when runtime collection is fine.
