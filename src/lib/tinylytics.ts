@@ -3,14 +3,38 @@
  * API key never exposed to the browser.
  */
 
+import { getTinylyticsApiKey } from "./analytics-secret";
+import { getRuntimeSiteConfig } from "./site-settings";
+
 const API_BASE = "https://tinylytics.app/api/v1";
-const API_KEY = process.env.TINYLYTICS_API_KEY;
-const SITE_ID = process.env.TINYLYTICS_SITE_ID;
+
+/**
+ * Resolve the API credentials at RUNTIME (#59): the encrypted-at-rest key set in
+ * the admin panel (or the `TINYLYTICS_API_KEY` env fallback), plus the site id
+ * from the web-set analytics config (or the `TINYLYTICS_SITE_ID` env fallback).
+ * Returns null unless both are present — so the dashboard/kudos honour a
+ * web-configured key + id, not just env vars (module-level `process.env` reads
+ * would have baked the env values in at import and ignored the admin panel).
+ */
+async function apiCreds(): Promise<{ apiKey: string; siteId: string } | null> {
+  const apiKey = await getTinylyticsApiKey();
+  if (!apiKey) return null;
+  let siteId: string | undefined;
+  try {
+    siteId = (await getRuntimeSiteConfig()).analytics.siteId?.trim() || undefined;
+  } catch {
+    /* DB down → env fallback below */
+  }
+  siteId = siteId || process.env.TINYLYTICS_SITE_ID || undefined;
+  if (!siteId) return null;
+  return { apiKey, siteId };
+}
 
 async function tlFetch(endpoint: string): Promise<unknown> {
-  if (!API_KEY || !SITE_ID) return null;
-  const res = await fetch(`${API_BASE}/sites/${SITE_ID}${endpoint}`, {
-    headers: { Authorization: `Bearer ${API_KEY}` },
+  const creds = await apiCreds();
+  if (!creds) return null;
+  const res = await fetch(`${API_BASE}/sites/${creds.siteId}${endpoint}`, {
+    headers: { Authorization: `Bearer ${creds.apiKey}` },
     next: { revalidate: 300 }, // cache 5 minutes
   });
   if (!res.ok) return null;
@@ -19,9 +43,10 @@ async function tlFetch(endpoint: string): Promise<unknown> {
 
 /** Total lifetime hits for the site */
 export async function getSiteStats(): Promise<{ totalHits: number; totalKudos: number } | null> {
-  if (!API_KEY || !SITE_ID) return null;
-  const res = await fetch(`${API_BASE}/sites/${SITE_ID}`, {
-    headers: { Authorization: `Bearer ${API_KEY}` },
+  const creds = await apiCreds();
+  if (!creds) return null;
+  const res = await fetch(`${API_BASE}/sites/${creds.siteId}`, {
+    headers: { Authorization: `Bearer ${creds.apiKey}` },
     next: { revalidate: 300 },
   });
   if (!res.ok) return null;
@@ -50,11 +75,12 @@ export async function getLeaderboard(limit = 10): Promise<{ path: string; hits: 
 
 /** Send a kudos for a path */
 export async function createKudos(path: string): Promise<boolean> {
-  if (!API_KEY || !SITE_ID) return false;
-  const res = await fetch(`${API_BASE}/sites/${SITE_ID}/kudos`, {
+  const creds = await apiCreds();
+  if (!creds) return false;
+  const res = await fetch(`${API_BASE}/sites/${creds.siteId}/kudos`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${API_KEY}`,
+      Authorization: `Bearer ${creds.apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ path }),
@@ -69,9 +95,9 @@ export async function getKudosForPath(path: string): Promise<number> {
   return data.pagination.total_count;
 }
 
-/** Check if Tinylytics is configured */
-export function isTinylyticsConfigured(): boolean {
-  return !!(process.env.TINYLYTICS_API_KEY && process.env.TINYLYTICS_SITE_ID);
+/** Whether the API reads (dashboard/kudos/leaderboard) are configured — key + site id from any source. */
+export async function isTinylyticsConfigured(): Promise<boolean> {
+  return !!(await apiCreds());
 }
 
 /* --- Collecting-embed code resolution (#288) ------------------------------- */
@@ -96,7 +122,7 @@ export async function getSiteUid(siteId: string): Promise<string | null> {
   const hit = uidCache.get(siteId);
   if (hit && Date.now() - hit.at < (hit.uid ? UID_OK_TTL : UID_FAIL_TTL)) return hit.uid;
 
-  const apiKey = process.env.TINYLYTICS_API_KEY;
+  const apiKey = await getTinylyticsApiKey();
   if (!apiKey) return null; // can't derive without the API key — caller warns/surfaces
 
   // `next build` renders across parallel workers, each with a COLD cache, so a

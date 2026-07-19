@@ -134,7 +134,7 @@ export default async function TimelinePage() {
   }
 
   // Fetch analytics data (if Tinylytics is configured)
-  const analyticsData = isTinylyticsConfigured()
+  const analyticsData = (await isTinylyticsConfigured())
     ? {
         stats: await getSiteStats(),
         leaderboard: await getLeaderboard(15),

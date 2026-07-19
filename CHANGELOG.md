@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **Set your Tinylytics API key from the web admin** (#59) — **Admin → Site settings → Analytics** now takes the analytics **API key**, not just the site id, so the in-app **dashboard, kudos and leaderboard** work with no `.env` editing or restart. The key is **stored AES-256-GCM-encrypted at rest** (same `secret-box` used for crosspost credentials — a DB leak alone can't reveal it) and is never returned to the browser; a saved key/id takes precedence over the `TINYLYTICS_*` env vars, which still work as a fallback. Setting the key also finishes the site-id story: the dashboard now honours a **web-set** site id, not only the env var.
+
 ## 1.17.0 (2026-07-19)
 
 ### Fixed

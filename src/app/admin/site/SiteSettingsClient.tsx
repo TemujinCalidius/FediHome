@@ -26,12 +26,16 @@ export default function SiteSettingsClient({
   overrides,
   accent,
   analyticsStatus,
+  analyticsKey,
+  encryptionAvailable,
 }: {
   defaults: RuntimeSiteConfig;
   effective: RuntimeSiteConfig;
   overrides: Record<string, string>;
   accent: { accentColor: string; themeAccents: Record<string, string> };
   analyticsStatus: { embedCode: string | null; unresolved: boolean };
+  analyticsKey: { configured: boolean; source: "db" | "env" | null };
+  encryptionAvailable: boolean;
 }) {
   const [cfg, setCfg] = useState<RuntimeSiteConfig>(effective);
   const [saving, setSaving] = useState(false);
@@ -39,6 +43,36 @@ export default function SiteSettingsClient({
   const [hasOverrides, setHasOverrides] = useState(Object.keys(overrides).length > 0);
   // Live analytics-embed status (#288) — refreshed from each save response.
   const [analyticsStat, setAnalyticsStat] = useState(analyticsStatus);
+  // Encrypted Tinylytics API-key status (#59) — its own route (the key is a
+  // secret, never round-tripped through the plaintext site-config save).
+  const [keyStatus, setKeyStatus] = useState(analyticsKey);
+  const [keyInput, setKeyInput] = useState("");
+  const [keyBusy, setKeyBusy] = useState(false);
+
+  /** Set or clear the encrypted API key via the dedicated route (never echoes the key). */
+  async function postAnalyticsKey(payload: { apiKey: string } | { clear: true }): Promise<void> {
+    setKeyBusy(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/admin/analytics-key", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setResult({ ok: false, msg: data.error || "Couldn't save the API key." });
+        return;
+      }
+      setKeyStatus(data.status);
+      setKeyInput("");
+      setResult({ ok: true, msg: "clear" in payload ? "API key cleared." : "API key saved — the dashboard applies within a minute." });
+    } catch {
+      setResult({ ok: false, msg: "Couldn't save the API key." });
+    } finally {
+      setKeyBusy(false);
+    }
+  }
 
   // Per-theme accent (#276). Mirrors the server's resolveAccent; the accent
   // editor below is bound to the currently-selected theme (cfg.theme.id).
@@ -403,17 +437,58 @@ export default function SiteSettingsClient({
 
         {section("Analytics", <>
           <p className="text-xs text-gray-600 m-0">
-            Privacy-friendly <a href="https://tinylytics.app" target="_blank" rel="noopener noreferrer" className="text-accent-400 hover:underline">Tinylytics</a> page-view tracking. Enter your numeric site id — the tracking embed code is derived from it automatically when an API key is set. (The in-app dashboard also needs the API key, still set via env.)
+            Privacy-friendly <a href="https://tinylytics.app" target="_blank" rel="noopener noreferrer" className="text-accent-400 hover:underline">Tinylytics</a> page-view tracking. Enter your numeric site id — the tracking embed code is derived from it automatically when an API key is set. Add your API key below to auto-derive the embed <em>and</em> unlock the in-app dashboard, kudos and leaderboard.
           </p>
           {analyticsStat.embedCode ? (
             <p className="text-xs text-green-400 m-0">✓ Collecting pageviews — embed <code className="text-green-300">{analyticsStat.embedCode}</code>.</p>
           ) : analyticsStat.unresolved ? (
             <p className="text-xs text-amber-400 m-0">
-              ⚠️ Analytics is set but <strong>no pageviews are being collected</strong> — the embed code couldn&apos;t be resolved from your site id. Set <code>TINYLYTICS_API_KEY</code> (so the embed code auto-derives), or paste your embed code (uid) below.
+              ⚠️ Analytics is set but <strong>no pageviews are being collected</strong> — the embed code couldn&apos;t be resolved from your site id. Add your API key below (so the embed code auto-derives), or paste your embed code (uid) below.
             </p>
           ) : null}
           {text("Tinylytics site id (numeric)", cfg.analytics.siteId, (v) => setAnalytics({ siteId: v }), "e.g. 3461")}
           {text("Embed code / uid (optional override)", cfg.analytics.embedId, (v) => setAnalytics({ embedId: v }), "only needed without an API key — the uid, not the numeric id")}
+
+          {/* API key (#59) — encrypted at rest, its own route (secret, never echoed). */}
+          <label className="flex flex-col gap-1 text-xs text-gray-400">
+            <span>Tinylytics API key {keyStatus.configured && (
+              <span className="text-green-400">· configured{keyStatus.source === "env" ? " (from env)" : ""}</span>
+            )}</span>
+            <input
+              type="password"
+              value={keyInput}
+              placeholder={keyStatus.configured ? "•••••••• (saved — enter a new key to replace)" : "paste your Tinylytics API key"}
+              onChange={(e) => setKeyInput(e.target.value)}
+              autoComplete="off"
+              disabled={!encryptionAvailable}
+              className="bg-surface-800 border border-surface-700 rounded-md px-2 py-1.5 text-sm text-white disabled:opacity-50"
+            />
+            {!encryptionAvailable ? (
+              <span className="text-amber-400">Set <code>ADMIN_SECRET</code> to store the key encrypted at rest.</span>
+            ) : (
+              <span className="text-gray-600">Stored AES-256-GCM-encrypted; never shown again after saving.</span>
+            )}
+          </label>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => postAnalyticsKey({ apiKey: keyInput })}
+              disabled={keyBusy || !encryptionAvailable || !keyInput.trim()}
+              className="btn-primary text-xs disabled:opacity-50"
+            >
+              {keyBusy ? "Saving…" : "Save API key"}
+            </button>
+            {keyStatus.source === "db" && (
+              <button
+                type="button"
+                onClick={() => postAnalyticsKey({ clear: true })}
+                disabled={keyBusy}
+                className="text-xs text-gray-400 hover:text-white underline disabled:opacity-40"
+              >
+                Clear saved key
+              </button>
+            )}
+          </div>
         </>)}
 
         <div className="flex items-center gap-3 py-4">
