@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   deriveAccentScale, resolveTheme, isThemeId, buildThemeStyle, resolveAccent, DEFAULT_ACCENT, DEFAULT_THEME,
-  isFeedVariant, isHeaderVariant, isFooterVariant, resolveLayout,
-  FEED_VARIANTS, HEADER_VARIANTS, FOOTER_VARIANTS, THEMES,
+  isFeedVariant, isHeaderVariant, isFooterVariant, isShellVariant, resolveLayout,
+  FEED_VARIANTS, HEADER_VARIANTS, FOOTER_VARIANTS, SHELL_VARIANTS, THEMES,
 } from "@/lib/themes";
 
 const sum = (hex: string) => {
@@ -241,8 +241,34 @@ describe("resolveLayout / isFooterVariant (#250 — footer region)", () => {
     expect(resolveLayout("default", { footer: "nonsense" }).footer).toBe("row"); // stale/unknown → default
   });
 
-  it("resolves all three regions independently", () => {
+  it("resolves feed, header and footer independently", () => {
     expect(resolveLayout("default", { feed: "list", header: "minimal", footer: "columns" }))
-      .toEqual({ feed: "list", header: "minimal", footer: "columns" });
+      .toMatchObject({ feed: "list", header: "minimal", footer: "columns" });
+  });
+});
+
+describe("resolveLayout / isShellVariant (#250 — public shell region)", () => {
+  it("isShellVariant only accepts known shell variants", () => {
+    for (const v of SHELL_VARIANTS) expect(isShellVariant(v)).toBe(true);
+    expect(isShellVariant("sidebar")).toBe(false); // a later phase
+    expect(isShellVariant("wide")).toBe(false); // a later phase
+    expect(isShellVariant("")).toBe(false);
+  });
+
+  it("both built-in themes default to the normal shell (existing instances unchanged)", () => {
+    expect(resolveLayout("default", {}).shell).toBe("normal");
+    expect(resolveLayout("editorial", {}).shell).toBe("normal");
+    expect(resolveLayout("unknown-theme", {}).shell).toBe("normal");
+  });
+
+  it("a known override wins; empty or bad values fall back to the theme default", () => {
+    expect(resolveLayout("default", { shell: "narrow" }).shell).toBe("narrow");
+    expect(resolveLayout("default", { shell: "" }).shell).toBe("normal"); // inherit
+    expect(resolveLayout("default", { shell: "sidebar" }).shell).toBe("normal"); // not built yet → default
+  });
+
+  it("resolves all four regions independently", () => {
+    expect(resolveLayout("default", { feed: "list", header: "minimal", footer: "columns", shell: "narrow" }))
+      .toEqual({ feed: "list", header: "minimal", footer: "columns", shell: "narrow" });
   });
 });

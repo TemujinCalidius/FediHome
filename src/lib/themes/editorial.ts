@@ -67,5 +67,5 @@ export const EDITORIAL_THEME: Theme = {
   },
   // Reading-first: the compact index, not glass cards. An owner can still
   // override this per-region from Site settings.
-  layout: { feed: "list", header: "bar", footer: "row" },
+  layout: { feed: "list", header: "bar", footer: "row", shell: "normal" },
 };

@@ -1,6 +1,6 @@
 import { prisma } from "./db";
 import { siteConfig } from "@/../site.config";
-import { isThemeId, isFeedVariant, isHeaderVariant, isFooterVariant } from "./themes";
+import { isThemeId, isFeedVariant, isHeaderVariant, isFooterVariant, isShellVariant } from "./themes";
 import { parseCategoryList, resolveCategoryList, MAX_CATEGORIES } from "./categories";
 
 const SLUG = /^[a-z0-9-]+$/;
@@ -52,6 +52,7 @@ export const SITE_CONFIG_FIELDS: Record<string, FieldType> = {
   "layout.feed": "text", // "" (inherit theme) or a known feed variant (see validateSiteConfigValue)
   "layout.header": "text", // "" (inherit theme) or a known header variant (see validateSiteConfigValue)
   "layout.footer": "text", // "" (inherit theme) or a known footer variant (see validateSiteConfigValue)
+  "layout.shell": "text", // "" (inherit theme) or a known shell variant (see validateSiteConfigValue)
   "contact.email": "text",
   "podcast.title": "text",
   "podcast.author": "text",
@@ -84,7 +85,7 @@ export interface RuntimeSiteConfig {
   };
   download: { macosEnabled: boolean; macosReleaseUrl: string; macosAppStoreUrl: string };
   theme: { id: string };
-  layout: { feed: string; header: string; footer: string };
+  layout: { feed: string; header: string; footer: string; shell: string };
   contact: { email: string };
   // /audio podcast feed overrides — empty means "derive from your profile".
   podcast: { title: string; author: string; description: string; email: string; image: string };
@@ -189,6 +190,7 @@ export async function getRuntimeSiteConfig(): Promise<RuntimeSiteConfig> {
         feed: textOverride(o["layout.feed"], base.layout.feed),
         header: textOverride(o["layout.header"], base.layout.header),
         footer: textOverride(o["layout.footer"], base.layout.footer),
+        shell: textOverride(o["layout.shell"], base.layout.shell),
       },
       contact: { email: textOverride(o["contact.email"], base.contact.email) },
       podcast: {
@@ -237,6 +239,7 @@ export function validateSiteConfigValue(key: string, value: string): string | nu
   if (key === "layout.feed") return value === "" || isFeedVariant(value) ? value : null; // "" inherits the theme
   if (key === "layout.header") return value === "" || isHeaderVariant(value) ? value : null; // "" inherits the theme
   if (key === "layout.footer") return value === "" || isFooterVariant(value) ? value : null; // "" inherits the theme
+  if (key === "layout.shell") return value === "" || isShellVariant(value) ? value : null; // "" inherits the theme
   if (key === "categories.photos" || key === "categories.videos" || key === "categories.audio") {
     // "" = built-in defaults. Else comma-separated URL-safe slugs, deduped, capped.
     if (value.trim() === "") return "";
