@@ -40,10 +40,11 @@ export const LAYOUT_REGIONS = {
   },
   shell: {
     label: "Page width",
-    variants: ["normal", "narrow"] as ShellVariant[],
+    variants: ["normal", "narrow", "sidebar"] as ShellVariant[],
     describe: {
       normal: "Each page uses its natural width. The default.",
       narrow: "A tighter reading column across the whole public site.",
+      sidebar: "Content beside a sidebar — about, recent posts, sections and links.",
     } as Record<ShellVariant, string>,
   },
 } as const;

@@ -250,8 +250,8 @@ describe("resolveLayout / isFooterVariant (#250 — footer region)", () => {
 describe("resolveLayout / isShellVariant (#250 — public shell region)", () => {
   it("isShellVariant only accepts known shell variants", () => {
     for (const v of SHELL_VARIANTS) expect(isShellVariant(v)).toBe(true);
-    expect(isShellVariant("sidebar")).toBe(false); // a later phase
-    expect(isShellVariant("wide")).toBe(false); // a later phase
+    expect(isShellVariant("sidebar")).toBe(true); // shipped — the Classic Blog frame
+    expect(isShellVariant("wide")).toBe(false); // still a later phase
     expect(isShellVariant("")).toBe(false);
   });
 
@@ -263,8 +263,14 @@ describe("resolveLayout / isShellVariant (#250 — public shell region)", () => 
 
   it("a known override wins; empty or bad values fall back to the theme default", () => {
     expect(resolveLayout("default", { shell: "narrow" }).shell).toBe("narrow");
+    expect(resolveLayout("default", { shell: "sidebar" }).shell).toBe("sidebar");
     expect(resolveLayout("default", { shell: "" }).shell).toBe("normal"); // inherit
-    expect(resolveLayout("default", { shell: "sidebar" }).shell).toBe("normal"); // not built yet → default
+    expect(resolveLayout("default", { shell: "wide" }).shell).toBe("normal"); // not built yet → default
+  });
+
+  it("neither built-in theme opts into the sidebar (owner opt-in only)", () => {
+    expect(resolveLayout("default", {}).shell).toBe("normal");
+    expect(resolveLayout("editorial", {}).shell).toBe("normal");
   });
 
   it("resolves all four regions independently", () => {

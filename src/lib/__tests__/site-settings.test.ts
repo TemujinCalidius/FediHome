@@ -187,8 +187,8 @@ describe("validateSiteConfigValue (#59)", () => {
     expect(validateSiteConfigValue("layout.shell", "normal")).toBe("normal");
     expect(validateSiteConfigValue("layout.shell", "narrow")).toBe("narrow");
     expect(validateSiteConfigValue("layout.shell", "")).toBe(""); // inherit the theme default
-    expect(validateSiteConfigValue("layout.shell", "sidebar")).toBeNull(); // a later phase
-    expect(validateSiteConfigValue("layout.shell", "wide")).toBeNull(); // a later phase
+    expect(validateSiteConfigValue("layout.shell", "sidebar")).toBe("sidebar");
+    expect(validateSiteConfigValue("layout.shell", "wide")).toBeNull(); // still a later phase
   });
   it("categories.* accepts comma-separated slugs (normalized), empty = defaults, rejects non-slugs (#284)", () => {
     expect(validateSiteConfigValue("categories.photos", "Wildlife, macro , wildlife")).toBe("wildlife,macro"); // lowercased, deduped

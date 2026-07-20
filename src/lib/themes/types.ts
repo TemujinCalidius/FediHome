@@ -52,11 +52,12 @@ export type HeaderVariant = "bar" | "centered" | "minimal";
 /** How the site footer renders: the default 3-region `row`, a one-line `minimal`, or a `columns` sitemap. */
 export type FooterVariant = "row" | "minimal" | "columns";
 /**
- * The public page frame: `normal` (each page keeps its own width — today's look)
- * or `narrow` (a tighter reading column). `sidebar`/`wide` join here in a later
- * phase — see the region table in #250.
+ * The public page frame: `normal` (each page keeps its own width — today's
+ * look), `narrow` (a tighter reading column), or `sidebar` (content beside a
+ * column of about/recent/sections/connect blocks — what the Classic Blog theme
+ * is built on). `wide` joins in a later phase — see the region table in #250.
  */
-export type ShellVariant = "normal" | "narrow";
+export type ShellVariant = "normal" | "narrow" | "sidebar";
 
 export interface LayoutConfig {
   /** How the home/blog feed renders its posts. */
