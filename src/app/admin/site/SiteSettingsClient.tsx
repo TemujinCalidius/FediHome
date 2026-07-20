@@ -28,6 +28,8 @@ export default function SiteSettingsClient({
   analyticsStatus,
   analyticsKey,
   encryptionAvailable,
+  profile,
+  profileDefaults,
 }: {
   defaults: RuntimeSiteConfig;
   effective: RuntimeSiteConfig;
@@ -36,6 +38,11 @@ export default function SiteSettingsClient({
   analyticsStatus: { embedCode: string | null; unresolved: boolean };
   analyticsKey: { configured: boolean; source: "db" | "env" | null };
   encryptionAvailable: boolean;
+  profile: {
+    authorName: string; authorTagline: string; authorBio: string;
+    actorSummary: string; avatarPath: string; bannerPath: string;
+  };
+  profileDefaults: { avatarPath: string; bannerPath: string };
 }) {
   const [cfg, setCfg] = useState<RuntimeSiteConfig>(effective);
   const [saving, setSaving] = useState(false);
@@ -48,6 +55,74 @@ export default function SiteSettingsClient({
   const [keyStatus, setKeyStatus] = useState(analyticsKey);
   const [keyInput, setKeyInput] = useState("");
   const [keyBusy, setKeyBusy] = useState(false);
+
+  /* ---- Profile overlay (#59) — name/tagline/bio/summary + avatar/banner ---- */
+  // Held separately from `cfg` because the profile is a DIFFERENT store (the
+  // SiteSettings overlay behind the AP actor), written via update_profile.
+  const [prof, setProf] = useState(profile);
+  const [savedProf, setSavedProf] = useState(profile); // last known-persisted values
+  const [uploading, setUploading] = useState<"avatar" | "banner" | null>(null);
+  const setProfile = (patch: Partial<typeof profile>) => setProf((p) => ({ ...p, ...patch }));
+
+  /** Upload an image via /api/media (unchanged) and store the returned path. */
+  async function uploadImage(kind: "avatar" | "banner", file: File) {
+    if (file.size > 8 * 1024 * 1024) {
+      setResult({ ok: false, msg: "That image is over 8 MB — please pick a smaller one." });
+      return;
+    }
+    setUploading(kind);
+    setResult(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/media", { method: "POST", body: fd });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        // Surface the real reason — a 403 here usually means you're browsing on
+        // an origin that doesn't match SITE_URL, which trips the CSRF check.
+        setResult({ ok: false, msg: data.error || `Upload failed (${res.status}). If this is a 403, check that you're browsing on your configured SITE_URL.` });
+        return;
+      }
+      setProfile(kind === "avatar" ? { avatarPath: data.url } : { bannerPath: data.url });
+      setResult({ ok: true, msg: "Image uploaded — press Save to apply it." });
+    } catch {
+      setResult({ ok: false, msg: "Upload failed." });
+    } finally {
+      setUploading(null);
+    }
+  }
+
+  /**
+   * Persist ONLY changed profile fields. The dirty-diff is load-bearing, not an
+   * optimisation: updateProfile federates an actor `Update` to every follower
+   * whenever a federated key is merely PRESENT in the body (not when its value
+   * differs), so sending the whole profile on each save would spam followers on
+   * every settings save (#276's lesson, new call site).
+   */
+  async function saveProfile(): Promise<boolean> {
+    const body: Record<string, string> = {};
+    (Object.keys(prof) as (keyof typeof prof)[]).forEach((k) => {
+      if (prof[k] !== savedProf[k]) body[k] = prof[k];
+    });
+    if (Object.keys(body).length === 0) return true; // nothing changed → no request, no federation
+    try {
+      const res = await fetch("/api/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "update_profile", ...body }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setResult({ ok: false, msg: d.error || "Couldn't save your profile." });
+        return false;
+      }
+      setSavedProf(prof);
+      return true;
+    } catch {
+      setResult({ ok: false, msg: "Couldn't save your profile." });
+      return false;
+    }
+  }
 
   /** Set or clear the encrypted API key via the dedicated route (never echoes the key). */
   async function postAnalyticsKey(payload: { apiKey: string } | { clear: true }): Promise<void> {
@@ -213,10 +288,12 @@ export default function SiteSettingsClient({
     };
     const okConfig = await post(settings);
     const okAccent = await saveAccent(); // separate overlay (profile); no-op if unchanged
+    const okProfile = await saveProfile(); // ditto; dirty-diffed, no-op if unchanged
     if (okConfig) setHasOverrides(true);
-    if (okConfig && !okAccent) {
-      // post() set a success message; correct it if the accent write failed.
-      setResult({ ok: false, msg: "Settings saved, but the accent colour didn't." });
+    if (okConfig && (!okAccent || !okProfile)) {
+      // post() set a success message; correct it if an overlay write failed.
+      const failed = [!okAccent && "the accent colour", !okProfile && "your profile"].filter(Boolean).join(" or ");
+      setResult({ ok: false, msg: `Settings saved, but ${failed} didn't.` });
     }
   };
 
@@ -326,6 +403,64 @@ export default function SiteSettingsClient({
           {text("Site name", cfg.name, (v) => set({ name: v }))}
           {text("Description", cfg.description, (v) => set({ description: v }))}
           <p className="text-xs text-gray-600 m-0">Your Fediverse handle and domain are set at install and can&apos;t change here — they&apos;re part of your federated identity.</p>
+        </>)}
+
+        {section("Your profile", <>
+          <p className="text-xs text-gray-600 m-0">
+            You — as shown on <code>/about</code>, in your Fediverse profile, and to apps. Separate from the site
+            name above. Changes to your name, summary, avatar or banner federate an update to your followers.
+          </p>
+          {text("Display name", prof.authorName, (v) => setProfile({ authorName: v }))}
+          {text("Tagline", prof.authorTagline, (v) => setProfile({ authorTagline: v }), "Writer, photographer, maker")}
+          {text("Bio", prof.authorBio, (v) => setProfile({ authorBio: v }), "Shown on your About page")}
+          {text("Fediverse summary", prof.actorSummary, (v) => setProfile({ actorSummary: v }), "Blank = use your bio")}
+
+          {(["avatar", "banner"] as const).map((kind) => {
+            const key = kind === "avatar" ? "avatarPath" : "bannerPath";
+            const current = prof[key];
+            const isDefault = !current || current === profileDefaults[key];
+            return (
+              <div key={kind} className="flex flex-col gap-1 text-xs text-gray-400">
+                <span>{kind === "avatar" ? "Avatar" : "Banner"}</span>
+                <div className="flex items-center gap-3">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={current || profileDefaults[key]}
+                    alt=""
+                    className={`bg-surface-800 border border-surface-700 object-cover ${
+                      kind === "avatar" ? "w-12 h-12 rounded-full" : "w-24 h-12 rounded"
+                    }`}
+                  />
+                  <label className="btn-outlined text-xs cursor-pointer">
+                    {uploading === kind ? "Uploading…" : "Choose image"}
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp,image/gif"
+                      className="hidden"
+                      disabled={uploading !== null}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        e.target.value = ""; // allow re-picking the same file
+                        if (f) void uploadImage(kind, f);
+                      }}
+                    />
+                  </label>
+                  {!isDefault && (
+                    <button
+                      type="button"
+                      onClick={() => setProfile({ [key]: "" } as Partial<typeof profile>)}
+                      className="text-gray-400 hover:text-white underline"
+                    >
+                      Revert to default
+                    </button>
+                  )}
+                </div>
+                <span className="text-gray-600">
+                  {isDefault ? "Using the built-in default." : "Press Save to apply."}
+                </span>
+              </div>
+            );
+          })}
         </>)}
 
         {section("Appearance", <>
