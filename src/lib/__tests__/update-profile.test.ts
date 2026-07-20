@@ -51,6 +51,42 @@ describe("updateProfile (#201)", () => {
     expect(prisma.siteSettings.upsert).not.toHaveBeenCalled();
   });
 
+  it("clears avatar/banner back to the built-in default with \"\" or null (#59)", async () => {
+    // "" is what "use the built-in default" means: site-profile reads
+    // `row.avatarPath || base.avatarPath`, so an empty string reverts to
+    // site.config's /images/avatar.png AND keeps tracking that default.
+    await updateProfile({ avatarPath: "" });
+    expect(vi.mocked(prisma.siteSettings.upsert).mock.calls[0][0].update).toEqual({ avatarPath: "" });
+
+    vi.clearAllMocks();
+    vi.mocked(prisma.siteSettings.upsert).mockResolvedValue({} as never);
+    getActorProfile.mockResolvedValue({ type: "Person" });
+    await updateProfile({ bannerPath: null });
+    expect(vi.mocked(prisma.siteSettings.upsert).mock.calls[0][0].update).toEqual({ bannerPath: "" });
+  });
+
+  it("clearing an image still federates — it changes the actor document (#59)", async () => {
+    await updateProfile({ avatarPath: "" });
+    expect(deliverToFollowers).toHaveBeenCalledTimes(1);
+  });
+
+  it("does NOT federate for local-only fields, so a settings save can't spam followers (#59)", async () => {
+    // The guard is `field in data` (presence, not a value diff), so the admin
+    // panel must dirty-diff. These three are local display only.
+    await updateProfile({ authorBio: "b", authorTagline: "t", accentColor: "#abcdef" });
+    expect(prisma.siteSettings.upsert).toHaveBeenCalled();
+    expect(deliverToFollowers).not.toHaveBeenCalled();
+  });
+
+  it("round-trips bio + summary, rejecting newlines and over-length values", async () => {
+    await updateProfile({ authorBio: "Hello there", actorSummary: "A summary" });
+    expect(vi.mocked(prisma.siteSettings.upsert).mock.calls[0][0].update).toEqual({
+      authorBio: "Hello there", actorSummary: "A summary",
+    });
+    expect((await updateProfile({ authorBio: "line1\nline2" })).status).toBe(400);
+    expect((await updateProfile({ actorSummary: "x".repeat(501) })).status).toBe(400);
+  });
+
   it("accepts an uploaded path and strips our own origin prefix", async () => {
     await updateProfile({ avatarPath: "https://demo.example/uploads/2026/07/me.jpg" });
     expect(vi.mocked(prisma.siteSettings.upsert).mock.calls[0][0].update).toEqual({
