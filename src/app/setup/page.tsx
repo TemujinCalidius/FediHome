@@ -534,6 +534,7 @@ export default function SetupWizard() {
                     <option value="">Theme default</option>
                     <option value="normal">Normal</option>
                     <option value="narrow">Narrow</option>
+                    <option value="sidebar">Sidebar</option>
                   </select>
                 </label>
               </div>

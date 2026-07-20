@@ -410,6 +410,7 @@ export default function SiteSettingsClient({
               { value: "", label: "Inherit from theme" },
               { value: "normal", label: "Normal — each page uses its natural width" },
               { value: "narrow", label: "Narrow — a tighter reading column" },
+              { value: "sidebar", label: "Sidebar — content beside about / recent / links" },
             ],
             (v) => setLayout({ shell: v }),
             "The frame around your public pages (your admin screens are unaffected).",
