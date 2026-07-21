@@ -23,6 +23,30 @@ const ADMIN_SECRET_RE = /^[A-Fa-f0-9]{64,128}$/;
 /** A caller-fixable validation failure — mapped to 400, never a 500. */
 class SetupValidationError extends Error {}
 
+/**
+ * Best-effort "are we inside a container?" check (#308).
+ *
+ * It matters here because the wizard writes `.env.local` to `process.cwd()` —
+ * i.e. INSIDE the container — while docker-compose loads `env_file: .env.local`
+ * from the HOST. They are different files. So on the next restart the container
+ * reads the host copy, which has no ADMIN_SECRET, while `setupDone: true` is
+ * already recorded in Postgres and survives. `/api/setup` then refuses with
+ * "Setup has already been completed" and the owner is locked out of admin.
+ *
+ * We can't fix that from in here — the host file isn't writable from the
+ * container — so the honest move is to tell the operator, loudly, while they
+ * still have the secret on screen.
+ */
+function isContainerised(): boolean {
+  try {
+    if (fs.existsSync("/.dockerenv")) return true;
+    const cgroup = fs.readFileSync("/proc/1/cgroup", "utf-8");
+    return /docker|containerd|kubepods/i.test(cgroup);
+  } catch {
+    return false; // no /proc (macOS/Windows) → assume bare metal
+  }
+}
+
 function validateField(name: string, value: unknown): string {
   if (typeof value !== "string") {
     throw new SetupValidationError(`${name} must be a string`);
@@ -250,7 +274,19 @@ export async function POST(request: Request) {
       if (!applied.ok) console.warn("Setup: skipped invalid site config:", applied.error);
     }
 
-    const response = NextResponse.json({ success: true });
+    // In a container the .env.local we just wrote is NOT the file compose reads
+    // on the next start (#308) — surface that while the secret is still on screen.
+    const containerised = isContainerised();
+    if (containerised) {
+      console.warn(
+        "\n[FediHome] Setup ran inside a container. ADMIN_SECRET was written to .env.local " +
+          "*inside* the container, but docker-compose reads .env.local from the HOST. " +
+          "Add ADMIN_SECRET to the host's .env.local now, or you'll be locked out of admin " +
+          "the next time the container is replaced.\n",
+      );
+    }
+
+    const response = NextResponse.json({ success: true, containerised });
 
     response.cookies.set("fedihome_setup", "done", {
       path: "/",

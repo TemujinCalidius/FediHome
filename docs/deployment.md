@@ -180,10 +180,29 @@ docker compose up -d
 ```
 
 This starts:
-- **app** — FediHome on port 3000
-- **db** — PostgreSQL 15 on an internal network with persistent volume
+- **app** — FediHome on port 3000, with `./public/uploads` bind-mounted so your media lives on the host
+- **db** — PostgreSQL 15 on an internal network with a persistent volume
 
 To use an external PostgreSQL database instead, set `DATABASE_URL` in `.env.local` and remove the `db` service from `docker-compose.yml`.
+
+> **Set `ADMIN_SECRET` in the host's `.env.local` before you run setup.**
+> Compose reads `.env.local` from the **host**, but the setup wizard writes to `.env.local`
+> **inside** the container — two different files. If you let the wizard generate the secret and
+> don't copy it to the host file, the container loses it the next time it's rebuilt while the
+> database still records setup as complete, and you're locked out of admin. The wizard warns you
+> about this if it detects it's running in a container.
+
+**Two things live outside the database and must both be preserved:**
+
+| What | Where | Persisted by |
+|---|---|---|
+| Posts, followers, comments, settings, **federation keys** | PostgreSQL | the `pgdata` volume |
+| Uploaded images, photos, audio, cached feed media | `public/uploads/` | the `./public/uploads` bind mount |
+
+Without that bind mount, every uploaded file lives only in the container's writable layer and is
+destroyed whenever the container is replaced — including by a plain host reboot. The database
+survives either way, and because it stores file *paths* rather than the files themselves, the site
+would come back looking intact with every image and audio player returning 404.
 
 ### Docker Behind nginx
 
@@ -194,6 +213,26 @@ proxy_pass http://127.0.0.1:3000;
 ```
 
 ### Updating with Docker
+
+> ### ⚠️ Upgrading a Docker install from before v1.18.0 — do this FIRST
+>
+> Before v1.18.0 the `app` service had no volume, so all your uploads live **inside** the running
+> container. v1.18.0 adds a `./public/uploads` bind mount — and a bind mount **shadows** whatever is
+> already at that path, so pulling the update and restarting would hide your existing files and then
+> destroy them on the next rebuild.
+>
+> **Copy them out to the host before you rebuild:**
+>
+> ```bash
+> cd /path/to/fedihome
+> docker compose cp app:/app/public/uploads ./public/uploads
+> ls public/uploads          # confirm your files are there
+> ```
+>
+> Only then `git pull` and rebuild. If you've already rebuilt without doing this and the old
+> container is gone, those files are unrecoverable — restore them from a backup.
+>
+> This is a one-time step. Fresh v1.18.0+ installs need nothing.
 
 ```bash
 cd /path/to/fedihome
