@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Security
+- **Cleared two high-severity advisories** (#311, #312) — `js-yaml` (GHSA-52cp-r559-cp3m, quadratic-CPU DoS via YAML merge keys) and `brace-expansion` (GHSA-3jxr-9vmj-r5cp, exponential-time DoS). Both were stale lockfile pins rather than upstream blocks. Neither was reachable at runtime, and `js-yaml` is now dev-only — the **unused `gray-matter` dependency has been removed entirely** (it was declared in production but imported nowhere, and was the only path that pulled `js-yaml` into the runtime tree). `npm audit` is back to **0 high**.
+
 ### Added
 - **Edit your profile from the web admin** (#59) — a new **Your profile** section in **Admin → Site settings** sets your **display name, tagline, bio, Fediverse summary, avatar and banner**. Until now none of these had *any* web UI: your bio is what `/about` renders, and the only way to change it was hand-editing `.env.local` on the server. Avatar and banner upload in-place (reusing the same media pipeline as compose) and each has a **Revert to default**. Only fields you actually change are saved, so a routine settings save no longer sends a pointless profile update to your followers.
 - **A sidebar layout for your public pages** (#250) — a new **Sidebar** option under **Admin → Site settings → Appearance → Page width** (or during setup) puts your content beside a column of **about/bio, recent posts, sections and connect links**. It's the frame the upcoming "Classic Blog" theme is built on, and it collapses to a single column on mobile. Entirely opt-in — neither built-in theme uses it, so existing sites are unchanged.
@@ -16,7 +19,7 @@
 
 ### Changed
 - **The setup wizard asks for your public site address, and shows a review step before installing** (#59) — the wizard used to silently assume the browser's address was your canonical `SITE_URL`, which is wrong behind a proxy or tunnel, and it's baked into your Fediverse identity, feeds and links (changing it later means editing files on the server). It's now an editable field with warnings for `localhost` / private / non-HTTPS addresses, validated server-side as a clean origin. A new **Review & confirm** step lists everything — including your full `@handle@domain` and the derived federation domain — before anything is written.
-- Dependency refresh: `@fedify/fedify` + `@fedify/next` 2.3.3, `postcss` 8.5.20. (`sharp` is deliberately held at 0.34.x to match Next's optional pin — bumping it would install a duplicate libvips binary.)
+- Dependency refresh: Prisma 7.9.0 (client, CLI and pg adapter in lockstep), `@fedify/fedify` + `@fedify/next` 2.3.3, `postcss` 8.5.20. (`sharp` is deliberately held at 0.34.x to match Next's optional pin — bumping it would install a duplicate libvips binary.)
 
 ## 1.17.0 (2026-07-19)
 
