@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
-import crypto from "crypto";
 import { PrismaClient } from "@/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import * as fs from "fs";
 import * as path from "path";
-import { verifyAdmin, safeCompare } from "@/lib/auth";
+import { verifyAdmin } from "@/lib/auth";
 import { applySiteConfig } from "@/lib/site-settings";
+import { verifySetupToken } from "@/lib/setup-token";
+import { validateImagePath } from "@/lib/media";
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
@@ -88,30 +89,6 @@ function validateSiteUrl(raw: unknown): { siteUrl: string; host: string } {
   return { siteUrl: u.origin, host: u.host };
 }
 
-/**
- * First-run setup token. When ADMIN_SECRET isn't configured yet (a fresh,
- * possibly publicly-exposed deploy), completing setup requires this out-of-band
- * token so an anonymous visitor can't claim admin before the owner. Taken from
- * SETUP_TOKEN if set; otherwise a random token is generated once, stored, and
- * printed to the server console for the operator to copy.
- */
-async function getOrCreateSetupToken(): Promise<string> {
-  const existing = await prisma.siteSetting.findUnique({ where: { key: "setup_token" } });
-  if (existing) return existing.value;
-  const token = crypto.randomBytes(24).toString("hex");
-  try {
-    await prisma.siteSetting.create({ data: { key: "setup_token", value: token } });
-    console.warn(
-      `\n[FediHome] First-run setup token — enter this in the setup wizard to complete setup:\n          ${token}\n`
-    );
-    return token;
-  } catch {
-    // Lost a race to create it — read whoever won.
-    const again = await prisma.siteSetting.findUnique({ where: { key: "setup_token" } });
-    return again?.value ?? token;
-  }
-}
-
 export async function POST(request: Request) {
   try {
     // C6: if ADMIN_SECRET is already configured, this endpoint must require
@@ -133,9 +110,7 @@ export async function POST(request: Request) {
     // admin before the owner. install.sh sets ADMIN_SECRET, so its users never
     // reach this branch; the block above handles the already-configured case.
     if (!process.env.ADMIN_SECRET) {
-      const expected = process.env.SETUP_TOKEN || (await getOrCreateSetupToken());
-      const provided = typeof body.setupToken === "string" ? body.setupToken : "";
-      if (!provided || !safeCompare(provided, expected)) {
+      if (!(await verifySetupToken(body.setupToken))) {
         return NextResponse.json(
           {
             error:
@@ -159,6 +134,22 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
+
+    // Optional avatar/banner (#59) — paths from a prior setup-token-gated upload.
+    // Validate before the claim; a bad path is a 400, not a silent skip.
+    let avatarPath: string | undefined;
+    let bannerPath: string | undefined;
+    if (typeof body.avatarPath === "string" && body.avatarPath.trim()) {
+      const v = validateImagePath(body.avatarPath);
+      if (!v) return NextResponse.json({ error: "Invalid avatar image path." }, { status: 400 });
+      avatarPath = v;
+    }
+    if (typeof body.bannerPath === "string" && body.bannerPath.trim()) {
+      const v = validateImagePath(body.bannerPath);
+      if (!v) return NextResponse.json({ error: "Invalid banner image path." }, { status: 400 });
+      bannerPath = v;
+    }
+    const imageData = { ...(avatarPath ? { avatarPath } : {}), ...(bannerPath ? { bannerPath } : {}) };
 
     // Resolve + validate EVERYTHING before claiming the setup slot. This used to
     // happen after the claim, which meant a bad siteUrl (or an unwritable
@@ -203,6 +194,7 @@ export async function POST(request: Request) {
           authorName: authorName || "Your Name",
           authorTagline,
           contactEmail,
+          ...imageData,
         },
       });
       claimed = true;
@@ -216,6 +208,7 @@ export async function POST(request: Request) {
           authorName: authorName || "Your Name",
           authorTagline,
           contactEmail,
+          ...imageData,
         },
       });
       claimed = upd.count > 0;
