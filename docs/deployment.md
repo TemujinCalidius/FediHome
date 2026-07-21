@@ -241,14 +241,36 @@ docker compose build
 docker compose up -d
 ```
 
-## Database Backups
+## Backups
 
-Regardless of your deployment method, back up your PostgreSQL database regularly.
+> **A database dump on its own is NOT a complete backup.** Your instance has two
+> pieces of state, and only one of them is in PostgreSQL:
+>
+> | What | Where | Lose it and… |
+> |---|---|---|
+> | Posts, followers, comments, settings, **federation keys** | PostgreSQL | everything goes |
+> | Uploaded images, photos, audio, cached feed media | `public/uploads/` | posts survive but every image and audio player 404s |
+>
+> The database stores file **paths**, not the files. So restoring a `pg_dump` alone
+> gives you back a site that *looks* intact with every piece of media missing.
+>
+> **⚠️ The single most important row is `ActorKeys`** — your ActivityPub signing keypair.
+> It's what proves posts came from you. Restore a dump without it and your instance
+> generates a *new* identity: existing followers hold your old public key, so your
+> posts may stop verifying on remote servers. A plain `pg_dump` includes it; a
+> "content-only" or selective dump may not. FediHome will warn you loudly in the logs
+> and in the admin panel if it ever detects this has happened.
 
 ### Manual Backup
 
+Both halves:
+
 ```bash
+# 1. Database (includes ActorKeys)
 pg_dump -U fedihome -h localhost fedihome > backup-$(date +%Y%m%d).sql
+
+# 2. Uploaded media
+tar czf uploads-$(date +%Y%m%d).tar.gz public/uploads/
 ```
 
 ### Automated Daily Backup
@@ -263,21 +285,43 @@ Add:
 
 ```
 0 3 * * * pg_dump -U fedihome -h localhost fedihome | gzip > /backups/fedihome-$(date +\%Y\%m\%d).sql.gz
+15 3 * * * tar czf /backups/uploads-$(date +\%Y\%m\%d).tar.gz -C /path/to/fedihome public/uploads
 ```
 
-This creates a compressed backup daily at 3 AM.
+This backs up the database at 3 AM and your media just after.
 
 ### Docker Backup
 
 ```bash
+# Database
 docker compose exec db pg_dump -U fedihome fedihome > backup-$(date +%Y%m%d).sql
+
+# Media — bind-mounted to the host, so back it up from the checkout
+tar czf uploads-$(date +%Y%m%d).tar.gz public/uploads/
 ```
 
 ### Restoring
 
+Restore **both**, or your media links will dangle:
+
 ```bash
+# 1. Database
 psql -U fedihome -h localhost fedihome < backup-20260401.sql
+
+# 2. Media
+tar xzf uploads-20260401.tar.gz          # restores into public/uploads/
 ```
+
+After restoring, check the admin notifications. If FediHome reports that your
+federation identity was regenerated, the restore didn't carry the `ActorKeys`
+row — restore that row from the dump to recover your original identity before
+posting again.
+
+### Migrating to a new host
+
+Same two pieces: dump and restore the database, and copy `public/uploads/`
+across. Keep `.env.local` too — it holds your `ADMIN_SECRET` and any crossposting
+credentials.
 
 ## DNS Configuration
 
