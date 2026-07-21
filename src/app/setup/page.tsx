@@ -96,6 +96,34 @@ export default function SetupWizard() {
   const [adminSecret, setAdminSecret] = useState("");
   const [savedPassword, setSavedPassword] = useState(false);
   const [setupToken, setSetupToken] = useState("");
+  // Optional avatar/banner (#59) — relative /uploads/ paths from the setup-token-
+  // gated upload; "" = keep the built-in default.
+  const [avatarPath, setAvatarPath] = useState("");
+  const [bannerPath, setBannerPath] = useState("");
+  const [uploadingImg, setUploadingImg] = useState<"avatar" | "banner" | null>(null);
+
+  async function uploadWizardImage(kind: "avatar" | "banner", file: File) {
+    if (!setupToken.trim()) { setError("Enter your setup token above before uploading."); return; }
+    if (file.size > 8 * 1024 * 1024) { setError("That image is over 8 MB — please pick a smaller one."); return; }
+    setUploadingImg(kind);
+    setError(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/setup/media", {
+        method: "POST",
+        headers: { "x-setup-token": setupToken },
+        body: fd,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { setError(data.error || "Upload failed."); return; }
+      (kind === "avatar" ? setAvatarPath : setBannerPath)(data.path);
+    } catch {
+      setError("Upload failed.");
+    } finally {
+      setUploadingImg(null);
+    }
+  }
 
   // Site features (#59) — collected here and written to the DB-backed site
   // config, so a fresh install is configured without editing files. Defaults
@@ -207,6 +235,8 @@ export default function SetupWizard() {
           adminSecret,
           siteUrl,
           setupToken,
+          ...(avatarPath ? { avatarPath } : {}),
+          ...(bannerPath ? { bannerPath } : {}),
           ...(Object.keys(siteConfig).length ? { siteConfig } : {}),
         }),
       });
@@ -626,6 +656,45 @@ export default function SetupWizard() {
                   claiming your site before you do.
                 </p>
               </div>
+
+              {/* Optional avatar/banner (#59) — needs the token above, so it lives here. */}
+              <div className="mb-6">
+                <label className={labelClass}>Profile picture &amp; banner (optional)</label>
+                <div className="flex items-center gap-4 mt-1">
+                  {(["avatar", "banner"] as const).map((kind) => {
+                    const p = kind === "avatar" ? avatarPath : bannerPath;
+                    return (
+                      <div key={kind} className="flex items-center gap-2">
+                        {p && (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={p} alt="" className={kind === "avatar" ? "w-10 h-10 rounded-full object-cover" : "w-16 h-10 rounded object-cover"} />
+                        )}
+                        <label className="btn-outlined text-xs cursor-pointer">
+                          {uploadingImg === kind ? "Uploading…" : p ? `Change ${kind}` : `Add ${kind}`}
+                          <input
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp,image/gif"
+                            className="hidden"
+                            disabled={uploadingImg !== null}
+                            onChange={(e) => {
+                              const f = e.target.files?.[0];
+                              e.target.value = "";
+                              if (f) void uploadWizardImage(kind, f);
+                            }}
+                          />
+                        </label>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="text-gray-500 text-xs mt-1.5">You can also set these later in the admin panel.</p>
+              </div>
+
+              {error && (
+                <div className="rounded-lg bg-red-950/30 border border-red-800/40 p-3 mb-4">
+                  <p className="text-red-400 text-sm">{error}</p>
+                </div>
+              )}
 
               <div className="flex justify-between">
                 <button onClick={prev} className="btn-outlined cursor-pointer">Back</button>
