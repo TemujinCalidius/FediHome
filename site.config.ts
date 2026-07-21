@@ -112,6 +112,16 @@ export const siteConfig = {
     shell: process.env.LAYOUT_SHELL || "",
   },
 
+  // Sidebar options (#307), used when layout.shell is "sidebar". `side` is
+  // "right" (default) or "left"; `blocks` is a comma-separated, ORDERED list of
+  // about/recent/sections/connect — the order is the render order, and omitting
+  // one hides it (drop `sections` to stop duplicating your header nav). Empty =
+  // built-in defaults.
+  sidebar: {
+    side: process.env.SIDEBAR_SIDE || "",
+    blocks: process.env.SIDEBAR_BLOCKS || "",
+  },
+
   // /audio podcast RSS feed overrides (#59). Empty = derive from your profile
   // (title "<author> — Audio", author = your name, etc.). All web-editable in
   // Admin → Site settings; env vars remain as defaults.

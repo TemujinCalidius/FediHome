@@ -2,6 +2,10 @@ import { prisma } from "./db";
 import { siteConfig } from "@/../site.config";
 import { isThemeId, isFeedVariant, isHeaderVariant, isFooterVariant, isShellVariant } from "./themes";
 import { parseCategoryList, resolveCategoryList, MAX_CATEGORIES } from "./categories";
+import {
+  parseSidebarBlocks, resolveSidebarBlocks, isSidebarSide, isSidebarBlock,
+  type SidebarSide, type SidebarBlock,
+} from "./sidebar";
 
 const SLUG = /^[a-z0-9-]+$/;
 
@@ -53,6 +57,8 @@ export const SITE_CONFIG_FIELDS: Record<string, FieldType> = {
   "layout.header": "text", // "" (inherit theme) or a known header variant (see validateSiteConfigValue)
   "layout.footer": "text", // "" (inherit theme) or a known footer variant (see validateSiteConfigValue)
   "layout.shell": "text", // "" (inherit theme) or a known shell variant (see validateSiteConfigValue)
+  "sidebar.side": "text", // "" (default right) or left|right (#307)
+  "sidebar.blocks": "text", // ordered CSV of known blocks; "" = built-in order (#307)
   "contact.email": "text",
   "podcast.title": "text",
   "podcast.author": "text",
@@ -86,6 +92,8 @@ export interface RuntimeSiteConfig {
   download: { macosEnabled: boolean; macosReleaseUrl: string; macosAppStoreUrl: string };
   theme: { id: string };
   layout: { feed: string; header: string; footer: string; shell: string };
+  /** Sidebar options (#307) — only meaningful when the shell variant is "sidebar". */
+  sidebar: { side: SidebarSide; blocks: SidebarBlock[] };
   contact: { email: string };
   // /audio podcast feed overrides — empty means "derive from your profile".
   podcast: { title: string; author: string; description: string; email: string; image: string };
@@ -114,6 +122,10 @@ export function siteConfigDefaults(): RuntimeSiteConfig {
     download: { ...siteConfig.download },
     theme: { ...siteConfig.theme },
     layout: { ...siteConfig.layout },
+    sidebar: {
+      side: isSidebarSide(siteConfig.sidebar.side) ? siteConfig.sidebar.side : "right",
+      blocks: resolveSidebarBlocks(parseSidebarBlocks(siteConfig.sidebar.blocks)),
+    },
     contact: { email: siteConfig.contactEmail },
     podcast: { ...siteConfig.podcast },
     categories: {
@@ -200,6 +212,14 @@ export async function getRuntimeSiteConfig(): Promise<RuntimeSiteConfig> {
         email: textOverride(o["podcast.email"], base.podcast.email),
         image: textOverride(o["podcast.image"], base.podcast.image),
       },
+      // Sidebar side + ordered block list (#307); empty → right / built-in order.
+      sidebar: {
+        side: ((): SidebarSide => {
+          const v = o["sidebar.side"] ?? siteConfig.sidebar.side;
+          return isSidebarSide(v) ? v : "right";
+        })(),
+        blocks: resolveSidebarBlocks(parseSidebarBlocks(o["sidebar.blocks"] ?? siteConfig.sidebar.blocks)),
+      },
       // Resolve the override CSV (else the env CSV) into a slug list; empty → defaults.
       categories: {
         photos: resolveCategoryList(parseCategoryList(o["categories.photos"] ?? siteConfig.categories.photos), "photos"),
@@ -240,6 +260,16 @@ export function validateSiteConfigValue(key: string, value: string): string | nu
   if (key === "layout.header") return value === "" || isHeaderVariant(value) ? value : null; // "" inherits the theme
   if (key === "layout.footer") return value === "" || isFooterVariant(value) ? value : null; // "" inherits the theme
   if (key === "layout.shell") return value === "" || isShellVariant(value) ? value : null; // "" inherits the theme
+  if (key === "sidebar.side") return value === "" || isSidebarSide(value) ? value : null; // "" = right
+  if (key === "sidebar.blocks") {
+    // "" = built-in order. Else an ordered CSV of KNOWN blocks — reject unknown
+    // names rather than silently dropping them, so a typo surfaces at save time
+    // instead of quietly hiding a block.
+    if (value.trim() === "") return "";
+    const tokens = value.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean);
+    if (tokens.length === 0 || !tokens.every((t) => isSidebarBlock(t))) return null;
+    return [...new Set(tokens)].join(",");
+  }
   if (key === "categories.photos" || key === "categories.videos" || key === "categories.audio") {
     // "" = built-in defaults. Else comma-separated URL-safe slugs, deduped, capped.
     if (value.trim() === "") return "";
