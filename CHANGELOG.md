@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+- **Docker installs no longer lose every uploaded file when the container is replaced** (#308) — the `app` service had **no volume**, so images, photos, audio and cached feed media lived only in the container's writable layer and were destroyed by any recreate: `docker compose up --build`, `--force-recreate`, a prune, or simply **a host reboot**. The database always survived, and because it stores file *paths* rather than the files, the site came back looking intact with every image and audio player 404ing. `public/uploads` is now bind-mounted to the host. The setup wizard also warns when it detects it's running in a container, since the `.env.local` it writes there isn't the one Compose reads — a mismatch that could lock you out of admin after a rebuild.
+  > **Upgrading a Docker install:** run `docker compose cp app:/app/public/uploads ./public/uploads` **before** you rebuild. A bind mount shadows whatever is already at that path, so your existing files must be copied to the host first. One-time step; fresh installs need nothing.
+
 ### Security
 - **Cleared two high-severity advisories** (#311, #312) — `js-yaml` (GHSA-52cp-r559-cp3m, quadratic-CPU DoS via YAML merge keys) and `brace-expansion` (GHSA-3jxr-9vmj-r5cp, exponential-time DoS). Both were stale lockfile pins rather than upstream blocks. Neither was reachable at runtime, and `js-yaml` is now dev-only — the **unused `gray-matter` dependency has been removed entirely** (it was declared in production but imported nowhere, and was the only path that pulled `js-yaml` into the runtime tree). `npm audit` is back to **0 high**.
 

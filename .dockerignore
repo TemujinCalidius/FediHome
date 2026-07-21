@@ -10,6 +10,10 @@ src/generated
 .env
 .env.local
 .env.*.local
+# User uploads are bind-mounted at runtime (see docker-compose.yml), so baking a
+# copy into the image would only bloat every layer — and would shadow-mask the
+# mount's contents while it did (#308).
+public/uploads
 *.log
 .DS_Store
 .claude

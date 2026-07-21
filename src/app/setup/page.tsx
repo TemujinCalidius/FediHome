@@ -112,6 +112,9 @@ export default function SetupWizard() {
   const [headerLayout, setHeaderLayout] = useState(""); // "" = inherit the theme's default
   const [footerLayout, setFooterLayout] = useState(""); // "" = inherit the theme's default
   const [shellLayout, setShellLayout] = useState(""); // "" = inherit the theme's default
+  // Set when the server detects setup ran inside a container (#308) — the
+  // .env.local it wrote isn't the file compose reads on the next start.
+  const [containerised, setContainerised] = useState(false);
 
   // Domain from current URL
   const [domain, setDomain] = useState("yourdomain.com");
@@ -211,6 +214,7 @@ export default function SetupWizard() {
         setIsSubmitting(false);
         return;
       }
+      setContainerised(Boolean(data.containerised));
       // Success — move to completion step
       next();
     } catch {
@@ -704,6 +708,24 @@ export default function SetupWizard() {
                 <h2 className="text-2xl font-bold text-white font-display mb-1">Your FediHome is ready!</h2>
                 <p className="text-gray-500 text-sm">Everything has been configured. Here&apos;s a summary.</p>
               </div>
+
+              {containerised && (
+                <div className="rounded-lg bg-amber-950/30 border border-amber-800/40 p-4 mb-6 text-left">
+                  <p className="text-amber-400 text-sm font-semibold mb-1">
+                    ⚠️ One more step — you&apos;re running in a container
+                  </p>
+                  <p className="text-amber-500/80 text-xs leading-relaxed">
+                    Your admin secret was written to <code>.env.local</code> <strong>inside</strong> the
+                    container, but Docker Compose reads <code>.env.local</code> from the <strong>host</strong>.
+                    Add this line to the <code>.env.local</code> next to your <code>docker-compose.yml</code>{" "}
+                    <strong>now</strong>, or you&apos;ll be locked out of admin the next time the container is
+                    rebuilt:
+                  </p>
+                  <p className="font-mono text-xs text-amber-300 break-all mt-2 select-all">
+                    ADMIN_SECRET=&quot;{adminSecret}&quot;
+                  </p>
+                </div>
+              )}
 
               <div className="rounded-lg bg-surface-800/50 border border-surface-700 p-4 mb-6 text-left">
                 <div className="space-y-3">
