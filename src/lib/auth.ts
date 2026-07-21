@@ -192,8 +192,10 @@ export function sessionIdFromCookie(cookie: string | undefined): string | null {
   return /^[a-f0-9]{32}$/i.test(id) ? id : null;
 }
 
-function adminSessionTtlMs(): number {
-  const days = Number(process.env.ADMIN_SESSION_TTL_DAYS);
+async function adminSessionTtlMs(): Promise<number> {
+  // Web-editable (Admin → Security), env as the default (#59).
+  const { getRuntimeSiteConfig } = await import("@/lib/site-settings");
+  const days = (await getRuntimeSiteConfig()).security.adminSessionTtlDays;
   return (Number.isFinite(days) && days > 0 ? days : 30) * 24 * 60 * 60 * 1000;
 }
 
@@ -210,7 +212,7 @@ export async function createAdminSession(
     .createHmac("sha256", process.env.ADMIN_SECRET || "")
     .update(sessionId)
     .digest("hex");
-  const ttlMs = adminSessionTtlMs();
+  const ttlMs = await adminSessionTtlMs();
   const expiresAt = new Date(Date.now() + ttlMs);
   // Opportunistically sweep expired rows so the table can't grow unbounded.
   await prisma.adminSession

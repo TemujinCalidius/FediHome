@@ -19,8 +19,10 @@ const tokenLimiter = makeRateLimiter(20, 60_000);
  * Optional token lifetime. Set `APP_TOKEN_TTL_DAYS` to expire OAuth tokens after
  * N days; unset (or <= 0) → no expiry (long-lived + revocable), the default.
  */
-function appTokenExpiry(): Date | null {
-  const days = Number(process.env.APP_TOKEN_TTL_DAYS);
+async function appTokenExpiry(): Promise<Date | null> {
+  // Web-editable (Admin → Security), env as the default (#59). 0 = never expires.
+  const { getRuntimeSiteConfig } = await import("@/lib/site-settings");
+  const days = (await getRuntimeSiteConfig()).security.appTokenTtlDays;
   if (!Number.isFinite(days) || days <= 0) return null;
   return new Date(Date.now() + days * 24 * 60 * 60 * 1000);
 }
@@ -111,7 +113,7 @@ export async function POST(req: NextRequest) {
     scope: grantedScope,
     clientId: client.id,
     createdVia: "oauth",
-    expiresAt: appTokenExpiry(), // null (long-lived + revocable) unless APP_TOKEN_TTL_DAYS is set
+    expiresAt: await appTokenExpiry(), // null (long-lived + revocable) unless a TTL is set
   });
 
   return NextResponse.json(
