@@ -1,9 +1,9 @@
 import { prisma } from "./db";
 import { siteConfig } from "@/../site.config";
-import { isThemeId, isFeedVariant, isHeaderVariant, isFooterVariant, isShellVariant } from "./themes";
+import { isThemeId, isFeedVariant, isHeaderVariant, isFooterVariant, isShellVariant, resolveSidebar } from "./themes";
 import { parseCategoryList, resolveCategoryList, MAX_CATEGORIES } from "./categories";
 import {
-  parseSidebarBlocks, resolveSidebarBlocks, isSidebarSide, isSidebarBlock,
+  isSidebarSide, isSidebarBlock,
   type SidebarSide, type SidebarBlock,
 } from "./sidebar";
 
@@ -122,10 +122,10 @@ export function siteConfigDefaults(): RuntimeSiteConfig {
     download: { ...siteConfig.download },
     theme: { ...siteConfig.theme },
     layout: { ...siteConfig.layout },
-    sidebar: {
-      side: isSidebarSide(siteConfig.sidebar.side) ? siteConfig.sidebar.side : "right",
-      blocks: resolveSidebarBlocks(parseSidebarBlocks(siteConfig.sidebar.blocks)),
-    },
+    sidebar: resolveSidebar(siteConfig.theme.id, {
+      side: siteConfig.sidebar.side,
+      blocks: siteConfig.sidebar.blocks,
+    }),
     contact: { email: siteConfig.contactEmail },
     podcast: { ...siteConfig.podcast },
     categories: {
@@ -163,6 +163,8 @@ export async function getRuntimeSiteConfig(): Promise<RuntimeSiteConfig> {
   try {
     const rows = await prisma.siteSetting.findMany({ where: { key: { in: SITE_CONFIG_KEYS } } });
     const o = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+    // Resolve the theme id up front — the sidebar layering below reads its preset.
+    const themeId = textOverride(o["theme.id"], base.theme.id);
     cfg = {
       name: textOverride(o["site.name"], base.name),
       description: textOverride(o["site.description"], base.description),
@@ -197,7 +199,7 @@ export async function getRuntimeSiteConfig(): Promise<RuntimeSiteConfig> {
         macosReleaseUrl: textOverride(o["download.macos.releaseUrl"], base.download.macosReleaseUrl),
         macosAppStoreUrl: textOverride(o["download.macos.appStoreUrl"], base.download.macosAppStoreUrl),
       },
-      theme: { id: textOverride(o["theme.id"], base.theme.id) },
+      theme: { id: themeId },
       layout: {
         feed: textOverride(o["layout.feed"], base.layout.feed),
         header: textOverride(o["layout.header"], base.layout.header),
@@ -212,14 +214,12 @@ export async function getRuntimeSiteConfig(): Promise<RuntimeSiteConfig> {
         email: textOverride(o["podcast.email"], base.podcast.email),
         image: textOverride(o["podcast.image"], base.podcast.image),
       },
-      // Sidebar side + ordered block list (#307); empty → right / built-in order.
-      sidebar: {
-        side: ((): SidebarSide => {
-          const v = o["sidebar.side"] ?? siteConfig.sidebar.side;
-          return isSidebarSide(v) ? v : "right";
-        })(),
-        blocks: resolveSidebarBlocks(parseSidebarBlocks(o["sidebar.blocks"] ?? siteConfig.sidebar.blocks)),
-      },
+      // Sidebar side + ordered block list (#307), layered against the active
+      // theme's preset: owner override → theme preset → built-in default.
+      sidebar: resolveSidebar(themeId, {
+        side: o["sidebar.side"] ?? siteConfig.sidebar.side,
+        blocks: o["sidebar.blocks"] ?? siteConfig.sidebar.blocks,
+      }),
       // Resolve the override CSV (else the env CSV) into a slug list; empty → defaults.
       categories: {
         photos: resolveCategoryList(parseCategoryList(o["categories.photos"] ?? siteConfig.categories.photos), "photos"),

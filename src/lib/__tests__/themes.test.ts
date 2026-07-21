@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   deriveAccentScale, resolveTheme, isThemeId, buildThemeStyle, resolveAccent, DEFAULT_ACCENT, DEFAULT_THEME,
-  isFeedVariant, isHeaderVariant, isFooterVariant, isShellVariant, resolveLayout,
+  isFeedVariant, isHeaderVariant, isFooterVariant, isShellVariant, resolveLayout, resolveSidebar,
   FEED_VARIANTS, HEADER_VARIANTS, FOOTER_VARIANTS, SHELL_VARIANTS, THEMES,
 } from "@/lib/themes";
 
@@ -276,5 +276,43 @@ describe("resolveLayout / isShellVariant (#250 — public shell region)", () => 
   it("resolves all four regions independently", () => {
     expect(resolveLayout("default", { feed: "list", header: "minimal", footer: "columns", shell: "narrow" }))
       .toEqual({ feed: "list", header: "minimal", footer: "columns", shell: "narrow" });
+  });
+});
+
+describe("resolveSidebar (#307) — owner override → theme preset → default", () => {
+  it("defaults to right + all blocks when a theme presets nothing", () => {
+    expect(resolveSidebar("default", {})).toEqual({
+      side: "right", blocks: ["about", "recent", "sections", "connect"],
+    });
+  });
+
+  it("a theme's preset applies when the owner hasn't overridden (Classic Blog)", () => {
+    const r = resolveSidebar("classic", {});
+    expect(r.side).toBe("left");
+    expect(r.blocks).toEqual(["about", "recent", "connect"]); // sections omitted
+  });
+
+  it("a valid owner override beats the theme preset", () => {
+    expect(resolveSidebar("classic", { side: "right" }).side).toBe("right");
+    expect(resolveSidebar("classic", { blocks: "sections,about" }).blocks).toEqual(["sections", "about"]);
+  });
+
+  it("empty/blank overrides inherit the theme (or the default)", () => {
+    expect(resolveSidebar("classic", { side: "", blocks: "" }).side).toBe("left"); // theme
+    expect(resolveSidebar("default", { side: "", blocks: "" }).side).toBe("right"); // built-in
+  });
+
+  it("an unknown side falls through to the theme/default, not a crash", () => {
+    expect(resolveSidebar("classic", { side: "top" }).side).toBe("left");
+  });
+});
+
+describe("Classic Blog theme (#250)", () => {
+  it("is registered and presets the sidebar shell", () => {
+    expect(THEMES.classic).toBeDefined();
+    const l = resolveLayout("classic", {});
+    expect(l.shell).toBe("sidebar");
+    expect(l.feed).toBe("list");
+    expect(l.header).toBe("minimal");
   });
 });

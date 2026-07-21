@@ -1,5 +1,9 @@
 import type { FeedVariant, HeaderVariant, FooterVariant, ShellVariant, LayoutConfig } from "./types";
 import { resolveTheme } from "./registry";
+import {
+  isSidebarSide, parseSidebarBlocks, SIDEBAR_BLOCKS,
+  type SidebarSide, type SidebarBlock,
+} from "@/lib/sidebar";
 
 /**
  * Layout region catalogue + resolution (#250). A theme picks a variant for each
@@ -84,4 +88,24 @@ export function resolveLayout(
     footer: isFooterVariant(overrides.footer ?? "") ? (overrides.footer as FooterVariant) : base.footer,
     shell: isShellVariant(overrides.shell ?? "") ? (overrides.shell as ShellVariant) : base.shell,
   };
+}
+
+/**
+ * The active sidebar config (#307), layered like `resolveLayout`: a valid owner
+ * override wins, else the theme's preset (a Classic-Blog-style theme can bake in
+ * a left sidebar with `sections` omitted), else the built-in default (right, all
+ * blocks). `blocks: ""` means "inherit" — only a non-empty parse counts as an
+ * override.
+ */
+export function resolveSidebar(
+  themeId: string,
+  overrides: { side?: string; blocks?: string } = {},
+): { side: SidebarSide; blocks: SidebarBlock[] } {
+  const preset = resolveTheme(themeId).sidebar;
+  const side = isSidebarSide(overrides.side ?? "")
+    ? (overrides.side as SidebarSide)
+    : preset?.side ?? "right";
+  const parsed = parseSidebarBlocks(overrides.blocks ?? "");
+  const blocks = parsed.length ? parsed : preset?.blocks ?? [...SIDEBAR_BLOCKS];
+  return { side, blocks };
 }
