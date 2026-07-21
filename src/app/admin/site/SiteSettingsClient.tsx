@@ -309,6 +309,8 @@ export default function SiteSettingsClient({
       "layout.shell": cfg.layout.shell,
       "sidebar.side": cfg.sidebar.side,
       "sidebar.blocks": sidebarText,
+      "security.adminSessionTtlDays": String(cfg.security.adminSessionTtlDays),
+      "security.appTokenTtlDays": String(cfg.security.appTokenTtlDays),
       "contact.email": cfg.contact.email,
       "podcast.title": cfg.podcast.title,
       "podcast.author": cfg.podcast.author,
@@ -342,7 +344,7 @@ export default function SiteSettingsClient({
         "footer.badgeAlt", "footer.fundingUrl", "footer.fundingLabel",
         "download.macos.enabled", "download.macos.releaseUrl", "download.macos.appStoreUrl",
         "theme.id", "layout.feed", "layout.header", "layout.footer", "layout.shell",
-        "sidebar.side", "sidebar.blocks", "contact.email",
+        "sidebar.side", "sidebar.blocks", "security.adminSessionTtlDays", "security.appTokenTtlDays", "contact.email",
         "podcast.title", "podcast.author", "podcast.description", "podcast.email", "podcast.image",
         "categories.photos", "categories.videos", "categories.audio",
         "analytics.siteId", "analytics.embedId",
@@ -361,6 +363,7 @@ export default function SiteSettingsClient({
   const setDownload = (patch: Partial<RuntimeSiteConfig["download"]>) => setCfg((c) => ({ ...c, download: { ...c.download, ...patch } }));
   const setLayout = (patch: Partial<RuntimeSiteConfig["layout"]>) => setCfg((c) => ({ ...c, layout: { ...c.layout, ...patch } }));
   const setSidebar = (patch: Partial<RuntimeSiteConfig["sidebar"]>) => setCfg((c) => ({ ...c, sidebar: { ...c.sidebar, ...patch } }));
+  const setSecurity = (patch: Partial<RuntimeSiteConfig["security"]>) => setCfg((c) => ({ ...c, security: { ...c.security, ...patch } }));
   const setContact = (patch: Partial<RuntimeSiteConfig["contact"]>) => setCfg((c) => ({ ...c, contact: { ...c.contact, ...patch } }));
   const setPodcast = (patch: Partial<RuntimeSiteConfig["podcast"]>) => setCfg((c) => ({ ...c, podcast: { ...c.podcast, ...patch } }));
   const setAnalytics = (patch: Partial<RuntimeSiteConfig["analytics"]>) => setCfg((c) => ({ ...c, analytics: { ...c.analytics, ...patch } }));
@@ -774,6 +777,36 @@ export default function SiteSettingsClient({
               </button>
             )}
           </div>
+        </>)}
+
+        {section("Security", <>
+          <p className="text-xs text-gray-600 m-0">
+            Session and token lifetimes, in days. Changes apply to <strong>newly-created</strong> sessions and
+            tokens only — existing ones keep their original expiry.
+          </p>
+          <label className="flex flex-col gap-1 text-xs text-gray-400">
+            <span>Admin session lifetime (days)</span>
+            <input
+              type="number" min={1} max={3650}
+              value={cfg.security.adminSessionTtlDays}
+              onChange={(e) => setSecurity({ adminSessionTtlDays: Math.max(0, Math.floor(Number(e.target.value) || 0)) })}
+              className="w-28 bg-surface-800 border border-surface-700 rounded-md px-2 py-1.5 text-sm text-white"
+            />
+            <span className="text-gray-600">How long you stay signed in to the admin panel. Default 30.</span>
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-gray-400">
+            <span>App token lifetime (days)</span>
+            <input
+              type="number" min={0} max={3650}
+              value={cfg.security.appTokenTtlDays}
+              onChange={(e) => setSecurity({ appTokenTtlDays: Math.max(0, Math.floor(Number(e.target.value) || 0)) })}
+              className="w-28 bg-surface-800 border border-surface-700 rounded-md px-2 py-1.5 text-sm text-white"
+            />
+            <span className="text-gray-600">
+              How long a generated app token lasts. <strong>0 = never expires</strong> (long-lived + revocable).
+              Setting a limit starts expiring newly-issued tokens.
+            </span>
+          </label>
         </>)}
 
         <div className="flex items-center gap-3 py-4">

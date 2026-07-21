@@ -23,7 +23,7 @@ const SLUG = /^[a-z0-9-]+$/;
  * (site-profile.ts, #201).
  */
 
-export type FieldType = "bool" | "text" | "url";
+export type FieldType = "bool" | "text" | "url" | "int";
 
 /** Every editable key and its value type (drives validation + parsing). */
 export const SITE_CONFIG_FIELDS: Record<string, FieldType> = {
@@ -59,6 +59,8 @@ export const SITE_CONFIG_FIELDS: Record<string, FieldType> = {
   "layout.shell": "text", // "" (inherit theme) or a known shell variant (see validateSiteConfigValue)
   "sidebar.side": "text", // "" (default right) or left|right (#307)
   "sidebar.blocks": "text", // ordered CSV of known blocks; "" = built-in order (#307)
+  "security.adminSessionTtlDays": "int", // 0–3650; how long an admin session lasts (#59)
+  "security.appTokenTtlDays": "int", // 0–3650; 0 = app tokens never expire (#59)
   "contact.email": "text",
   "podcast.title": "text",
   "podcast.author": "text",
@@ -94,6 +96,8 @@ export interface RuntimeSiteConfig {
   layout: { feed: string; header: string; footer: string; shell: string };
   /** Sidebar options (#307) — only meaningful when the shell variant is "sidebar". */
   sidebar: { side: SidebarSide; blocks: SidebarBlock[] };
+  /** Security policy (#59) — session/token lifetimes in days (0 = app tokens never expire). */
+  security: { adminSessionTtlDays: number; appTokenTtlDays: number };
   contact: { email: string };
   // /audio podcast feed overrides — empty means "derive from your profile".
   podcast: { title: string; author: string; description: string; email: string; image: string };
@@ -126,6 +130,7 @@ export function siteConfigDefaults(): RuntimeSiteConfig {
       side: siteConfig.sidebar.side,
       blocks: siteConfig.sidebar.blocks,
     }),
+    security: { ...siteConfig.security },
     contact: { email: siteConfig.contactEmail },
     podcast: { ...siteConfig.podcast },
     categories: {
@@ -144,6 +149,11 @@ function boolOverride(v: string | undefined, fallback: boolean): boolean {
 
 function textOverride(v: string | undefined, fallback: string): string {
   return v == null ? fallback : v;
+}
+function intOverride(v: string | undefined, fallback: number): number {
+  if (v == null) return fallback;
+  const n = Number(v);
+  return Number.isInteger(n) && n >= 0 ? n : fallback;
 }
 
 const CACHE_TTL_MS = 60_000;
@@ -220,6 +230,10 @@ export async function getRuntimeSiteConfig(): Promise<RuntimeSiteConfig> {
         side: o["sidebar.side"] ?? siteConfig.sidebar.side,
         blocks: o["sidebar.blocks"] ?? siteConfig.sidebar.blocks,
       }),
+      security: {
+        adminSessionTtlDays: intOverride(o["security.adminSessionTtlDays"], base.security.adminSessionTtlDays),
+        appTokenTtlDays: intOverride(o["security.appTokenTtlDays"], base.security.appTokenTtlDays),
+      },
       // Resolve the override CSV (else the env CSV) into a slug list; empty → defaults.
       categories: {
         photos: resolveCategoryList(parseCategoryList(o["categories.photos"] ?? siteConfig.categories.photos), "photos"),
@@ -254,6 +268,10 @@ const CONTROL = /[\r\n]/;
 export function validateSiteConfigValue(key: string, value: string): string | null {
   const type = SITE_CONFIG_FIELDS[key];
   if (type === "bool") return value === "true" || value === "false" ? value : null;
+  if (type === "int") {
+    const n = Number(value);
+    return Number.isInteger(n) && n >= 0 && n <= 3650 ? String(n) : null; // days, ~10yr cap
+  }
   if (value.length > MAX_TEXT || CONTROL.test(value)) return null;
   if (key === "theme.id") return isThemeId(value) ? value : null; // must be a known theme
   if (key === "layout.feed") return value === "" || isFeedVariant(value) ? value : null; // "" inherits the theme

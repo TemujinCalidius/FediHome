@@ -8,6 +8,9 @@ vi.mock("@/lib/db", () => ({
     authToken: { create: vi.fn(), deleteMany: vi.fn() },
   },
 }));
+// The app-token TTL now comes from runtime config (#59), not process.env.
+const { getRuntimeSiteConfig } = vi.hoisted(() => ({ getRuntimeSiteConfig: vi.fn() }));
+vi.mock("@/lib/site-settings", () => ({ getRuntimeSiteConfig }));
 
 import { POST as tokenPOST } from "@/app/api/oauth/token/route";
 import { POST as revokePOST } from "@/app/api/oauth/revoke/route";
@@ -56,7 +59,7 @@ function exchange(fields: Partial<Record<string, string>> = {}, verifier = "v") 
 beforeEach(() => {
   vi.clearAllMocks();
   process.env.SITE_URL = "https://demo.example";
-  delete process.env.APP_TOKEN_TTL_DAYS;
+  getRuntimeSiteConfig.mockResolvedValue({ security: { appTokenTtlDays: 0, adminSessionTtlDays: 30 } });
   vi.mocked(prisma.authorizationCode.deleteMany).mockResolvedValue({ count: 1 } as never);
   vi.mocked(prisma.authToken.create).mockResolvedValue({} as never);
   vi.mocked(prisma.authToken.deleteMany).mockResolvedValue({ count: 1 } as never);
@@ -169,8 +172,8 @@ describe("POST /api/oauth/token", () => {
     expect((await res.json()).error).toBe("invalid_request");
     expect(prisma.authorizationCode.findUnique).not.toHaveBeenCalled();
   });
-  it("sets expiresAt when APP_TOKEN_TTL_DAYS is configured", async () => {
-    process.env.APP_TOKEN_TTL_DAYS = "30";
+  it("sets expiresAt when an app-token TTL is configured", async () => {
+    getRuntimeSiteConfig.mockResolvedValue({ security: { appTokenTtlDays: 30, adminSessionTtlDays: 30 } });
     const { verifier, challenge } = pkcePair();
     vi.mocked(prisma.authorizationCode.findUnique).mockResolvedValue(validRecord(challenge) as never);
     await tokenPOST(exchange({}, verifier));
