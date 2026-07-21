@@ -23,6 +23,27 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
   return output;
 }
 
+/** base64url of a subscription's applicationServerKey, for comparing to the server's public key. */
+function subKey(sub: PushSubscription): string {
+  const raw = sub.options?.applicationServerKey;
+  if (!raw) return "";
+  const bytes = new Uint8Array(raw as ArrayBuffer);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+/**
+ * Whether an existing subscription still matches the server's current VAPID key.
+ * After a key rotation the old subscription is bound to a dead key — it can never
+ * receive a send — so it must be treated as OFF, not "on" (#59). Also OFF when the
+ * server has zero subscriptions (its keys were rotated + purged from under us).
+ */
+function subscriptionLive(sub: PushSubscription | null, publicKey: string, serverCount: number): boolean {
+  if (!sub || serverCount === 0) return false;
+  return subKey(sub) === publicKey;
+}
+
 type Status = "loading" | "unsupported" | "ios-needs-install" | "ready" | "on" | "denied";
 
 export default function PushSetup() {
@@ -65,7 +86,15 @@ export default function PushSetup() {
           (await navigator.serviceWorker.getRegistration()) ||
           (await navigator.serviceWorker.register("/sw.js"));
         const existing = await reg.pushManager.getSubscription();
-        if (!cancelled) setStatus(existing ? "on" : "ready");
+        // Don't trust a bare subscription: after a server-side key rotation it's
+        // bound to a dead key and would silently receive nothing. Compare it to
+        // the server's current public key + subscription count.
+        let live = false;
+        if (existing) {
+          const info = await fetch("/api/push").then((r) => (r.ok ? r.json() : null)).catch(() => null);
+          live = subscriptionLive(existing, info?.publicKey ?? "", info?.count ?? 0);
+        }
+        if (!cancelled) setStatus(live ? "on" : "ready");
       } catch {
         if (!cancelled) setStatus("unsupported");
       }
@@ -94,6 +123,13 @@ export default function PushSetup() {
 
       const reg = await navigator.serviceWorker.ready;
       let sub = await reg.pushManager.getSubscription();
+      // If an existing subscription is bound to a DIFFERENT (rotated) key, drop it
+      // and re-subscribe — the browser throws InvalidStateError if you subscribe
+      // with a new applicationServerKey while an old subscription exists.
+      if (sub && subKey(sub) !== publicKey) {
+        await sub.unsubscribe().catch(() => {});
+        sub = null;
+      }
       if (!sub) {
         sub = await reg.pushManager.subscribe({
           userVisibleOnly: true,

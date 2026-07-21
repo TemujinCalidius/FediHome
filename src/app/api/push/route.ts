@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { verifyAdmin, verifyOrigin } from "@/lib/auth";
-import { getVapidPublicKey, pushConfigured } from "@/lib/push";
+import { getVapidPublicKey, pushConfigured } from "@/lib/push-config";
 
 /**
  * Web Push subscription management for the owner.
@@ -15,12 +15,12 @@ export async function GET(req: NextRequest) {
   if (!(await verifyAdmin(req))) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  const count = await prisma.pushSubscription.count();
-  return NextResponse.json({
-    configured: pushConfigured(),
-    publicKey: getVapidPublicKey(),
-    count,
-  });
+  const [count, configured, publicKey] = await Promise.all([
+    prisma.pushSubscription.count(),
+    pushConfigured(),
+    getVapidPublicKey(),
+  ]);
+  return NextResponse.json({ configured, publicKey, count });
 }
 
 export async function POST(req: NextRequest) {

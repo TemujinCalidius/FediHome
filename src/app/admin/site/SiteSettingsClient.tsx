@@ -27,6 +27,7 @@ export default function SiteSettingsClient({
   accent,
   analyticsStatus,
   analyticsKey,
+  pushKey,
   encryptionAvailable,
   profile,
   profileDefaults,
@@ -37,6 +38,7 @@ export default function SiteSettingsClient({
   accent: { accentColor: string; themeAccents: Record<string, string> };
   analyticsStatus: { embedCode: string | null; unresolved: boolean };
   analyticsKey: { configured: boolean; source: "db" | "env" | null };
+  pushKey: { configured: boolean; source: "db" | "env" | null; subject: string };
   encryptionAvailable: boolean;
   profile: {
     authorName: string; authorTagline: string; authorBio: string;
@@ -55,6 +57,37 @@ export default function SiteSettingsClient({
   const [keyStatus, setKeyStatus] = useState(analyticsKey);
   const [keyInput, setKeyInput] = useState("");
   const [keyBusy, setKeyBusy] = useState(false);
+  // Web-push (VAPID) keys (#59) — generate/clear via a dedicated route; the
+  // private key is encrypted at rest and never sent to the browser.
+  const [pushStatus, setPushStatus] = useState(pushKey);
+  const [pushBusy, setPushBusy] = useState(false);
+
+  async function postPushKeys(action: "generate" | "clear"): Promise<void> {
+    if (action === "generate" && pushStatus.configured &&
+        !confirm("Generate new push keys? Every device currently enrolled for push will stop receiving notifications until it re-enables them.")) {
+      return;
+    }
+    setPushBusy(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/admin/push-keys", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setResult({ ok: false, msg: data.error || "Couldn't update the push keys." });
+        return;
+      }
+      setPushStatus(data.status);
+      setResult({ ok: true, msg: action === "clear" ? "Push keys cleared." : "Push keys generated — re-enable notifications on each device." });
+    } catch {
+      setResult({ ok: false, msg: "Couldn't update the push keys." });
+    } finally {
+      setPushBusy(false);
+    }
+  }
 
   /* ---- Profile overlay (#59) — name/tagline/bio/summary + avatar/banner ---- */
   // Held separately from `cfg` because the profile is a DIFFERENT store (the
@@ -695,6 +728,49 @@ export default function SiteSettingsClient({
                 className="text-xs text-gray-400 hover:text-white underline disabled:opacity-40"
               >
                 Clear saved key
+              </button>
+            )}
+          </div>
+        </>)}
+
+        {section("Phone notifications (Web Push)", <>
+          <p className="text-xs text-gray-600 m-0">
+            Push notifications to your installed app (PWA) need a VAPID keypair. Generate one here — no
+            <code> npx web-push </code> or <code>.env</code> editing. The private key is stored encrypted;
+            after generating, enable notifications on each device from the 🔔 menu.
+          </p>
+          <p className="text-xs m-0">
+            {pushStatus.configured ? (
+              <span className="text-green-400">✓ Push keys configured{pushStatus.source === "env" ? " (from env)" : ""}.</span>
+            ) : (
+              <span className="text-gray-500">No push keys yet — notifications are off until you generate them.</span>
+            )}
+          </p>
+          {pushStatus.configured && (
+            <p className="text-xs text-amber-400/80 m-0">
+              ⚠️ Regenerating replaces your keys and <strong>unsubscribes every device</strong> — each one has to re-enable push.
+            </p>
+          )}
+          {!encryptionAvailable && (
+            <p className="text-xs text-amber-400 m-0">Set <code>ADMIN_SECRET</code> to store the private key encrypted at rest.</p>
+          )}
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => postPushKeys("generate")}
+              disabled={pushBusy || !encryptionAvailable}
+              className="btn-primary text-xs disabled:opacity-50"
+            >
+              {pushBusy ? "Working…" : pushStatus.configured ? "Regenerate keys" : "Generate keys"}
+            </button>
+            {pushStatus.source === "db" && (
+              <button
+                type="button"
+                onClick={() => postPushKeys("clear")}
+                disabled={pushBusy}
+                className="text-xs text-gray-400 hover:text-white underline disabled:opacity-40"
+              >
+                Clear saved keys
               </button>
             )}
           </div>

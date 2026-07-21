@@ -8,6 +8,7 @@ import { getRuntimeProfile } from "@/lib/site-profile";
 import { siteConfig } from "@/../site.config";
 import { resolveTinylyticsEmbed } from "@/lib/tinylytics";
 import { getAnalyticsKeyStatus } from "@/lib/analytics-secret";
+import { getPushKeyStatus } from "@/lib/push-config";
 import { secretBoxAvailable } from "@/lib/secret-box";
 import TimelineLogin from "../../timeline/TimelineLogin";
 import SiteSettingsClient from "./SiteSettingsClient";
@@ -34,9 +35,10 @@ export default async function AdminSitePage() {
   // Resolve the collecting-embed code so the panel can confirm analytics is
   // actually collecting (vs configured-but-silently-404ing) (#288), and the
   // encrypted API-key status (#59) so the panel can set/show it in-app.
-  const [embedCode, analyticsKey] = await Promise.all([
+  const [embedCode, analyticsKey, pushKey] = await Promise.all([
     resolveTinylyticsEmbed(effective.analytics),
     getAnalyticsKeyStatus(),
+    getPushKeyStatus(),
   ]);
   const analyticsConfigured = !!(effective.analytics.siteId || effective.analytics.embedId);
   const analyticsStatus = {
@@ -64,6 +66,7 @@ export default async function AdminSitePage() {
       profileDefaults={{ avatarPath: siteConfig.avatarPath, bannerPath: siteConfig.bannerPath }}
       analyticsStatus={analyticsStatus}
       analyticsKey={analyticsKey}
+      pushKey={pushKey}
       encryptionAvailable={secretBoxAvailable()}
     />
   );
