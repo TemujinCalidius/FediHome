@@ -112,6 +112,7 @@ export default function SetupWizard() {
   const [headerLayout, setHeaderLayout] = useState(""); // "" = inherit the theme's default
   const [footerLayout, setFooterLayout] = useState(""); // "" = inherit the theme's default
   const [shellLayout, setShellLayout] = useState(""); // "" = inherit the theme's default
+  const [sidebarSide, setSidebarSide] = useState(""); // "" = right (the default side)
   // Set when the server detects setup ran inside a container (#308) — the
   // .env.local it wrote isn't the file compose reads on the next start.
   const [containerised, setContainerised] = useState(false);
@@ -192,6 +193,7 @@ export default function SetupWizard() {
     if (headerLayout) siteConfig["layout.header"] = headerLayout; // "" = inherit → no override
     if (footerLayout) siteConfig["layout.footer"] = footerLayout; // "" = inherit → no override
     if (shellLayout) siteConfig["layout.shell"] = shellLayout; // "" = inherit → no override
+    if (sidebarSide) siteConfig["sidebar.side"] = sidebarSide; // "" = right → no override
     try {
       const res = await fetch("/api/setup", {
         method: "POST",
@@ -541,6 +543,19 @@ export default function SetupWizard() {
                     <option value="sidebar">Sidebar</option>
                   </select>
                 </label>
+                {shellLayout === "sidebar" && (
+                  <label className="flex flex-col gap-1 text-xs text-gray-400">
+                    <span>Sidebar side</span>
+                    <select
+                      value={sidebarSide}
+                      onChange={(e) => setSidebarSide(e.target.value)}
+                      className="bg-surface-800 border border-surface-700 rounded-md px-2 py-1.5 text-sm text-white"
+                    >
+                      <option value="">Right</option>
+                      <option value="left">Left</option>
+                    </select>
+                  </label>
+                )}
               </div>
 
               <div className="flex justify-between">
@@ -653,6 +668,7 @@ export default function SetupWizard() {
                     ["Header layout", headerLayout || "Theme default"],
                     ["Footer layout", footerLayout || "Theme default"],
                     ["Page width", shellLayout || "Theme default"],
+                    ...(shellLayout === "sidebar" ? [["Sidebar side", sidebarSide || "Right"]] : []),
                   ].map(([label, value], i) => (
                     <div key={label as string}>
                       {i > 0 && <div className="divider mb-3" />}

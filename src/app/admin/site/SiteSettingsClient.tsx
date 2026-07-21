@@ -274,6 +274,8 @@ export default function SiteSettingsClient({
       "layout.header": cfg.layout.header,
       "layout.footer": cfg.layout.footer,
       "layout.shell": cfg.layout.shell,
+      "sidebar.side": cfg.sidebar.side,
+      "sidebar.blocks": sidebarText,
       "contact.email": cfg.contact.email,
       "podcast.title": cfg.podcast.title,
       "podcast.author": cfg.podcast.author,
@@ -306,7 +308,8 @@ export default function SiteSettingsClient({
         "footer.webringUrl", "footer.webringLabel", "footer.badgeSrc", "footer.badgeHref",
         "footer.badgeAlt", "footer.fundingUrl", "footer.fundingLabel",
         "download.macos.enabled", "download.macos.releaseUrl", "download.macos.appStoreUrl",
-        "theme.id", "layout.feed", "layout.header", "layout.footer", "layout.shell", "contact.email",
+        "theme.id", "layout.feed", "layout.header", "layout.footer", "layout.shell",
+        "sidebar.side", "sidebar.blocks", "contact.email",
         "podcast.title", "podcast.author", "podcast.description", "podcast.email", "podcast.image",
         "categories.photos", "categories.videos", "categories.audio",
         "analytics.siteId", "analytics.embedId",
@@ -324,6 +327,7 @@ export default function SiteSettingsClient({
   const setFooter = (patch: Partial<RuntimeSiteConfig["footer"]>) => setCfg((c) => ({ ...c, footer: { ...c.footer, ...patch } }));
   const setDownload = (patch: Partial<RuntimeSiteConfig["download"]>) => setCfg((c) => ({ ...c, download: { ...c.download, ...patch } }));
   const setLayout = (patch: Partial<RuntimeSiteConfig["layout"]>) => setCfg((c) => ({ ...c, layout: { ...c.layout, ...patch } }));
+  const setSidebar = (patch: Partial<RuntimeSiteConfig["sidebar"]>) => setCfg((c) => ({ ...c, sidebar: { ...c.sidebar, ...patch } }));
   const setContact = (patch: Partial<RuntimeSiteConfig["contact"]>) => setCfg((c) => ({ ...c, contact: { ...c.contact, ...patch } }));
   const setPodcast = (patch: Partial<RuntimeSiteConfig["podcast"]>) => setCfg((c) => ({ ...c, podcast: { ...c.podcast, ...patch } }));
   const setAnalytics = (patch: Partial<RuntimeSiteConfig["analytics"]>) => setCfg((c) => ({ ...c, analytics: { ...c.analytics, ...patch } }));
@@ -339,6 +343,11 @@ export default function SiteSettingsClient({
   });
   const [catText, setCatText] = useState(catCsv(effective));
   useEffect(() => { setCatText(catCsv(cfg)); }, [cfg.categories]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sidebar block order (#307) — same raw-text treatment as categories above, so
+  // typing a comma doesn't get eaten by a `join()`-bound controlled input.
+  const [sidebarText, setSidebarText] = useState(effective.sidebar.blocks.join(", "));
+  useEffect(() => { setSidebarText(cfg.sidebar.blocks.join(", ")); }, [cfg.sidebar.blocks]);
 
   const text = (label: string, value: string, onChange: (v: string) => void, placeholder = "") => (
     <label className="flex flex-col gap-1 text-xs text-gray-400">
@@ -549,6 +558,32 @@ export default function SiteSettingsClient({
             ],
             (v) => setLayout({ shell: v }),
             "The frame around your public pages (your admin screens are unaffected).",
+          )}
+          {cfg.layout.shell === "sidebar" && (
+            <>
+              {select(
+                "Sidebar side",
+                cfg.sidebar.side,
+                [
+                  { value: "right", label: "Right" },
+                  { value: "left", label: "Left" },
+                ],
+                (v) => setSidebar({ side: v as RuntimeSiteConfig["sidebar"]["side"] }),
+                "Which side of your content the sidebar sits on. On mobile your content always comes first.",
+              )}
+              {text(
+                "Sidebar blocks",
+                sidebarText,
+                setSidebarText,
+                "about, recent, sections, connect",
+              )}
+              <p className="text-xs text-gray-600 m-0 -mt-1">
+                Comma-separated, in the order you want them. Leave a block out to hide it — drop{" "}
+                <code>sections</code> if you don&apos;t want your nav in both the header and the sidebar.
+                Blank uses the default order. Available: <code>about</code>, <code>recent</code>,{" "}
+                <code>sections</code>, <code>connect</code>.
+              </p>
+            </>
           )}
         </>)}
 

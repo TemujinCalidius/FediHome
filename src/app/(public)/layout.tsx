@@ -31,10 +31,18 @@ export default async function PublicLayout({ children }: { children: React.React
     // Same two-column grid + breakpoint already used by the photo detail page,
     // so it collapses to a single column on mobile consistently with the rest
     // of the site.
+    //
+    // Side (#307) is done with CSS `order`, not by reordering the DOM: content
+    // stays FIRST in source order, so on mobile (single column) the reader gets
+    // the post before the sidebar either way. Only the desktop columns swap.
+    const onLeft = site.sidebar.side === "left";
+    const cols = onLeft ? "lg:grid-cols-[300px_1fr]" : "lg:grid-cols-[1fr_300px]";
     return (
-      <div className="max-w-6xl mx-auto px-6 grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-8">
-        <div className="min-w-0">{children}</div>
-        <Sidebar />
+      <div className={`max-w-6xl mx-auto px-6 grid grid-cols-1 ${cols} gap-8`}>
+        <div className={`min-w-0 ${onLeft ? "lg:order-2" : ""}`}>{children}</div>
+        <div className={onLeft ? "lg:order-1" : ""}>
+          <Sidebar blocks={site.sidebar.blocks} />
+        </div>
       </div>
     );
   }
