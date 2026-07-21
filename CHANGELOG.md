@@ -10,6 +10,7 @@
 - **Put the sidebar where you want it, with the blocks you want** (#307) — the sidebar layout can now sit on the **left or right**, and its blocks are an **ordered list you control**: `about, recent, sections, connect`. The order you write is the order they render, and leaving one out hides it — so dropping `sections` stops your nav appearing in both the header and the sidebar. Set both in **Admin → Site settings → Appearance** (they appear once you pick the Sidebar page width), or during first-run setup. On mobile your content always comes first regardless of which side you choose.
 
 ### Changed
+- **`docs/theming.md` rewritten for the current theme system** (#250) — the old guide predated themes entirely (it told you to hand-edit `globals.css` and swap avatar files on disk). It now covers what's web-editable in the admin panel, the `Theme` token contract + region×variant model, and a **developer scaffold** for adding a built-in theme (one data file + one registry line, with the dark/contrast and self-hosted-font constraints spelled out).
 - Dependency refresh: `next` 16.2.11, `react`/`react-dom` 19.2.8, `postcss` 8.5.21, `marked` 18.0.7, `@atproto/api` 0.20.31, `eslint-config-next` 16.2.11. (`sharp` held at 0.34.x; `typescript` blocked upstream — #234.)
 
 ## 1.18.0 (2026-07-21)
