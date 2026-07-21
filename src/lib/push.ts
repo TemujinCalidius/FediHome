@@ -1,7 +1,7 @@
 import webpush from "web-push";
 import { prisma } from "./db";
-import { siteConfig } from "@/../site.config";
 import { computeNotifications } from "./notifications";
+import { ensurePushConfigured } from "./push-config";
 
 /**
  * Web Push (PWA notifications) for the single site owner.
@@ -10,38 +10,10 @@ import { computeNotifications } from "./notifications";
  * `sendPushToOwner` fans a payload out to all the owner's registered devices and
  * prunes endpoints the push service reports as gone (404/410).
  *
- * Dormant until VAPID keys are set in .env.local (gitignored):
- *   VAPID_PUBLIC_KEY  — also handed to the browser as applicationServerKey
- *   VAPID_PRIVATE_KEY — server-only signing key
- *   VAPID_SUBJECT     — contact, e.g. mailto:you@example.com
- * Generate a keypair with:  npx web-push generate-vapid-keys
+ * The VAPID keys themselves (settable in the admin panel or via VAPID_* env)
+ * live in push-config.ts; `ensurePushConfigured()` re-inits web-push whenever
+ * they change, so this module just sends.
  */
-
-const PUBLIC = process.env.VAPID_PUBLIC_KEY || "";
-const PRIVATE = process.env.VAPID_PRIVATE_KEY || "";
-const SUBJECT =
-  process.env.VAPID_SUBJECT ||
-  (siteConfig.contactEmail ? `mailto:${siteConfig.contactEmail}` : `mailto:admin@${siteConfig.fediDomain}`);
-
-let configured = false;
-function ensureConfigured(): boolean {
-  if (!PUBLIC || !PRIVATE) return false;
-  if (!configured) {
-    webpush.setVapidDetails(SUBJECT, PUBLIC, PRIVATE);
-    configured = true;
-  }
-  return true;
-}
-
-/** True when VAPID keys are present so push can actually be sent. */
-export function pushConfigured(): boolean {
-  return !!(PUBLIC && PRIVATE);
-}
-
-/** The VAPID public key the browser needs to subscribe. Safe to expose. */
-export function getVapidPublicKey(): string {
-  return PUBLIC;
-}
 
 export interface PushPayload {
   title: string;
@@ -63,7 +35,7 @@ const FAILURE_PRUNE_THRESHOLD = 8;
  */
 export async function sendPushToOwner(payload: PushPayload): Promise<void> {
   try {
-    if (!ensureConfigured()) return; // keys not set — silently no-op
+    if (!(await ensurePushConfigured())) return; // keys not set — silently no-op
 
     const subs = await prisma.pushSubscription.findMany();
     if (subs.length === 0) return;

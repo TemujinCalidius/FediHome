@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- **Turn on phone notifications without touching the server** (#59) — **Admin → Site settings → Phone notifications** generates your Web Push (VAPID) keypair in one click, so PWA push works with no `npx web-push generate-vapid-keys` or `.env` editing. The private signing key is **stored AES-256-GCM-encrypted at rest** and never sent to the browser; the `VAPID_*` env vars still work as a fallback. Regenerating keys correctly **unsubscribes every device** (a subscription is bound to the old key and can't receive new sends) — and this also fixes a latent bug where, after any key change, a device would show notifications as "on" while silently receiving nothing; it now detects the mismatch and prompts you to re-enable.
 - **Put the sidebar where you want it, with the blocks you want** (#307) — the sidebar layout can now sit on the **left or right**, and its blocks are an **ordered list you control**: `about, recent, sections, connect`. The order you write is the order they render, and leaving one out hides it — so dropping `sections` stops your nav appearing in both the header and the sidebar. Set both in **Admin → Site settings → Appearance** (they appear once you pick the Sidebar page width), or during first-run setup. On mobile your content always comes first regardless of which side you choose.
 
 ### Changed
