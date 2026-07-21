@@ -180,10 +180,29 @@ docker compose up -d
 ```
 
 This starts:
-- **app** — FediHome on port 3000
-- **db** — PostgreSQL 15 on an internal network with persistent volume
+- **app** — FediHome on port 3000, with `./public/uploads` bind-mounted so your media lives on the host
+- **db** — PostgreSQL 15 on an internal network with a persistent volume
 
 To use an external PostgreSQL database instead, set `DATABASE_URL` in `.env.local` and remove the `db` service from `docker-compose.yml`.
+
+> **Set `ADMIN_SECRET` in the host's `.env.local` before you run setup.**
+> Compose reads `.env.local` from the **host**, but the setup wizard writes to `.env.local`
+> **inside** the container — two different files. If you let the wizard generate the secret and
+> don't copy it to the host file, the container loses it the next time it's rebuilt while the
+> database still records setup as complete, and you're locked out of admin. The wizard warns you
+> about this if it detects it's running in a container.
+
+**Two things live outside the database and must both be preserved:**
+
+| What | Where | Persisted by |
+|---|---|---|
+| Posts, followers, comments, settings, **federation keys** | PostgreSQL | the `pgdata` volume |
+| Uploaded images, photos, audio, cached feed media | `public/uploads/` | the `./public/uploads` bind mount |
+
+Without that bind mount, every uploaded file lives only in the container's writable layer and is
+destroyed whenever the container is replaced — including by a plain host reboot. The database
+survives either way, and because it stores file *paths* rather than the files themselves, the site
+would come back looking intact with every image and audio player returning 404.
 
 ### Docker Behind nginx
 
@@ -195,6 +214,26 @@ proxy_pass http://127.0.0.1:3000;
 
 ### Updating with Docker
 
+> ### ⚠️ Upgrading a Docker install from before v1.18.0 — do this FIRST
+>
+> Before v1.18.0 the `app` service had no volume, so all your uploads live **inside** the running
+> container. v1.18.0 adds a `./public/uploads` bind mount — and a bind mount **shadows** whatever is
+> already at that path, so pulling the update and restarting would hide your existing files and then
+> destroy them on the next rebuild.
+>
+> **Copy them out to the host before you rebuild:**
+>
+> ```bash
+> cd /path/to/fedihome
+> docker compose cp app:/app/public/uploads ./public/uploads
+> ls public/uploads          # confirm your files are there
+> ```
+>
+> Only then `git pull` and rebuild. If you've already rebuilt without doing this and the old
+> container is gone, those files are unrecoverable — restore them from a backup.
+>
+> This is a one-time step. Fresh v1.18.0+ installs need nothing.
+
 ```bash
 cd /path/to/fedihome
 git pull
@@ -202,14 +241,36 @@ docker compose build
 docker compose up -d
 ```
 
-## Database Backups
+## Backups
 
-Regardless of your deployment method, back up your PostgreSQL database regularly.
+> **A database dump on its own is NOT a complete backup.** Your instance has two
+> pieces of state, and only one of them is in PostgreSQL:
+>
+> | What | Where | Lose it and… |
+> |---|---|---|
+> | Posts, followers, comments, settings, **federation keys** | PostgreSQL | everything goes |
+> | Uploaded images, photos, audio, cached feed media | `public/uploads/` | posts survive but every image and audio player 404s |
+>
+> The database stores file **paths**, not the files. So restoring a `pg_dump` alone
+> gives you back a site that *looks* intact with every piece of media missing.
+>
+> **⚠️ The single most important row is `ActorKeys`** — your ActivityPub signing keypair.
+> It's what proves posts came from you. Restore a dump without it and your instance
+> generates a *new* identity: existing followers hold your old public key, so your
+> posts may stop verifying on remote servers. A plain `pg_dump` includes it; a
+> "content-only" or selective dump may not. FediHome will warn you loudly in the logs
+> and in the admin panel if it ever detects this has happened.
 
 ### Manual Backup
 
+Both halves:
+
 ```bash
+# 1. Database (includes ActorKeys)
 pg_dump -U fedihome -h localhost fedihome > backup-$(date +%Y%m%d).sql
+
+# 2. Uploaded media
+tar czf uploads-$(date +%Y%m%d).tar.gz public/uploads/
 ```
 
 ### Automated Daily Backup
@@ -224,21 +285,43 @@ Add:
 
 ```
 0 3 * * * pg_dump -U fedihome -h localhost fedihome | gzip > /backups/fedihome-$(date +\%Y\%m\%d).sql.gz
+15 3 * * * tar czf /backups/uploads-$(date +\%Y\%m\%d).tar.gz -C /path/to/fedihome public/uploads
 ```
 
-This creates a compressed backup daily at 3 AM.
+This backs up the database at 3 AM and your media just after.
 
 ### Docker Backup
 
 ```bash
+# Database
 docker compose exec db pg_dump -U fedihome fedihome > backup-$(date +%Y%m%d).sql
+
+# Media — bind-mounted to the host, so back it up from the checkout
+tar czf uploads-$(date +%Y%m%d).tar.gz public/uploads/
 ```
 
 ### Restoring
 
+Restore **both**, or your media links will dangle:
+
 ```bash
+# 1. Database
 psql -U fedihome -h localhost fedihome < backup-20260401.sql
+
+# 2. Media
+tar xzf uploads-20260401.tar.gz          # restores into public/uploads/
 ```
+
+After restoring, check the admin notifications. If FediHome reports that your
+federation identity was regenerated, the restore didn't carry the `ActorKeys`
+row — restore that row from the dump to recover your original identity before
+posting again.
+
+### Migrating to a new host
+
+Same two pieces: dump and restore the database, and copy `public/uploads/`
+across. Keep `.env.local` too — it holds your `ADMIN_SECRET` and any crossposting
+credentials.
 
 ## DNS Configuration
 

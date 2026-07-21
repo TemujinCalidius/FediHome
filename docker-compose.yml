@@ -10,6 +10,19 @@ services:
       - DATABASE_URL=postgresql://fedihome:fedihome@db:5432/fedihome
     env_file:
       - .env.local
+    volumes:
+      # Your uploaded media MUST live outside the container (#308). Without this
+      # the whole uploads tree sits in the container's writable layer, and every
+      # image, photo and audio file is destroyed the moment the container is
+      # replaced — `docker compose up --build`, `--force-recreate`, a prune, or
+      # simply a host reboot. The database survives (pgdata below); the FILES do
+      # not, and because the DB stores paths rather than blobs the site comes
+      # back looking intact with every image and player 404ing.
+      #
+      # A bind mount (not a named volume) on purpose: it puts your media in your
+      # own checkout where you can see it and back it up (see docs/deployment.md),
+      # matching where a bare-metal install keeps it.
+      - ./public/uploads:/app/public/uploads
     depends_on:
       db:
         condition: service_healthy

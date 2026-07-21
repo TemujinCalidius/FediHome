@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   deriveAccentScale, resolveTheme, isThemeId, buildThemeStyle, resolveAccent, DEFAULT_ACCENT, DEFAULT_THEME,
-  isFeedVariant, resolveLayout, FEED_VARIANTS, THEMES,
+  isFeedVariant, isHeaderVariant, isFooterVariant, isShellVariant, resolveLayout,
+  FEED_VARIANTS, HEADER_VARIANTS, FOOTER_VARIANTS, SHELL_VARIANTS, THEMES,
 } from "@/lib/themes";
 
 const sum = (hex: string) => {
@@ -191,5 +192,89 @@ describe("resolveLayout / isFeedVariant (#250 Phase 3)", () => {
     expect(resolveLayout("default", { feed: "list" }).feed).toBe("list");
     expect(resolveLayout("default", { feed: "" }).feed).toBe("cards"); // inherit
     expect(resolveLayout("default", { feed: "nonsense" }).feed).toBe("cards"); // stale/unknown → default
+  });
+});
+
+describe("resolveLayout / isHeaderVariant (#250 Phase 4 — header region)", () => {
+  it("isHeaderVariant only accepts known header variants", () => {
+    for (const v of HEADER_VARIANTS) expect(isHeaderVariant(v)).toBe(true);
+    expect(isHeaderVariant("sidebar")).toBe(false); // not built yet
+    expect(isHeaderVariant("")).toBe(false);
+  });
+
+  it("both built-in themes default to the bar header (existing instances unchanged)", () => {
+    expect(resolveLayout("default", {}).header).toBe("bar");
+    expect(resolveLayout("editorial", {}).header).toBe("bar");
+    expect(resolveLayout("unknown-theme", {}).header).toBe("bar"); // resolves to default theme
+  });
+
+  it("a known override wins; empty or bad values fall back to the theme default", () => {
+    expect(resolveLayout("default", { header: "centered" }).header).toBe("centered");
+    expect(resolveLayout("default", { header: "minimal" }).header).toBe("minimal");
+    expect(resolveLayout("default", { header: "" }).header).toBe("bar"); // inherit
+    expect(resolveLayout("default", { header: "nonsense" }).header).toBe("bar"); // stale/unknown → default
+  });
+
+  it("resolves feed and header independently", () => {
+    const r = resolveLayout("default", { feed: "list", header: "minimal" });
+    expect(r).toMatchObject({ feed: "list", header: "minimal" });
+  });
+});
+
+describe("resolveLayout / isFooterVariant (#250 — footer region)", () => {
+  it("isFooterVariant only accepts known footer variants", () => {
+    for (const v of FOOTER_VARIANTS) expect(isFooterVariant(v)).toBe(true);
+    expect(isFooterVariant("sidebar")).toBe(false); // not a footer variant
+    expect(isFooterVariant("")).toBe(false);
+  });
+
+  it("both built-in themes default to the row footer (existing instances unchanged)", () => {
+    expect(resolveLayout("default", {}).footer).toBe("row");
+    expect(resolveLayout("editorial", {}).footer).toBe("row");
+    expect(resolveLayout("unknown-theme", {}).footer).toBe("row"); // resolves to default theme
+  });
+
+  it("a known override wins; empty or bad values fall back to the theme default", () => {
+    expect(resolveLayout("default", { footer: "minimal" }).footer).toBe("minimal");
+    expect(resolveLayout("default", { footer: "columns" }).footer).toBe("columns");
+    expect(resolveLayout("default", { footer: "" }).footer).toBe("row"); // inherit
+    expect(resolveLayout("default", { footer: "nonsense" }).footer).toBe("row"); // stale/unknown → default
+  });
+
+  it("resolves feed, header and footer independently", () => {
+    expect(resolveLayout("default", { feed: "list", header: "minimal", footer: "columns" }))
+      .toMatchObject({ feed: "list", header: "minimal", footer: "columns" });
+  });
+});
+
+describe("resolveLayout / isShellVariant (#250 — public shell region)", () => {
+  it("isShellVariant only accepts known shell variants", () => {
+    for (const v of SHELL_VARIANTS) expect(isShellVariant(v)).toBe(true);
+    expect(isShellVariant("sidebar")).toBe(true); // shipped — the Classic Blog frame
+    expect(isShellVariant("wide")).toBe(false); // still a later phase
+    expect(isShellVariant("")).toBe(false);
+  });
+
+  it("both built-in themes default to the normal shell (existing instances unchanged)", () => {
+    expect(resolveLayout("default", {}).shell).toBe("normal");
+    expect(resolveLayout("editorial", {}).shell).toBe("normal");
+    expect(resolveLayout("unknown-theme", {}).shell).toBe("normal");
+  });
+
+  it("a known override wins; empty or bad values fall back to the theme default", () => {
+    expect(resolveLayout("default", { shell: "narrow" }).shell).toBe("narrow");
+    expect(resolveLayout("default", { shell: "sidebar" }).shell).toBe("sidebar");
+    expect(resolveLayout("default", { shell: "" }).shell).toBe("normal"); // inherit
+    expect(resolveLayout("default", { shell: "wide" }).shell).toBe("normal"); // not built yet → default
+  });
+
+  it("neither built-in theme opts into the sidebar (owner opt-in only)", () => {
+    expect(resolveLayout("default", {}).shell).toBe("normal");
+    expect(resolveLayout("editorial", {}).shell).toBe("normal");
+  });
+
+  it("resolves all four regions independently", () => {
+    expect(resolveLayout("default", { feed: "list", header: "minimal", footer: "columns", shell: "narrow" }))
+      .toEqual({ feed: "list", header: "minimal", footer: "columns", shell: "narrow" });
   });
 });

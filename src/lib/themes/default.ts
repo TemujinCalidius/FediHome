@@ -45,5 +45,5 @@ export const DEFAULT_THEME: Theme = {
     },
   },
   // "Cards" renders the feed as glass cards — today's look.
-  layout: { feed: "cards" },
+  layout: { feed: "cards", header: "bar", footer: "row", shell: "normal" },
 };

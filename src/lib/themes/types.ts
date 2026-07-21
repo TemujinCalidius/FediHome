@@ -41,16 +41,33 @@ export interface ThemeTokens {
 }
 
 /**
- * Layout regions (#250, Phase 3). Each region of the page picks one variant from
- * a curated catalogue — that's what makes layout swappable without arbitrary
- * markup. Today only `feed` is wired (cards ↔ list); header/shell/post/footer
- * land in later phases behind the same dispatch pattern.
+ * Layout regions (#250). Each region of the page picks one variant from a
+ * curated catalogue — that's what makes layout swappable without arbitrary
+ * markup. `feed` (Phase 3) and `header` (Phase 4) are wired; shell/post/footer
+ * join later behind the same dispatch pattern.
  */
 export type FeedVariant = "cards" | "list";
+/** How the site header renders: the default top `bar`, a `centered` masthead, or a `minimal` name+menu. */
+export type HeaderVariant = "bar" | "centered" | "minimal";
+/** How the site footer renders: the default 3-region `row`, a one-line `minimal`, or a `columns` sitemap. */
+export type FooterVariant = "row" | "minimal" | "columns";
+/**
+ * The public page frame: `normal` (each page keeps its own width — today's
+ * look), `narrow` (a tighter reading column), or `sidebar` (content beside a
+ * column of about/recent/sections/connect blocks — what the Classic Blog theme
+ * is built on). `wide` joins in a later phase — see the region table in #250.
+ */
+export type ShellVariant = "normal" | "narrow" | "sidebar";
 
 export interface LayoutConfig {
   /** How the home/blog feed renders its posts. */
   feed: FeedVariant;
+  /** How the site header renders across every page. */
+  header: HeaderVariant;
+  /** How the site footer renders across every page. */
+  footer: FooterVariant;
+  /** The frame around every PUBLIC page (the (public) route group). */
+  shell: ShellVariant;
 }
 
 export interface Theme {

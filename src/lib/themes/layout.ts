@@ -1,13 +1,13 @@
-import type { FeedVariant, LayoutConfig } from "./types";
+import type { FeedVariant, HeaderVariant, FooterVariant, ShellVariant, LayoutConfig } from "./types";
 import { resolveTheme } from "./registry";
 
 /**
- * Layout region catalogue + resolution (#250, Phase 3). A theme picks a variant
- * for each region (its layout preset); the owner can override any single region
- * from config (empty = inherit the theme's default). This is the region×variant
+ * Layout region catalogue + resolution (#250). A theme picks a variant for each
+ * region (its layout preset); the owner can override any single region from
+ * config (empty = inherit the theme's default). This is the region×variant
  * model — rich, safe control over a curated set of layout choices, never
- * arbitrary markup. Only the `feed` region is wired today; header/shell/post/
- * footer join the same pattern in later phases.
+ * arbitrary markup. `feed` (Phase 3) and `header` (Phase 4) are wired; shell/
+ * post/footer join the same pattern in later phases.
  */
 
 /** Every layout region and the variants it offers (drives validation + the admin UI). */
@@ -20,12 +20,51 @@ export const LAYOUT_REGIONS = {
       list: "A compact, date-led index — more posts per screen, reading-first.",
     } as Record<FeedVariant, string>,
   },
+  header: {
+    label: "Header",
+    variants: ["bar", "centered", "minimal"] as HeaderVariant[],
+    describe: {
+      bar: "A sticky top bar — site name left, links inline. The default.",
+      centered: "A centered masthead — site name over a centered nav row.",
+      minimal: "Just your site name and a menu button — the leanest header.",
+    } as Record<HeaderVariant, string>,
+  },
+  footer: {
+    label: "Footer",
+    variants: ["row", "minimal", "columns"] as FooterVariant[],
+    describe: {
+      row: "Credit, badges and links across one row. The default.",
+      minimal: "A single quiet line — credit, handle and feed.",
+      columns: "A sitemap footer — sections, connect links and credit in columns.",
+    } as Record<FooterVariant, string>,
+  },
+  shell: {
+    label: "Page width",
+    variants: ["normal", "narrow", "sidebar"] as ShellVariant[],
+    describe: {
+      normal: "Each page uses its natural width. The default.",
+      narrow: "A tighter reading column across the whole public site.",
+      sidebar: "Content beside a sidebar — about, recent posts, sections and links.",
+    } as Record<ShellVariant, string>,
+  },
 } as const;
 
 export const FEED_VARIANTS = LAYOUT_REGIONS.feed.variants;
+export const HEADER_VARIANTS = LAYOUT_REGIONS.header.variants;
+export const FOOTER_VARIANTS = LAYOUT_REGIONS.footer.variants;
+export const SHELL_VARIANTS = LAYOUT_REGIONS.shell.variants;
 
 export function isFeedVariant(v: string): v is FeedVariant {
   return (FEED_VARIANTS as readonly string[]).includes(v);
+}
+export function isHeaderVariant(v: string): v is HeaderVariant {
+  return (HEADER_VARIANTS as readonly string[]).includes(v);
+}
+export function isFooterVariant(v: string): v is FooterVariant {
+  return (FOOTER_VARIANTS as readonly string[]).includes(v);
+}
+export function isShellVariant(v: string): v is ShellVariant {
+  return (SHELL_VARIANTS as readonly string[]).includes(v);
 }
 
 /**
@@ -41,5 +80,8 @@ export function resolveLayout(
   const base = resolveTheme(themeId).layout;
   return {
     feed: isFeedVariant(overrides.feed ?? "") ? (overrides.feed as FeedVariant) : base.feed,
+    header: isHeaderVariant(overrides.header ?? "") ? (overrides.header as HeaderVariant) : base.header,
+    footer: isFooterVariant(overrides.footer ?? "") ? (overrides.footer as FooterVariant) : base.footer,
+    shell: isShellVariant(overrides.shell ?? "") ? (overrides.shell as ShellVariant) : base.shell,
   };
 }

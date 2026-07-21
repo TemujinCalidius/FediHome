@@ -8,9 +8,12 @@ import type { NavLink } from "@/lib/nav";
 export default function MobileMenu({
   isAdmin,
   links,
+  alwaysCollapsed = false,
 }: {
   isAdmin: boolean;
   links: NavLink[];
+  /** Show the menu button at ALL breakpoints (the "minimal" header has no inline nav). */
+  alwaysCollapsed?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
@@ -21,7 +24,7 @@ export default function MobileMenu({
   }, [pathname]);
 
   return (
-    <div className="md:hidden">
+    <div className={alwaysCollapsed ? "" : "md:hidden"}>
       {/* Hamburger button */}
       <button
         onClick={() => setOpen(!open)}

@@ -41,6 +41,19 @@ describe("getRuntimeProfile (#201)", () => {
     expect(p.bannerPath).toBe("/images/banner.webp"); // null → env default
   });
 
+  it("an EMPTY-STRING avatar/banner falls back to the built-in default (#59 revert-to-default)", async () => {
+    // This is the read contract the admin panel's "Revert to default" relies on:
+    // it writes "" rather than pinning the literal default path, so the site
+    // keeps tracking whatever the built-in default is.
+    vi.mocked(prisma.siteSettings.findUnique).mockResolvedValue({
+      authorName: null, authorBio: null, authorTagline: null, actorSummary: null,
+      accentColor: null, themeAccents: null, avatarPath: "", bannerPath: "",
+    } as never);
+    const p = await getRuntimeProfile();
+    expect(p.avatarPath).toBe("/images/avatar.png");
+    expect(p.bannerPath).toBe("/images/banner.webp");
+  });
+
   it("parses per-theme accents from the row, dropping junk entries (#276)", async () => {
     vi.mocked(prisma.siteSettings.findUnique).mockResolvedValue({
       authorName: null, authorBio: null, authorTagline: null, actorSummary: null,

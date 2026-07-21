@@ -39,6 +39,19 @@ function imagePath(name: string, value: unknown): string {
   return path;
 }
 
+/**
+ * An image path, or `""`/`null` to CLEAR back to the built-in default. Storing
+ * an empty string is what "use the default" means here: the read side does
+ * `row.avatarPath || base.avatarPath` (site-profile), so it reverts to
+ * site.config's `/images/avatar.png` — and it keeps tracking that default
+ * rather than pinning a permanent override. Mirrors the `""`/`null` = "inherit"
+ * convention `themeAccents` already uses.
+ */
+function imagePathOrClear(name: string, value: unknown): string {
+  if (value === null || (typeof value === "string" && value.trim() === "")) return "";
+  return imagePath(name, value);
+}
+
 // Fields that appear in the AP actor document (getActorProfile: name, summary,
 // icon, image). Only a change to one of these warrants federating an `Update`;
 // accent / bio / tagline are local display and must NOT blast a pointless,
@@ -75,8 +88,8 @@ export async function updateProfile(body: AdminBody): Promise<NextResponse> {
     if (body.themeAccents !== undefined) {
       themeAccentsUpdate = await mergeThemeAccents(body.themeAccents);
     }
-    if (body.avatarPath !== undefined) data.avatarPath = imagePath("avatarPath", body.avatarPath);
-    if (body.bannerPath !== undefined) data.bannerPath = imagePath("bannerPath", body.bannerPath);
+    if (body.avatarPath !== undefined) data.avatarPath = imagePathOrClear("avatarPath", body.avatarPath);
+    if (body.bannerPath !== undefined) data.bannerPath = imagePathOrClear("bannerPath", body.bannerPath);
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 400 });
   }
