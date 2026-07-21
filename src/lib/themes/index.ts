@@ -9,7 +9,7 @@ export { DEFAULT_THEME } from "./default";
 export { THEMES, THEME_IDS, isThemeId, resolveTheme } from "./registry";
 export {
   LAYOUT_REGIONS, FEED_VARIANTS, HEADER_VARIANTS, FOOTER_VARIANTS, SHELL_VARIANTS,
-  isFeedVariant, isHeaderVariant, isFooterVariant, isShellVariant, resolveLayout,
+  isFeedVariant, isHeaderVariant, isFooterVariant, isShellVariant, resolveLayout, resolveSidebar,
 } from "./layout";
 
 const HEX = /^#[0-9a-fA-F]{6}$/;

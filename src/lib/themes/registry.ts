@@ -1,6 +1,7 @@
 import type { Theme } from "./types";
 import { DEFAULT_THEME } from "./default";
 import { EDITORIAL_THEME } from "./editorial";
+import { CLASSIC_THEME } from "./classic";
 
 /**
  * Registry of built-in themes (#250). Adding a theme is one entry here plus one
@@ -15,6 +16,7 @@ import { EDITORIAL_THEME } from "./editorial";
 export const THEMES: Record<string, Theme> = {
   [DEFAULT_THEME.id]: DEFAULT_THEME,
   [EDITORIAL_THEME.id]: EDITORIAL_THEME,
+  [CLASSIC_THEME.id]: CLASSIC_THEME,
 };
 
 export const THEME_IDS = Object.keys(THEMES);

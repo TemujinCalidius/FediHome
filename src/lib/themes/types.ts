@@ -4,6 +4,7 @@
  * `var(--font-*)` (see globals.css), so overriding these at `:root:root`
  * re-themes the whole site. Layout/region theming builds on top of this later.
  */
+import type { SidebarSide, SidebarBlock } from "@/lib/sidebar";
 
 /** Colour tokens, keyed by their `--color-<token>` custom-property suffix. */
 export type ColorToken =
@@ -77,4 +78,10 @@ export interface Theme {
   tokens: ThemeTokens;
   /** The variant this theme picks for each region (its layout preset). */
   layout: LayoutConfig;
+  /**
+   * A theme that uses the `sidebar` shell can preset the sidebar's side + block
+   * order/visibility (#307). Owner settings still override; omitted → the global
+   * defaults (right, all blocks). Only meaningful when `layout.shell === "sidebar"`.
+   */
+  sidebar?: { side?: SidebarSide; blocks?: SidebarBlock[] };
 }
