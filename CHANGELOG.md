@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.18.0 (2026-07-21)
 
 ### Fixed
 - **A lost federation keypair is no longer silent** (#310) — if the `ActorKeys` row goes missing on an instance that already has history (a dropped `pgdata` volume, a content-only restore, a botched migration), FediHome used to quietly generate a replacement. That **rotates your Fediverse identity**: existing followers still hold your old public key, so posts can stop verifying on remote servers with nothing to explain why. It still generates keys — your site never breaks — but now logs a prominent warning **and** raises a dismissible alert in the admin notifications, pointing at restoring the row from backup. A genuinely new instance still bootstraps silently.
