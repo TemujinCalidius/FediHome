@@ -7,8 +7,12 @@
  * 12 more. A module-level `const siteUrl = process.env.SITE_URL` is evaluated
  * once at *import*, so it can never see a value resolved at runtime — which
  * makes a DB-backed identity impossible until every consumer goes through one
- * accessor. This is that accessor. It is still env-backed and (deliberately)
- * changes nothing about how values are resolved; the overlay comes later.
+ * accessor. This is that accessor.
+ *
+ * Resolution order is **runtime override → environment → built-in default**.
+ * The overrides are loaded from the database at boot by `identity-store.ts`
+ * (Phase 1); nothing writes those rows yet, so in practice this still resolves
+ * from the environment exactly as before.
  *
  * **Why the agreement matters.** The actor id, the WebFinger `subject`/`href`
  * and the HTTP-signature `keyId` must all describe the same identity. If they
@@ -27,6 +31,40 @@
  */
 
 const DEFAULT_SITE_URL = "http://localhost:3000";
+
+/**
+ * Runtime overrides, layered over the environment (#326 Phase 1).
+ *
+ * This module deliberately imports **nothing** — `site.config.ts` imports it,
+ * and that is pulled into client bundles, so a `prisma` import here would drag
+ * the database client into the browser. The DB read therefore lives in the
+ * server-only `identity-store.ts`, which *pushes* values in through
+ * `applyIdentityOverrides`. That keeps `getIdentity()` synchronous, which is
+ * what lets ~60 call sites — several of them in sync helpers — keep working.
+ *
+ * Empty until something loads it. On the client it stays empty forever, exactly
+ * as `process.env.SITE_URL` is already absent there; client code must take
+ * identity from props or the runtime site config, never from here.
+ */
+type IdentityOverrides = Partial<Record<"siteUrl" | "fediHandle" | "fediDomain", string>>;
+let overrides: IdentityOverrides = {};
+
+/**
+ * Replace the runtime overrides. Server-side only — see `identity-store.ts`.
+ *
+ * ⚠️ Process-local. Under a multi-process deployment (pm2 cluster) a write in
+ * one worker is invisible to the others until they reload, so whatever
+ * eventually writes these rows must either refresh every worker or require a
+ * restart. Same constraint as `webpush.setVapidDetails` in push-config.ts.
+ */
+export function applyIdentityOverrides(next: IdentityOverrides): void {
+  overrides = { ...next };
+}
+
+/** Drop the overrides, falling back to the environment. */
+export function clearIdentityOverrides(): void {
+  overrides = {};
+}
 
 export interface Identity {
   /** Public origin, no trailing slash — e.g. `https://example.com`. */
@@ -56,15 +94,16 @@ function normalizeOrigin(raw: string): string {
 }
 
 export function getIdentity(): Identity {
-  const siteUrl = normalizeOrigin(process.env.SITE_URL || DEFAULT_SITE_URL);
-  const fediHandle = process.env.FEDI_HANDLE || "me";
+  // Precedence: runtime override -> environment -> built-in default.
+  const siteUrl = normalizeOrigin(overrides.siteUrl || process.env.SITE_URL || DEFAULT_SITE_URL);
+  const fediHandle = overrides.fediHandle || process.env.FEDI_HANDLE || "me";
   // Derive the domain from the site URL when it isn't set explicitly, matching
   // what site.config.ts has always done. WebFinger used to fall back to the
   // literal "localhost" instead, so an instance that set SITE_URL but not
   // FEDI_DOMAIN advertised @me@example.com everywhere while WebFinger answered
   // only to acct:me@localhost — i.e. 404 to every remote lookup, undiscoverable,
   // with a perfectly healthy-looking site. One derivation, no disagreement.
-  let fediDomain = process.env.FEDI_DOMAIN;
+  let fediDomain = overrides.fediDomain || process.env.FEDI_DOMAIN;
   if (!fediDomain) {
     try {
       fediDomain = new URL(siteUrl).host;
@@ -100,6 +139,6 @@ export function getSiteUrl(): string {
  * merely *reads* the identity wants `getSiteUrl()` instead.
  */
 export function getConfiguredSiteUrl(): string | undefined {
-  const raw = process.env.SITE_URL?.trim();
+  const raw = (overrides.siteUrl || process.env.SITE_URL)?.trim();
   return raw ? normalizeOrigin(raw) : undefined;
 }
