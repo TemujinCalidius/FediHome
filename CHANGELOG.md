@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Security
+- **Patched a high-severity image-processing vulnerability** (#329) — `sharp` moves to 0.35.3, clearing [GHSA-f88m-g3jw-g9cj](https://github.com/advisories/GHSA-f88m-g3jw-g9cj) (four libvips CVEs, CVSS 7.0). This one was genuinely reachable rather than theoretical: FediHome decodes images fetched from **arbitrary remote instances** when it caches fediverse media, and `/_next/image` is a public endpoint that fetches and decodes thumbnails from the allow-listed PeerTube hosts — so bytes an attacker controls reached the vulnerable decoders. Upgrading alone would **not** have fixed it: Next.js pins its own copy of `sharp`, which would have left a second, still-vulnerable one (and a duplicate native image library) in the tree, invisible to type-checking, tests and builds alike. `sharp` is therefore pinned tree-wide via `overrides`, so exactly one patched copy is installed. Giving `postcss` the same treatment clears the last remaining transitive advisory (#12), and `npm audit` now reports **0 vulnerabilities**.
+
 ### Added
 - **Set your avatar and banner during first-run setup** (#59) — the setup wizard now takes a profile picture and banner (optional), so a fresh install lands looking like *you* without a later trip to the admin panel. Uploads are gated by your setup token (the same one that protects setup) and go through the same optimise/EXIF-strip pipeline as everywhere else. A corrupt or mislabelled image is now a clear error instead of a 500.
 - **Set session + token lifetimes from the admin** (#59) — a new **Security** section in **Admin → Site settings** sets how long an admin session stays signed in (default 30 days) and how long a generated app token lasts (0 = never expires), with no `ADMIN_SESSION_TTL_DAYS` / `APP_TOKEN_TTL_DAYS` env editing. Changes apply to newly-created sessions and tokens; the env vars still work as defaults.
@@ -11,7 +14,7 @@
 
 ### Changed
 - **`docs/theming.md` rewritten for the current theme system** (#250) — the old guide predated themes entirely (it told you to hand-edit `globals.css` and swap avatar files on disk). It now covers what's web-editable in the admin panel, the `Theme` token contract + region×variant model, and a **developer scaffold** for adding a built-in theme (one data file + one registry line, with the dark/contrast and self-hosted-font constraints spelled out).
-- Dependency refresh: `next` 16.2.11, `react`/`react-dom` 19.2.8, `postcss` 8.5.21, `marked` 18.0.7, `@atproto/api` 0.20.31, `eslint-config-next` 16.2.11. (`sharp` held at 0.34.x; `typescript` blocked upstream — #234.)
+- Dependency refresh: `next` 16.2.11, `react`/`react-dom` 19.2.8, `postcss` 8.5.22, `marked` 18.0.7, `@atproto/api` 0.20.31, `eslint-config-next` 16.2.11. (`typescript` remains blocked upstream — #234.)
 
 ## 1.18.0 (2026-07-21)
 
