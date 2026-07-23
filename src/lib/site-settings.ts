@@ -1,7 +1,11 @@
 import { prisma } from "./db";
 import { siteConfig } from "@/../site.config";
-import { isThemeId, isFeedVariant, isHeaderVariant, isFooterVariant, isShellVariant } from "./themes";
+import { isThemeId, isFeedVariant, isHeaderVariant, isFooterVariant, isShellVariant, resolveSidebar } from "./themes";
 import { parseCategoryList, resolveCategoryList, MAX_CATEGORIES } from "./categories";
+import {
+  isSidebarSide, isSidebarBlock,
+  type SidebarSide, type SidebarBlock,
+} from "./sidebar";
 
 const SLUG = /^[a-z0-9-]+$/;
 
@@ -19,7 +23,7 @@ const SLUG = /^[a-z0-9-]+$/;
  * (site-profile.ts, #201).
  */
 
-export type FieldType = "bool" | "text" | "url";
+export type FieldType = "bool" | "text" | "url" | "int";
 
 /** Every editable key and its value type (drives validation + parsing). */
 export const SITE_CONFIG_FIELDS: Record<string, FieldType> = {
@@ -53,6 +57,10 @@ export const SITE_CONFIG_FIELDS: Record<string, FieldType> = {
   "layout.header": "text", // "" (inherit theme) or a known header variant (see validateSiteConfigValue)
   "layout.footer": "text", // "" (inherit theme) or a known footer variant (see validateSiteConfigValue)
   "layout.shell": "text", // "" (inherit theme) or a known shell variant (see validateSiteConfigValue)
+  "sidebar.side": "text", // "" (default right) or left|right (#307)
+  "sidebar.blocks": "text", // ordered CSV of known blocks; "" = built-in order (#307)
+  "security.adminSessionTtlDays": "int", // 0–3650; how long an admin session lasts (#59)
+  "security.appTokenTtlDays": "int", // 0–3650; 0 = app tokens never expire (#59)
   "contact.email": "text",
   "podcast.title": "text",
   "podcast.author": "text",
@@ -86,6 +94,10 @@ export interface RuntimeSiteConfig {
   download: { macosEnabled: boolean; macosReleaseUrl: string; macosAppStoreUrl: string };
   theme: { id: string };
   layout: { feed: string; header: string; footer: string; shell: string };
+  /** Sidebar options (#307) — only meaningful when the shell variant is "sidebar". */
+  sidebar: { side: SidebarSide; blocks: SidebarBlock[] };
+  /** Security policy (#59) — session/token lifetimes in days (0 = app tokens never expire). */
+  security: { adminSessionTtlDays: number; appTokenTtlDays: number };
   contact: { email: string };
   // /audio podcast feed overrides — empty means "derive from your profile".
   podcast: { title: string; author: string; description: string; email: string; image: string };
@@ -114,6 +126,11 @@ export function siteConfigDefaults(): RuntimeSiteConfig {
     download: { ...siteConfig.download },
     theme: { ...siteConfig.theme },
     layout: { ...siteConfig.layout },
+    sidebar: resolveSidebar(siteConfig.theme.id, {
+      side: siteConfig.sidebar.side,
+      blocks: siteConfig.sidebar.blocks,
+    }),
+    security: { ...siteConfig.security },
     contact: { email: siteConfig.contactEmail },
     podcast: { ...siteConfig.podcast },
     categories: {
@@ -133,6 +150,11 @@ function boolOverride(v: string | undefined, fallback: boolean): boolean {
 function textOverride(v: string | undefined, fallback: string): string {
   return v == null ? fallback : v;
 }
+function intOverride(v: string | undefined, fallback: number): number {
+  if (v == null) return fallback;
+  const n = Number(v);
+  return Number.isInteger(n) && n >= 0 ? n : fallback;
+}
 
 const CACHE_TTL_MS = 60_000;
 let cache: { at: number; cfg: RuntimeSiteConfig } | null = null;
@@ -151,6 +173,8 @@ export async function getRuntimeSiteConfig(): Promise<RuntimeSiteConfig> {
   try {
     const rows = await prisma.siteSetting.findMany({ where: { key: { in: SITE_CONFIG_KEYS } } });
     const o = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+    // Resolve the theme id up front — the sidebar layering below reads its preset.
+    const themeId = textOverride(o["theme.id"], base.theme.id);
     cfg = {
       name: textOverride(o["site.name"], base.name),
       description: textOverride(o["site.description"], base.description),
@@ -185,7 +209,7 @@ export async function getRuntimeSiteConfig(): Promise<RuntimeSiteConfig> {
         macosReleaseUrl: textOverride(o["download.macos.releaseUrl"], base.download.macosReleaseUrl),
         macosAppStoreUrl: textOverride(o["download.macos.appStoreUrl"], base.download.macosAppStoreUrl),
       },
-      theme: { id: textOverride(o["theme.id"], base.theme.id) },
+      theme: { id: themeId },
       layout: {
         feed: textOverride(o["layout.feed"], base.layout.feed),
         header: textOverride(o["layout.header"], base.layout.header),
@@ -199,6 +223,16 @@ export async function getRuntimeSiteConfig(): Promise<RuntimeSiteConfig> {
         description: textOverride(o["podcast.description"], base.podcast.description),
         email: textOverride(o["podcast.email"], base.podcast.email),
         image: textOverride(o["podcast.image"], base.podcast.image),
+      },
+      // Sidebar side + ordered block list (#307), layered against the active
+      // theme's preset: owner override → theme preset → built-in default.
+      sidebar: resolveSidebar(themeId, {
+        side: o["sidebar.side"] ?? siteConfig.sidebar.side,
+        blocks: o["sidebar.blocks"] ?? siteConfig.sidebar.blocks,
+      }),
+      security: {
+        adminSessionTtlDays: intOverride(o["security.adminSessionTtlDays"], base.security.adminSessionTtlDays),
+        appTokenTtlDays: intOverride(o["security.appTokenTtlDays"], base.security.appTokenTtlDays),
       },
       // Resolve the override CSV (else the env CSV) into a slug list; empty → defaults.
       categories: {
@@ -234,12 +268,26 @@ const CONTROL = /[\r\n]/;
 export function validateSiteConfigValue(key: string, value: string): string | null {
   const type = SITE_CONFIG_FIELDS[key];
   if (type === "bool") return value === "true" || value === "false" ? value : null;
+  if (type === "int") {
+    const n = Number(value);
+    return Number.isInteger(n) && n >= 0 && n <= 3650 ? String(n) : null; // days, ~10yr cap
+  }
   if (value.length > MAX_TEXT || CONTROL.test(value)) return null;
   if (key === "theme.id") return isThemeId(value) ? value : null; // must be a known theme
   if (key === "layout.feed") return value === "" || isFeedVariant(value) ? value : null; // "" inherits the theme
   if (key === "layout.header") return value === "" || isHeaderVariant(value) ? value : null; // "" inherits the theme
   if (key === "layout.footer") return value === "" || isFooterVariant(value) ? value : null; // "" inherits the theme
   if (key === "layout.shell") return value === "" || isShellVariant(value) ? value : null; // "" inherits the theme
+  if (key === "sidebar.side") return value === "" || isSidebarSide(value) ? value : null; // "" = right
+  if (key === "sidebar.blocks") {
+    // "" = built-in order. Else an ordered CSV of KNOWN blocks — reject unknown
+    // names rather than silently dropping them, so a typo surfaces at save time
+    // instead of quietly hiding a block.
+    if (value.trim() === "") return "";
+    const tokens = value.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean);
+    if (tokens.length === 0 || !tokens.every((t) => isSidebarBlock(t))) return null;
+    return [...new Set(tokens)].join(",");
+  }
   if (key === "categories.photos" || key === "categories.videos" || key === "categories.audio") {
     // "" = built-in defaults. Else comma-separated URL-safe slugs, deduped, capped.
     if (value.trim() === "") return "";

@@ -27,6 +27,7 @@ export default function SiteSettingsClient({
   accent,
   analyticsStatus,
   analyticsKey,
+  pushKey,
   encryptionAvailable,
   profile,
   profileDefaults,
@@ -37,6 +38,7 @@ export default function SiteSettingsClient({
   accent: { accentColor: string; themeAccents: Record<string, string> };
   analyticsStatus: { embedCode: string | null; unresolved: boolean };
   analyticsKey: { configured: boolean; source: "db" | "env" | null };
+  pushKey: { configured: boolean; source: "db" | "env" | null; subject: string };
   encryptionAvailable: boolean;
   profile: {
     authorName: string; authorTagline: string; authorBio: string;
@@ -55,6 +57,37 @@ export default function SiteSettingsClient({
   const [keyStatus, setKeyStatus] = useState(analyticsKey);
   const [keyInput, setKeyInput] = useState("");
   const [keyBusy, setKeyBusy] = useState(false);
+  // Web-push (VAPID) keys (#59) — generate/clear via a dedicated route; the
+  // private key is encrypted at rest and never sent to the browser.
+  const [pushStatus, setPushStatus] = useState(pushKey);
+  const [pushBusy, setPushBusy] = useState(false);
+
+  async function postPushKeys(action: "generate" | "clear"): Promise<void> {
+    if (action === "generate" && pushStatus.configured &&
+        !confirm("Generate new push keys? Every device currently enrolled for push will stop receiving notifications until it re-enables them.")) {
+      return;
+    }
+    setPushBusy(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/admin/push-keys", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setResult({ ok: false, msg: data.error || "Couldn't update the push keys." });
+        return;
+      }
+      setPushStatus(data.status);
+      setResult({ ok: true, msg: action === "clear" ? "Push keys cleared." : "Push keys generated — re-enable notifications on each device." });
+    } catch {
+      setResult({ ok: false, msg: "Couldn't update the push keys." });
+    } finally {
+      setPushBusy(false);
+    }
+  }
 
   /* ---- Profile overlay (#59) — name/tagline/bio/summary + avatar/banner ---- */
   // Held separately from `cfg` because the profile is a DIFFERENT store (the
@@ -274,6 +307,10 @@ export default function SiteSettingsClient({
       "layout.header": cfg.layout.header,
       "layout.footer": cfg.layout.footer,
       "layout.shell": cfg.layout.shell,
+      "sidebar.side": cfg.sidebar.side,
+      "sidebar.blocks": sidebarText,
+      "security.adminSessionTtlDays": String(cfg.security.adminSessionTtlDays),
+      "security.appTokenTtlDays": String(cfg.security.appTokenTtlDays),
       "contact.email": cfg.contact.email,
       "podcast.title": cfg.podcast.title,
       "podcast.author": cfg.podcast.author,
@@ -306,7 +343,8 @@ export default function SiteSettingsClient({
         "footer.webringUrl", "footer.webringLabel", "footer.badgeSrc", "footer.badgeHref",
         "footer.badgeAlt", "footer.fundingUrl", "footer.fundingLabel",
         "download.macos.enabled", "download.macos.releaseUrl", "download.macos.appStoreUrl",
-        "theme.id", "layout.feed", "layout.header", "layout.footer", "layout.shell", "contact.email",
+        "theme.id", "layout.feed", "layout.header", "layout.footer", "layout.shell",
+        "sidebar.side", "sidebar.blocks", "security.adminSessionTtlDays", "security.appTokenTtlDays", "contact.email",
         "podcast.title", "podcast.author", "podcast.description", "podcast.email", "podcast.image",
         "categories.photos", "categories.videos", "categories.audio",
         "analytics.siteId", "analytics.embedId",
@@ -324,6 +362,8 @@ export default function SiteSettingsClient({
   const setFooter = (patch: Partial<RuntimeSiteConfig["footer"]>) => setCfg((c) => ({ ...c, footer: { ...c.footer, ...patch } }));
   const setDownload = (patch: Partial<RuntimeSiteConfig["download"]>) => setCfg((c) => ({ ...c, download: { ...c.download, ...patch } }));
   const setLayout = (patch: Partial<RuntimeSiteConfig["layout"]>) => setCfg((c) => ({ ...c, layout: { ...c.layout, ...patch } }));
+  const setSidebar = (patch: Partial<RuntimeSiteConfig["sidebar"]>) => setCfg((c) => ({ ...c, sidebar: { ...c.sidebar, ...patch } }));
+  const setSecurity = (patch: Partial<RuntimeSiteConfig["security"]>) => setCfg((c) => ({ ...c, security: { ...c.security, ...patch } }));
   const setContact = (patch: Partial<RuntimeSiteConfig["contact"]>) => setCfg((c) => ({ ...c, contact: { ...c.contact, ...patch } }));
   const setPodcast = (patch: Partial<RuntimeSiteConfig["podcast"]>) => setCfg((c) => ({ ...c, podcast: { ...c.podcast, ...patch } }));
   const setAnalytics = (patch: Partial<RuntimeSiteConfig["analytics"]>) => setCfg((c) => ({ ...c, analytics: { ...c.analytics, ...patch } }));
@@ -339,6 +379,11 @@ export default function SiteSettingsClient({
   });
   const [catText, setCatText] = useState(catCsv(effective));
   useEffect(() => { setCatText(catCsv(cfg)); }, [cfg.categories]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sidebar block order (#307) — same raw-text treatment as categories above, so
+  // typing a comma doesn't get eaten by a `join()`-bound controlled input.
+  const [sidebarText, setSidebarText] = useState(effective.sidebar.blocks.join(", "));
+  useEffect(() => { setSidebarText(cfg.sidebar.blocks.join(", ")); }, [cfg.sidebar.blocks]);
 
   const text = (label: string, value: string, onChange: (v: string) => void, placeholder = "") => (
     <label className="flex flex-col gap-1 text-xs text-gray-400">
@@ -550,6 +595,32 @@ export default function SiteSettingsClient({
             (v) => setLayout({ shell: v }),
             "The frame around your public pages (your admin screens are unaffected).",
           )}
+          {cfg.layout.shell === "sidebar" && (
+            <>
+              {select(
+                "Sidebar side",
+                cfg.sidebar.side,
+                [
+                  { value: "right", label: "Right" },
+                  { value: "left", label: "Left" },
+                ],
+                (v) => setSidebar({ side: v as RuntimeSiteConfig["sidebar"]["side"] }),
+                "Which side of your content the sidebar sits on. On mobile your content always comes first.",
+              )}
+              {text(
+                "Sidebar blocks",
+                sidebarText,
+                setSidebarText,
+                "about, recent, sections, connect",
+              )}
+              <p className="text-xs text-gray-600 m-0 -mt-1">
+                Comma-separated, in the order you want them. Leave a block out to hide it — drop{" "}
+                <code>sections</code> if you don&apos;t want your nav in both the header and the sidebar.
+                Blank uses the default order. Available: <code>about</code>, <code>recent</code>,{" "}
+                <code>sections</code>, <code>connect</code>.
+              </p>
+            </>
+          )}
         </>)}
 
         {section("Landing page", <>
@@ -663,6 +734,79 @@ export default function SiteSettingsClient({
               </button>
             )}
           </div>
+        </>)}
+
+        {section("Phone notifications (Web Push)", <>
+          <p className="text-xs text-gray-600 m-0">
+            Push notifications to your installed app (PWA) need a VAPID keypair. Generate one here — no
+            <code> npx web-push </code> or <code>.env</code> editing. The private key is stored encrypted;
+            after generating, enable notifications on each device from the 🔔 menu.
+          </p>
+          <p className="text-xs m-0">
+            {pushStatus.configured ? (
+              <span className="text-green-400">✓ Push keys configured{pushStatus.source === "env" ? " (from env)" : ""}.</span>
+            ) : (
+              <span className="text-gray-500">No push keys yet — notifications are off until you generate them.</span>
+            )}
+          </p>
+          {pushStatus.configured && (
+            <p className="text-xs text-amber-400/80 m-0">
+              ⚠️ Regenerating replaces your keys and <strong>unsubscribes every device</strong> — each one has to re-enable push.
+            </p>
+          )}
+          {!encryptionAvailable && (
+            <p className="text-xs text-amber-400 m-0">Set <code>ADMIN_SECRET</code> to store the private key encrypted at rest.</p>
+          )}
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => postPushKeys("generate")}
+              disabled={pushBusy || !encryptionAvailable}
+              className="btn-primary text-xs disabled:opacity-50"
+            >
+              {pushBusy ? "Working…" : pushStatus.configured ? "Regenerate keys" : "Generate keys"}
+            </button>
+            {pushStatus.source === "db" && (
+              <button
+                type="button"
+                onClick={() => postPushKeys("clear")}
+                disabled={pushBusy}
+                className="text-xs text-gray-400 hover:text-white underline disabled:opacity-40"
+              >
+                Clear saved keys
+              </button>
+            )}
+          </div>
+        </>)}
+
+        {section("Security", <>
+          <p className="text-xs text-gray-600 m-0">
+            Session and token lifetimes, in days. Changes apply to <strong>newly-created</strong> sessions and
+            tokens only — existing ones keep their original expiry.
+          </p>
+          <label className="flex flex-col gap-1 text-xs text-gray-400">
+            <span>Admin session lifetime (days)</span>
+            <input
+              type="number" min={1} max={3650}
+              value={cfg.security.adminSessionTtlDays}
+              onChange={(e) => setSecurity({ adminSessionTtlDays: Math.max(0, Math.floor(Number(e.target.value) || 0)) })}
+              className="w-28 bg-surface-800 border border-surface-700 rounded-md px-2 py-1.5 text-sm text-white"
+            />
+            <span className="text-gray-600">How long you stay signed in to the admin panel. Default 30.</span>
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-gray-400">
+            <span>App token lifetime (days)</span>
+            <input
+              type="number" min={0} max={3650}
+              value={cfg.security.appTokenTtlDays}
+              onChange={(e) => setSecurity({ appTokenTtlDays: Math.max(0, Math.floor(Number(e.target.value) || 0)) })}
+              className="w-28 bg-surface-800 border border-surface-700 rounded-md px-2 py-1.5 text-sm text-white"
+            />
+            <span className="text-gray-600">
+              How long a generated app token lasts. <strong>0 = never expires</strong> (long-lived + revocable).
+              Setting a limit starts expiring newly-issued tokens.
+            </span>
+          </label>
         </>)}
 
         <div className="flex items-center gap-3 py-4">

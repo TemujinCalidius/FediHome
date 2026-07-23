@@ -112,6 +112,40 @@ Some settings are stored in the database (`SiteSettings` table) and managed thro
 
 Changes made in the admin panel are saved to the database and take effect immediately without restarting the server.
 
+## Phone Notifications (Web Push)
+
+FediHome can push likes, boosts, replies, follows, DMs and comments to your phone
+or desktop — even when the site isn't open. **There is nothing to configure on the
+server:** the keys it needs are generated in-app the first time you turn it on.
+
+**Turning it on:**
+
+1. Open the **🔔 menu** (visible only when you're signed in as the owner) and
+   choose **Set up phone notifications**. That generates your Web Push **VAPID
+   keypair**, stores the private half AES-256-GCM-encrypted, and subscribes the
+   device you're on — one click, no `.env` editing and no restart.
+2. Hit **Test** to confirm a notification actually arrives.
+
+**On iPhone/iPad you must install the site first.** iOS only exposes push to
+home-screen apps, so in Safari tap **Share → Add to Home Screen**, then open
+FediHome *from the Home Screen* and enable notifications there. Until you do, the
+menu shows install guidance instead of an enable button — that's expected, not an
+error.
+
+Repeat step 1 on each device you want notifications on; subscriptions are
+per-device.
+
+**Rotating keys.** **Admin → Site settings → Phone notifications** shows the key
+status and can **regenerate** or **clear** the keypair. Regenerating deliberately
+**unsubscribes every device**: a subscription is bound to the key it was created
+with and can never receive a send signed by a new one. Each device simply detects
+the mismatch and offers to re-enable.
+
+**Env fallback.** `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` and `VAPID_SUBJECT` still
+work for automated deploys, but a key generated in the admin panel takes
+precedence. Generating in-app requires `ADMIN_SECRET` to be set, since that's what
+encrypts the private key at rest.
+
 ## Navigation Configuration
 
 The `nav` object in `site.config.ts` controls which top-level pages appear in the navbar:

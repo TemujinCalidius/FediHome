@@ -11,6 +11,8 @@ vi.mock("@/../site.config", () => ({
     download: { macosEnabled: false, macosReleaseUrl: "https://env/releases/latest", macosAppStoreUrl: "" },
     theme: { id: "default" },
     layout: { feed: "", header: "", footer: "", shell: "" },
+    sidebar: { side: "", blocks: "" },
+    security: { adminSessionTtlDays: 30, appTokenTtlDays: 0 },
     contactEmail: "env@example.com",
     podcast: { title: "", author: "", description: "", email: "", image: "" },
     categories: { photos: "", videos: "", audio: "" },
@@ -98,6 +100,31 @@ describe("getRuntimeSiteConfig (#59)", () => {
     invalidateSiteConfigCache();
     vi.mocked(prisma.siteSetting.findMany).mockResolvedValue(rows({ "layout.shell": "narrow" }) as never);
     expect((await getRuntimeSiteConfig()).layout.shell).toBe("narrow");
+  });
+
+  it("overlays sidebar side + block order (#307): defaults when unset, saved values win", async () => {
+    const base = await getRuntimeSiteConfig();
+    expect(base.sidebar.side).toBe("right"); // shipped default
+    expect(base.sidebar.blocks).toEqual(["about", "recent", "sections", "connect"]);
+
+    invalidateSiteConfigCache();
+    vi.mocked(prisma.siteSetting.findMany).mockResolvedValue(
+      rows({ "sidebar.side": "left", "sidebar.blocks": "connect,about" }) as never,
+    );
+    const cfg = await getRuntimeSiteConfig();
+    expect(cfg.sidebar.side).toBe("left");
+    expect(cfg.sidebar.blocks).toEqual(["connect", "about"]); // order preserved, others hidden
+  });
+
+  it("overlays security TTLs (#59): env defaults, a saved integer wins", async () => {
+    const base = await getRuntimeSiteConfig();
+    expect(base.security).toEqual({ adminSessionTtlDays: 30, appTokenTtlDays: 0 });
+    invalidateSiteConfigCache();
+    vi.mocked(prisma.siteSetting.findMany).mockResolvedValue(
+      rows({ "security.adminSessionTtlDays": "7", "security.appTokenTtlDays": "90" }) as never,
+    );
+    const cfg = await getRuntimeSiteConfig();
+    expect(cfg.security).toEqual({ adminSessionTtlDays: 7, appTokenTtlDays: 90 });
   });
 
   it("resolves gallery categories (#284): defaults when unset, a saved override wins, general guaranteed", async () => {
@@ -189,6 +216,29 @@ describe("validateSiteConfigValue (#59)", () => {
     expect(validateSiteConfigValue("layout.shell", "")).toBe(""); // inherit the theme default
     expect(validateSiteConfigValue("layout.shell", "sidebar")).toBe("sidebar");
     expect(validateSiteConfigValue("layout.shell", "wide")).toBeNull(); // still a later phase
+  });
+  it("sidebar.side accepts left/right or empty, rejects anything else (#307)", () => {
+    expect(validateSiteConfigValue("sidebar.side", "left")).toBe("left");
+    expect(validateSiteConfigValue("sidebar.side", "right")).toBe("right");
+    expect(validateSiteConfigValue("sidebar.side", "")).toBe("");
+    expect(validateSiteConfigValue("sidebar.side", "top")).toBeNull();
+  });
+  it("security TTLs accept a non-negative integer in range, reject anything else (#59)", () => {
+    expect(validateSiteConfigValue("security.adminSessionTtlDays", "14")).toBe("14");
+    expect(validateSiteConfigValue("security.appTokenTtlDays", "0")).toBe("0"); // 0 = never expires
+    expect(validateSiteConfigValue("security.appTokenTtlDays", "3650")).toBe("3650");
+    expect(validateSiteConfigValue("security.adminSessionTtlDays", "-1")).toBeNull();
+    expect(validateSiteConfigValue("security.adminSessionTtlDays", "9999")).toBeNull(); // over the ~10yr cap
+    expect(validateSiteConfigValue("security.adminSessionTtlDays", "7.5")).toBeNull(); // not an integer
+    expect(validateSiteConfigValue("security.adminSessionTtlDays", "abc")).toBeNull();
+  });
+  it("sidebar.blocks accepts an ordered CSV of KNOWN blocks, rejecting typos outright (#307)", () => {
+    expect(validateSiteConfigValue("sidebar.blocks", "connect, about")).toBe("connect,about");
+    expect(validateSiteConfigValue("sidebar.blocks", "")).toBe(""); // built-in order
+    expect(validateSiteConfigValue("sidebar.blocks", "about,about")).toBe("about"); // deduped
+    // A typo must FAIL rather than silently hiding a block.
+    expect(validateSiteConfigValue("sidebar.blocks", "about,recentt")).toBeNull();
+    expect(validateSiteConfigValue("sidebar.blocks", "tags")).toBeNull(); // not built yet
   });
   it("categories.* accepts comma-separated slugs (normalized), empty = defaults, rejects non-slugs (#284)", () => {
     expect(validateSiteConfigValue("categories.photos", "Wildlife, macro , wildlife")).toBe("wildlife,macro"); // lowercased, deduped

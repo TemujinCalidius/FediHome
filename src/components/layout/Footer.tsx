@@ -17,14 +17,14 @@ export default async function Footer() {
       <div className="max-w-5xl mx-auto px-6 py-10">
         <div className="flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="text-center md:text-left">
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-content-faint">
               &copy; {new Date().getFullYear()} {profile.authorName}
             </p>
-            <p className="text-xs text-gray-600 mt-1">
+            <p className="text-xs text-content-dim mt-1">
               Self-owned. Self-hosted. Fediverse-native.
             </p>
             {stats && (
-              <p className="text-xs text-gray-700 mt-1 font-mono">
+              <p className="text-xs text-content-ghost mt-1 font-mono">
                 {stats.totalHits.toLocaleString()} visits
                 {stats.totalKudos > 0 && ` · ${stats.totalKudos} kudos`}
               </p>
@@ -58,7 +58,7 @@ export default async function Footer() {
               {webringUrl && (
                 <a
                   href={webringUrl}
-                  className="text-sm text-gray-400 hover:text-accent-400 transition-colors"
+                  className="text-sm text-content-subtle hover:text-accent-400 transition-colors"
                 >
                   {webringLabel}
                 </a>
@@ -68,7 +68,7 @@ export default async function Footer() {
                   href={fundingUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-sm text-gray-400 hover:text-accent-400 transition-colors"
+                  className="text-sm text-content-subtle hover:text-accent-400 transition-colors"
                 >
                   ♥ {fundingLabel}
                 </a>
@@ -77,8 +77,8 @@ export default async function Footer() {
           )}
 
           {/* Right: handle + links */}
-          <div className="flex items-center gap-5 text-gray-500">
-            <span className="text-xs text-gray-600 font-mono">
+          <div className="flex items-center gap-5 text-content-faint">
+            <span className="text-xs text-content-dim font-mono">
               {siteConfig.fediAddress}
             </span>
 

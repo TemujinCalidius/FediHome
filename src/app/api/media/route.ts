@@ -2,13 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { authenticateApiRequest, verifyOrigin } from "@/lib/auth";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
-import sharp from "sharp";
 import { parseBuffer as parseAudioMetadata } from "music-metadata";
-
-// Images larger than this get optimized
-const MAX_DIMENSION = 2400; // px (longest edge)
-const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB — optimize anything bigger
-const WEBP_QUALITY = 85;
+import { saveUploadedImage, IMAGE_TYPES } from "@/lib/media";
 
 // Audio cap (per-file)
 const MAX_AUDIO_SIZE = 100 * 1024 * 1024; // 100 MB
@@ -33,13 +28,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "no file uploaded" }, { status: 400 });
   }
 
-  const imageTypes = [
-    "image/jpeg",
-    "image/png",
-    "image/webp",
-    "image/gif",
-    "image/heic",
-  ];
   const audioTypes = ["audio/mpeg", "audio/mp3"];
 
   // Audio path
@@ -47,67 +35,17 @@ export async function POST(req: NextRequest) {
     return await handleAudioUpload(file);
   }
 
-  // Image path
-  if (!imageTypes.includes(file.type)) {
+  // Image path — validation + optimise + write shared with the wizard (#59).
+  if (!IMAGE_TYPES.includes(file.type)) {
     return NextResponse.json({ error: "unsupported file type" }, { status: 400 });
   }
-
-  // Create upload directory
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const uploadDir = path.join(process.cwd(), "public", "uploads", String(year), month);
-  await mkdir(uploadDir, { recursive: true });
-
-  const timestamp = Date.now().toString(36);
-  let buffer: Buffer = Buffer.from(await file.arrayBuffer()) as Buffer;
-
-  // Optimize if image is large (skip GIFs to preserve animation)
-  let ext: string;
-  if (file.type !== "image/gif" && (buffer.length > MAX_FILE_SIZE || file.type === "image/heic")) {
-    // Resize + convert to WebP
-    const image = sharp(buffer);
-    const metadata = await image.metadata();
-
-    let pipeline = image;
-
-    // Resize if dimensions exceed max
-    if (metadata.width && metadata.height) {
-      const longest = Math.max(metadata.width, metadata.height);
-      if (longest > MAX_DIMENSION) {
-        pipeline = pipeline.resize({
-          width: metadata.width >= metadata.height ? MAX_DIMENSION : undefined,
-          height: metadata.height > metadata.width ? MAX_DIMENSION : undefined,
-          fit: "inside",
-          withoutEnlargement: true,
-        });
-      }
-    }
-
-    buffer = await pipeline.rotate().webp({ quality: WEBP_QUALITY }).toBuffer();
-    ext = "webp";
-  } else if (file.type !== "image/gif") {
-    // Strip EXIF from small images (GPS, camera serial, etc.)
-    buffer = await sharp(buffer).rotate().toBuffer();
-    const extFromMime: Record<string, string> = {
-      "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp",
-    };
-    ext = extFromMime[file.type] || "jpg";
-  } else {
-    ext = "gif";
+  const result = await saveUploadedImage(file);
+  if (!result.ok) {
+    return NextResponse.json({ error: result.error }, { status: 400 });
   }
-
-  const filename = `${timestamp}.${ext}`;
-  const filePath = path.join(uploadDir, filename);
-  await writeFile(filePath, buffer);
-
   const siteUrl = process.env.SITE_URL || "http://localhost:3000";
-  const url = `${siteUrl}/uploads/${year}/${month}/${filename}`;
-
-  return NextResponse.json({ url }, {
-    status: 201,
-    headers: { Location: url },
-  });
+  const url = `${siteUrl}${result.path}`;
+  return NextResponse.json({ url }, { status: 201, headers: { Location: url } });
 }
 
 async function handleAudioUpload(file: File): Promise<NextResponse> {

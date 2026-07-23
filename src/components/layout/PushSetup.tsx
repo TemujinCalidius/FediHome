@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { resolvePushStatus, subKeyOf } from "@/lib/push-client";
 
 /**
  * Web Push enrollment UI, shown in the NotificationBell dropdown (admin-only).
@@ -10,7 +11,11 @@ import { useEffect, useState } from "react";
  * server-side. On iOS, push only works from a home-screen install, so when not
  * running standalone we show Add-to-Home-Screen guidance instead.
  *
- * Dormant until the server has VAPID keys set (the enable button reports it).
+ * If the server has no VAPID keypair yet, this generates one first — the bell is
+ * owner-only and /api/admin/push-keys re-checks that, so the whole thing is one
+ * click with no .env editing (#59). It used to show the enable button regardless
+ * and fail with an opaque "push not configured on server", which left push
+ * unreachable on a fresh install.
  */
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
@@ -23,7 +28,25 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array<ArrayBuffer> {
   return output;
 }
 
-type Status = "loading" | "unsupported" | "ios-needs-install" | "ready" | "on" | "denied";
+type PushInfo = { configured: boolean; publicKey: string; count: number };
+
+/** `GET /api/push` — the server's key + how many devices it currently knows about. */
+async function fetchPushInfo(): Promise<PushInfo | null> {
+  try {
+    const res = await fetch("/api/push");
+    if (!res.ok) return null;
+    const d = await res.json();
+    return {
+      configured: !!d?.configured,
+      publicKey: typeof d?.publicKey === "string" ? d.publicKey : "",
+      count: typeof d?.count === "number" ? d.count : 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+type Status = "loading" | "unsupported" | "ios-needs-install" | "needs-keys" | "ready" | "on" | "denied";
 
 export default function PushSetup() {
   const [status, setStatus] = useState<Status>("loading");
@@ -65,7 +88,24 @@ export default function PushSetup() {
           (await navigator.serviceWorker.getRegistration()) ||
           (await navigator.serviceWorker.register("/sw.js"));
         const existing = await reg.pushManager.getSubscription();
-        if (!cancelled) setStatus(existing ? "on" : "ready");
+        // Always ask the server, even with no local subscription: that's the only
+        // way to learn it has no keypair yet, and showing "Enable" in that state
+        // is a dead end (#59). Don't trust a bare subscription either — after a
+        // key rotation it's bound to a dead key and silently receives nothing.
+        const info = await fetchPushInfo();
+        if (cancelled) return;
+        setStatus(
+          info
+            ? resolvePushStatus({
+                configured: info.configured,
+                serverKey: info.publicKey,
+                serverCount: info.count,
+                subKey: existing ? subKeyOf(existing.options?.applicationServerKey) : null,
+              })
+            : // Couldn't reach the server — offer the button and let the click
+              // report the real reason rather than guessing a state.
+              "ready",
+        );
       } catch {
         if (!cancelled) setStatus("unsupported");
       }
@@ -80,20 +120,49 @@ export default function PushSetup() {
     setBusy(true);
     setMsg(null);
     try {
+      // Must stay first and un-awaited-before: the permission prompt has to run
+      // inside the user gesture (Safari enforces this strictly).
       const perm = await Notification.requestPermission();
       if (perm !== "granted") {
-        setStatus(perm === "denied" ? "denied" : "ready");
+        setStatus(perm === "denied" ? "denied" : status);
         setBusy(false);
         return;
       }
 
-      const keyRes = await fetch("/api/push");
-      if (!keyRes.ok) throw new Error("could not load push config");
-      const { publicKey, configured } = await keyRes.json();
-      if (!configured || !publicKey) throw new Error("push not configured on server");
+      let info = await fetchPushInfo();
+      if (!info) throw new Error("Couldn't load the push settings.");
+
+      // No keypair on the server yet — make one, rather than dead-ending on
+      // "push not configured". Safe to do from here: this menu is owner-only,
+      // /api/admin/push-keys re-checks admin + origin, and with no keys there
+      // are no existing subscriptions for the generate to purge.
+      if (!info.configured || !info.publicKey) {
+        setMsg("Setting up push on the server…");
+        const gen = await fetch("/api/admin/push-keys", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "generate" }),
+        });
+        const genBody = await gen.json().catch(() => null);
+        // Surface the server's own reason (e.g. ADMIN_SECRET missing, so the
+        // private key can't be encrypted at rest) instead of a generic failure.
+        if (!gen.ok) throw new Error(genBody?.error || "Couldn't set up push on the server.");
+        info = await fetchPushInfo();
+        if (!info?.configured || !info.publicKey) {
+          throw new Error("Push keys were created but couldn't be read back.");
+        }
+      }
+      const publicKey = info.publicKey;
 
       const reg = await navigator.serviceWorker.ready;
       let sub = await reg.pushManager.getSubscription();
+      // If an existing subscription is bound to a DIFFERENT (rotated) key, drop it
+      // and re-subscribe — the browser throws InvalidStateError if you subscribe
+      // with a new applicationServerKey while an old subscription exists.
+      if (sub && subKeyOf(sub.options?.applicationServerKey) !== publicKey) {
+        await sub.unsubscribe().catch(() => {});
+        sub = null;
+      }
       if (!sub) {
         sub = await reg.pushManager.subscribe({
           userVisibleOnly: true,
@@ -156,12 +225,12 @@ export default function PushSetup() {
   if (status === "loading") return null;
 
   return (
-    <div className="px-4 py-2.5 border-t border-surface-700 text-[11px] text-gray-400">
+    <div className="px-4 py-2.5 border-t border-surface-700 text-[11px] text-content-subtle">
       {status === "ios-needs-install" && (
         <p className="leading-relaxed">
           📲 To get push on your iPhone: tap the{" "}
-          <span className="text-gray-200">Share</span> icon →{" "}
-          <span className="text-gray-200">Add to Home Screen</span>, then open the app
+          <span className="text-content-strong">Share</span> icon →{" "}
+          <span className="text-content-strong">Add to Home Screen</span>, then open the app
           from your Home Screen and enable notifications here.
         </p>
       )}
@@ -175,6 +244,22 @@ export default function PushSetup() {
           Notifications are blocked. Allow them for this site in your browser/OS
           settings, then reload.
         </p>
+      )}
+
+      {status === "needs-keys" && (
+        <div>
+          <button
+            onClick={enable}
+            disabled={busy}
+            className="text-accent-400 hover:text-accent-300 transition-colors disabled:opacity-50"
+          >
+            🔔 {busy ? "Setting up…" : "Set up phone notifications"}
+          </button>
+          <p className="mt-1 text-[10px] text-content-faint leading-relaxed">
+            One click — this creates your push keys on the server, then enables
+            notifications on this device.
+          </p>
+        </div>
       )}
 
       {status === "ready" && (
@@ -201,7 +286,7 @@ export default function PushSetup() {
             <button
               onClick={disable}
               disabled={busy}
-              className="text-gray-500 hover:text-red-400 transition-colors disabled:opacity-50"
+              className="text-content-faint hover:text-red-400 transition-colors disabled:opacity-50"
             >
               Turn off
             </button>
@@ -209,7 +294,7 @@ export default function PushSetup() {
         </div>
       )}
 
-      {msg && <p className="mt-1 text-[10px] text-gray-500">{msg}</p>}
+      {msg && <p className="mt-1 text-[10px] text-content-faint">{msg}</p>}
     </div>
   );
 }

@@ -1,235 +1,197 @@
 # Theming
 
-FediHome uses Tailwind CSS with custom design tokens defined in CSS variables. You can customize colors, fonts, and layout without modifying component code.
+FediHome's look is a **theme**: a bundle of design tokens (colour, type, feel)
+plus a chosen **layout variant for each region** of the page. There are two ways
+to change it — pick one based on who you are:
 
-## Theme Architecture
+- **Site owner?** Everything below in [From the admin panel](#from-the-admin-panel)
+  is web-editable, no file editing or restart.
+- **Developer adding a built-in theme?** Jump to [Authoring a theme](#authoring-a-theme).
 
-All theme variables are defined in `src/app/globals.css` inside the `@theme` block. Tailwind picks these up as custom utilities, so they're available throughout the app as classes like `bg-surface-900` or `text-accent-400`.
+---
 
-The default theme is a dark palette with blue accents:
+## From the admin panel
 
-```css
-@theme {
-  /* Neutral slate dark palette */
-  --color-surface-950: #0a0a0f;
-  --color-surface-900: #111118;
-  --color-surface-800: #1a1a24;
-  --color-surface-700: #252530;
-  --color-surface-600: #3a3a4a;
+**Admin → Site settings → Appearance** controls all of this live:
 
-  /* Blue accent */
-  --color-accent-50:  #eff6ff;
-  --color-accent-100: #dbeafe;
-  --color-accent-200: #bfdbfe;
-  --color-accent-300: #93c5fd;
-  --color-accent-400: #60a5fa;
-  --color-accent-500: #3b82f6;
-  --color-accent-600: #2563eb;
-  --color-accent-700: #1d4ed8;
-  --color-accent-800: #1e40af;
-  --color-accent-900: #1e3a8a;
+| Control | What it does |
+|---|---|
+| **Theme** | Pick a built-in theme — Cards (default), Editorial, Classic Blog. Sets colours, fonts, feel and every region's layout at once. |
+| **Accent colour** | Any `#RRGGBB`, **per theme** (each theme remembers its own). "Use theme's accent" reverts to the theme's built-in colour. |
+| **Header / Feed / Footer / Page width** | Override any single region's variant (bar/centered/minimal, cards/list, row/minimal/columns, normal/narrow/sidebar). "Inherit from theme" uses the theme's own default. |
+| **Sidebar side / blocks** | When the shell is a sidebar: left or right, and an ordered list of blocks (`about, recent, sections, connect`) — omit one to hide it. |
 
-  /* Success green */
-  --color-moss-400: #34d399;
-  --color-moss-500: #10b981;
-  --color-moss-600: #059669;
+**Profile picture & banner** live in **Admin → Site settings → Your profile**
+(or during first-run setup) — upload directly, no file swapping.
 
-  /* Typography */
-  --font-display: "Source Serif 4", "Georgia", serif;
-  --font-body: "Inter", system-ui, -apple-system, sans-serif;
-  --font-mono: "JetBrains Mono", "Fira Code", monospace;
+Under the hood these write to the `SiteSetting` / `SiteSettings` overlay, read
+back within ~60s. Env vars (`THEME`, `LAYOUT_*`, `SIDEBAR_*`, `ACCENT_COLOR`, …)
+still work as defaults for automated deploys; a saved admin value wins.
+
+---
+
+## How themes work
+
+A **theme is pure data** (`src/lib/themes/<id>.ts`): the design tokens the UI
+resolves to at runtime, plus its layout presets. Everything visual references a
+CSS variable (`var(--color-*)`, `var(--font-*)`, `var(--radius-*)`,
+`var(--glass-filter)`), defined in `src/app/globals.css`'s `@theme` block. At
+runtime `buildThemeStyle` (`src/lib/themes/index.ts`) emits **only the tokens
+that differ from the default** as a `:root:root{…}` block and injects it in the
+root layout — so the default theme injects nothing and is byte-identical, and a
+theme only ships its deltas.
+
+The `Theme` contract (`src/lib/themes/types.ts`):
+
+```ts
+interface Theme {
+  id: string;
+  name: string;
+  description?: string;
+  tokens: {
+    colors: Record<ColorToken, string>;   // surface-950…600, accent-50…900, moss-400…600, content-*
+    fonts:  { display; body; mono };
+    feel:   { radiusCard; radiusButton; glassFilter };  // e.g. "8px", "blur(12px)", "none"
+  };
+  layout:  { feed; header; footer; shell };             // a variant per region
+  sidebar?: { side?; blocks? };                         // preset, if shell is "sidebar"
 }
 ```
 
-## Changing the Accent Color
+### The text ramp
 
-The accent color is used for links, buttons, borders, badges, and interactive elements throughout the UI.
+Colour tokens cover the *ground* (`surface-*`) and the *brand* (`accent-*`), but
+body text was long hard-coded to Tailwind neutrals — which `@theme` can't move,
+because it extends the palette rather than replacing it. That's the single reason
+every theme has had to be dark.
 
-### Method 1: Admin Panel (per theme)
+`content-*` (`src/lib/themes/content.ts`) is the text ramp that fixes it,
+brightest → dimmest:
 
-The simplest way is **Admin → Site settings → Appearance**: pick a colour under
-"Accent colour" and Save — it applies live, no restart. The accent is **per
-theme**: each theme (Cards, Editorial, …) remembers its own, so switching themes
-restores the accent you chose for it. Use **"Use theme's accent"** to fall back
-to the theme's built-in accent. (Stored in the `SiteSettings` profile row —
-`accentColor` for the default theme, `themeAccents` for the rest.)
+| Token | Role | Was |
+|---|---|---|
+| `content` | headings, body copy | `text-white` |
+| `content-strong` | just under primary | `text-gray-200` |
+| `content-muted` | secondary copy | `text-gray-300` |
+| `content-subtle` | labels, captions | `text-gray-400` |
+| `content-faint` | timestamps, counts, bylines | `text-gray-500` |
+| `content-dim` | decorative, de-emphasised | `text-gray-600` |
+| `content-ghost` | hairline text | `text-gray-700` |
 
-### Method 2: Edit globals.css
+Use `text-content`, `text-content-faint`, … in components. Each token **defaults
+to the exact Tailwind neutral it replaces** (`globals.css` sets
+`--color-content-faint: var(--color-gray-500)`), so migrating a utility is a pure
+rename with no visual change, and a theme that doesn't set them renders
+identically to before.
 
-For full control over the entire accent scale, edit `src/app/globals.css`:
+The migration is **partial** — the layout chrome is on tokens, the rest of the app
+isn't yet. Until it finishes, light themes stay blocked and the dark-only contrast
+invariant stands. If you're touching a component's text colours, moving them onto
+these tokens is the way to help (#250).
 
-```css
-@theme {
-  /* Example: change to purple */
-  --color-accent-50:  #faf5ff;
-  --color-accent-100: #f3e8ff;
-  --color-accent-200: #e9d5ff;
-  --color-accent-300: #d8b4fe;
-  --color-accent-400: #c084fc;
-  --color-accent-500: #a855f7;
-  --color-accent-600: #9333ea;
-  --color-accent-700: #7e22ce;
-  --color-accent-800: #6b21a8;
-  --color-accent-900: #581c87;
-}
-```
+`themes.test.ts` asserts the readable tier (`content` … `content-subtle`) stays AA
+on each theme's own `surface-950`, and that the ramp is monotonic. `content-faint`
+and below are metadata and decoration and sit below AA by design.
 
-Each shade (50 through 900) is used in different contexts:
-- **accent-400/500** — Primary interactive elements (links, buttons)
-- **accent-50/100** — Very light tints (text on dark backgrounds)
-- **accent-600/700** — Hover states, button gradients
-- **accent-800/900** — Darkest accents (rarely used in dark theme)
+### Regions × variants
 
-You can generate a consistent color scale from any base color using tools like [uicolors.app](https://uicolors.app/create) or [tailwindshades.com](https://www.tailwindshades.com/).
+Layout is a curated catalogue, not arbitrary markup (so a theme can't break
+ActivityPub actor pages, feeds, SEO or a11y). Each region offers a fixed set of
+variants (`src/lib/themes/layout.ts`, `LAYOUT_REGIONS`):
 
-The button gradient in `.btn-primary` and border colors in `.glass-card` also reference the accent color directly. If you change the accent palette, update these too:
+| Region | Variants |
+|---|---|
+| `feed`   | `cards` · `list` |
+| `header` | `bar` · `centered` · `minimal` |
+| `footer` | `row` · `minimal` · `columns` |
+| `shell`  | `normal` · `narrow` · `sidebar` |
 
-```css
-.btn-primary {
-  background: linear-gradient(135deg, #a855f7 0%, #9333ea 100%);
-}
+A theme sets a default variant per region; the owner can override any one from
+the admin panel (`resolveLayout` / `resolveSidebar` layer owner → theme →
+built-in default).
 
-.btn-primary:hover {
-  box-shadow: 0 4px 16px rgba(168, 85, 247, 0.25);
-}
+---
 
-.glass-card {
-  border: 1px solid rgba(168, 85, 247, 0.1);
-}
+## Authoring a theme
 
-.glass-card:hover {
-  border-color: rgba(168, 85, 247, 0.2);
-}
-```
+Adding a built-in theme is **one data file + one registry line** — no other
+wiring. It auto-appears in the admin theme picker and the first-run wizard
+(both iterate the `THEMES` registry).
 
-## Changing Surface Colors
+1. **Create `src/lib/themes/<id>.ts`.** Copy an existing one as a template —
+   `editorial.ts` (warm, list feed) or `classic.ts` (sidebar shell) are the
+   closest to a "second look".
 
-The surface palette controls the background colors of the page, cards, and panels:
+   ```ts
+   import type { Theme } from "./types";
 
-```css
-@theme {
-  /* Example: warmer dark palette */
-  --color-surface-950: #0f0d0a;
-  --color-surface-900: #1a1714;
-  --color-surface-800: #252118;
-  --color-surface-700: #332d22;
-  --color-surface-600: #4a4232;
-}
-```
+   export const OCEAN_THEME: Theme = {
+     id: "ocean",
+     name: "Ocean",
+     description: "Cool teal on deep navy — a calm reading theme.",
+     tokens: {
+       colors: {
+         "surface-950": "#0a1420", /* … 900/800/700/600, monotonic in luminance */
+         // Pin the accent ramp from a single base — see the constraint below:
+         "accent-500": "#2f8f83", /* …the full 50–900 scale, pinned */
+         "moss-400": "#…", "moss-500": "#…", "moss-600": "#…",
+       },
+       fonts: { display: '…', body: '…', mono: '"JetBrains Mono", monospace' },
+       feel:  { radiusCard: "12px", radiusButton: "8px", glassFilter: "blur(12px)" },
+     },
+     layout:  { feed: "list", header: "bar", footer: "row", shell: "normal" },
+     // sidebar: { side: "left", blocks: ["about", "recent", "connect"] }, // if shell: "sidebar"
+   };
+   ```
 
-The body background is `surface-950`, cards use `surface-900`, and borders/dividers use `surface-700/800`.
+2. **Register it** in `src/lib/themes/registry.ts`:
 
-## Changing Fonts
+   ```ts
+   import { OCEAN_THEME } from "./ocean";
+   export const THEMES = { …, [OCEAN_THEME.id]: OCEAN_THEME };
+   ```
 
-FediHome ships with three font families:
+3. **Run the tests** — `themes.test.ts` iterates every registered theme and
+   enforces the constraints below, so a bad theme fails CI rather than shipping.
 
-- **Display** (`font-display`) — Used for headings. Default: Source Serif 4 (serif)
-- **Body** (`font-body`) — Used for body text, navigation, UI elements. Default: Inter (sans-serif)
-- **Mono** (`font-mono`) — Used for code blocks and inline code. Default: JetBrains Mono
+### Constraints (enforced by `themes.test.ts`)
 
-### Replacing a Font
+- **Themes must (still) be dark.** Most components hard-code Tailwind neutrals
+  (`text-white`, `text-gray-*`) for body/secondary text, and `@theme` *extends*
+  the palette so those neutrals stay fixed while `surface-*` moves. On a light
+  ground `text-white` lands at ~1:1 — an invisible site. A contrast invariant
+  requires `white` / `gray-200` / `gray-400` to stay ≥ 4.5:1 (AA) on your
+  `surface-950`. The migration that lifts this is underway — see
+  [The text ramp](#the-text-ramp) — and is tracked in #250.
+- **Fonts swap families only.** `buildThemeStyle` can't register `@font-face`,
+  and only **Inter** and **Source Serif 4** are self-hosted, so pick among those
+  (+ system fallbacks). Adding a new face means an `@font-face` in `globals.css`.
+- **Pin the accent ramp.** Generate the 50–900 scale from your base with
+  `deriveAccentScale("#…")` (`src/lib/themes/color.ts`) and paste the literal
+  values — so the shipped theme's identity can't drift if that ramp is ever
+  retuned. (This is the same ramp a per-theme custom accent goes through.)
+- **`mono` and any token equal to the default diff out** and are never emitted —
+  only your real deltas ship.
 
-1. Download the font file(s) in `.woff2` format
-2. Place them in `public/fonts/`
-3. Update the `@font-face` rule in `globals.css`:
+---
 
-```css
-@font-face {
-  font-family: "Your Font Name";
-  src: url("/fonts/YourFont-Variable.woff2") format("woff2");
-  font-weight: 100 900;
-  font-style: normal;
-  font-display: swap;
-}
-```
+## Deeper changes in `globals.css`
 
-4. Update the `@theme` block:
+For anything below the token layer, edit `src/app/globals.css`:
 
-```css
-@theme {
-  --font-body: "Your Font Name", system-ui, sans-serif;
-}
-```
+- The `@theme` block defines the **default** token values (what other themes diff
+  against) and the Tailwind utilities (`bg-surface-900`, `text-accent-400`, …).
+- The `@font-face` rules self-host the fonts (`public/fonts/`).
+- Component classes — `.glass-card`, `.btn-primary`, `.btn-outlined`, `.divider`,
+  `.fedi-badge`, `.lightbox-overlay` — style the reusable UI pieces and read the
+  feel tokens (`var(--radius-card)`, `var(--glass-filter)`). Override any of them
+  for a site-wide tweak.
 
-### Using System Fonts Only
+Changes here are compiled into the build (not runtime-swappable per theme), so
+they affect every theme's baseline.
 
-To skip custom font loading entirely and use system fonts:
+## Open Graph image
 
-```css
-@theme {
-  --font-display: Georgia, "Times New Roman", serif;
-  --font-body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-mono: "SF Mono", "Cascadia Code", "Consolas", monospace;
-}
-```
-
-Then remove or comment out the `@font-face` rules.
-
-## Custom CSS Overrides
-
-You can add custom CSS at the bottom of `globals.css`. Styles defined there take precedence over Tailwind utilities when specificity is equal.
-
-Examples:
-
-```css
-/* Make all headings use the accent color */
-h1, h2, h3, h4, h5, h6 {
-  color: var(--color-accent-400);
-}
-
-/* Rounded avatar instead of default */
-.avatar-img {
-  border-radius: 50%;
-}
-
-/* Custom link underline style */
-a:hover {
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-/* Hide the footer entirely */
-footer {
-  display: none;
-}
-```
-
-## Component Classes
-
-FediHome uses several reusable CSS classes defined in `globals.css`:
-
-| Class | Purpose |
-|-------|---------|
-| `.glass-card` | Card container with translucent background, blur, and subtle border. Used for post cards, timeline entries, and panels. |
-| `.btn-primary` | Solid gradient button (accent color). Used for primary actions. |
-| `.btn-outlined` | Outlined button with accent border. Used for secondary actions. |
-| `.divider` | A subtle horizontal line with gradient fade on edges. |
-| `.fedi-badge` | Small pill-shaped badge for Fediverse interaction counts. |
-| `.lightbox-overlay` | Full-screen overlay for the photo lightbox. |
-
-You can override any of these to change the look of core UI elements.
-
-## Uploading Custom Avatar and Banner
-
-### Avatar
-
-Replace the file at `public/images/avatar.png` with your own image. The recommended size is 400x400 pixels. PNG or WebP format.
-
-The avatar is used in:
-- The site navbar
-- Your ActivityPub profile (what Mastodon users see)
-- RSS feed metadata
-
-### Banner
-
-Replace the file at `public/images/banner.webp` with your own image. The recommended size is at least 1500x500 pixels. WebP format is preferred for file size.
-
-The banner is used in:
-- The homepage header area
-- Your ActivityPub profile header image
-
-### Open Graph Image
-
-Replace `public/images/og-image.webp` with a custom image (1200x630 pixels recommended). This is the default image shown when your site URL is shared on social media without a specific post cover image.
-
-After replacing any of these files, the changes take effect immediately (or after clearing any CDN cache if you use one).
+Avatar and banner are web-editable (above). The social-share fallback image is
+still a file: replace `public/images/og-image.webp` (1200×630 recommended). It's
+used when a URL is shared without a post-specific cover.

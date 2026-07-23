@@ -112,6 +112,30 @@ export const siteConfig = {
     shell: process.env.LAYOUT_SHELL || "",
   },
 
+  // Sidebar options (#307), used when layout.shell is "sidebar". `side` is
+  // "right" (default) or "left"; `blocks` is a comma-separated, ORDERED list of
+  // about/recent/sections/connect — the order is the render order, and omitting
+  // one hides it (drop `sections` to stop duplicating your header nav). Empty =
+  // built-in defaults.
+  sidebar: {
+    side: process.env.SIDEBAR_SIDE || "",
+    blocks: process.env.SIDEBAR_BLOCKS || "",
+  },
+
+  // Security policy (#59), web-editable in Admin → Site settings → Security.
+  // Days. adminSession default 30; appToken 0 = never expires (long-lived +
+  // revocable). Changes affect only newly-minted sessions/tokens.
+  security: {
+    adminSessionTtlDays: (() => {
+      const n = Number(process.env.ADMIN_SESSION_TTL_DAYS);
+      return Number.isInteger(n) && n > 0 ? n : 30;
+    })(),
+    appTokenTtlDays: (() => {
+      const n = Number(process.env.APP_TOKEN_TTL_DAYS);
+      return Number.isInteger(n) && n > 0 ? n : 0;
+    })(),
+  },
+
   // /audio podcast RSS feed overrides (#59). Empty = derive from your profile
   // (title "<author> — Audio", author = your name, etc.). All web-editable in
   // Admin → Site settings; env vars remain as defaults.

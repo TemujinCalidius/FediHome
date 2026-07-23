@@ -17,7 +17,7 @@ export default async function Navbar() {
   return (
     <nav className="border-b border-surface-800 bg-surface-950/90 backdrop-blur-md sticky top-0 z-50">
       <div className="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
-        <Link href="/" className="flex-shrink-0 font-display text-lg font-bold text-white hover:text-accent-400 transition-colors">
+        <Link href="/" className="flex-shrink-0 font-display text-lg font-bold text-content hover:text-accent-400 transition-colors">
           {siteCfg.name}
         </Link>
 
@@ -26,7 +26,7 @@ export default async function Navbar() {
             <Link
               key={link.href}
               href={link.href}
-              className="text-sm text-gray-400 hover:text-accent-400 transition-colors"
+              className="text-sm text-content-subtle hover:text-accent-400 transition-colors"
             >
               {link.label}
             </Link>
@@ -37,7 +37,7 @@ export default async function Navbar() {
           {isAdmin && (
             <Link
               href="/timeline"
-              className="text-xs text-gray-500 hover:text-accent-400 transition-colors hidden md:inline"
+              className="text-xs text-content-faint hover:text-accent-400 transition-colors hidden md:inline"
             >
               Fedi Feed
             </Link>
@@ -45,7 +45,7 @@ export default async function Navbar() {
           {isAdmin && <NotificationBell />}
           <a
             href="/feed.xml"
-            className="text-gray-500 hover:text-accent-400 transition-colors hidden md:block"
+            className="text-content-faint hover:text-accent-400 transition-colors hidden md:block"
             title="RSS Feed"
           >
             <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">

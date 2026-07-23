@@ -27,6 +27,19 @@
   --color-moss-500: #10b981;
   --color-moss-600: #059669;
 
+  /* Text ramp (#250), brightest -> dimmest. Each defaults to the exact Tailwind
+     neutral the components used before the migration, so `text-content-faint`
+     and `text-gray-500` render identically — the swap is a pure rename. Themes
+     override these to move text colour, which is what a light theme needs
+     (`gray-*` is fixed by Tailwind; only tokens can move). See themes/content.ts. */
+  --color-content: var(--color-white);
+  --color-content-strong: var(--color-gray-200);
+  --color-content-muted: var(--color-gray-300);
+  --color-content-subtle: var(--color-gray-400);
+  --color-content-faint: var(--color-gray-500);
+  --color-content-dim: var(--color-gray-600);
+  --color-content-ghost: var(--color-gray-700);
+
   /* Typography */
   --font-display: "Source Serif 4", "Georgia", serif;
   --font-body: "Inter", system-ui, -apple-system, sans-serif;

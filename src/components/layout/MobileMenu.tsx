@@ -28,7 +28,7 @@ export default function MobileMenu({
       {/* Hamburger button */}
       <button
         onClick={() => setOpen(!open)}
-        className="p-1.5 text-gray-400 hover:text-accent-400 transition-colors"
+        className="p-1.5 text-content-subtle hover:text-accent-400 transition-colors"
         aria-label="Menu"
       >
         {open ? (
@@ -53,7 +53,7 @@ export default function MobileMenu({
                 className={`text-base py-2.5 border-b border-surface-800/50 transition-colors ${
                   pathname === link.href
                     ? "text-accent-400"
-                    : "text-gray-300 hover:text-accent-400"
+                    : "text-content-muted hover:text-accent-400"
                 }`}
               >
                 {link.label}
@@ -62,14 +62,14 @@ export default function MobileMenu({
             {isAdmin && (
               <Link
                 href="/timeline"
-                className="text-base py-2.5 border-b border-surface-800/50 text-gray-500 hover:text-accent-400 transition-colors"
+                className="text-base py-2.5 border-b border-surface-800/50 text-content-faint hover:text-accent-400 transition-colors"
               >
                 Fedi Feed
               </Link>
             )}
             <Link
               href="/feed.xml"
-              className="text-base py-2.5 text-gray-500 hover:text-accent-400 transition-colors"
+              className="text-base py-2.5 text-content-faint hover:text-accent-400 transition-colors"
             >
               RSS Feed
             </Link>

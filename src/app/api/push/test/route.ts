@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAdmin, verifyOrigin } from "@/lib/auth";
-import { sendPushToOwner, pushConfigured } from "@/lib/push";
+import { sendPushToOwner } from "@/lib/push";
+import { pushConfigured } from "@/lib/push-config";
 import { siteConfig } from "@/../site.config";
 
 /** Fire a test push to all of the owner's devices so a new install can be verified. */
@@ -11,7 +12,7 @@ export async function POST(req: NextRequest) {
   if (!verifyOrigin(req)) {
     return NextResponse.json({ error: "bad origin" }, { status: 403 });
   }
-  if (!pushConfigured()) {
+  if (!(await pushConfigured())) {
     return NextResponse.json({ error: "push not configured" }, { status: 503 });
   }
 

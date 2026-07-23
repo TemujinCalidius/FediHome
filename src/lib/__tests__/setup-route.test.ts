@@ -100,6 +100,30 @@ describe("/api/setup — SITE_URL validation (#59)", () => {
   });
 });
 
+describe("/api/setup — optional avatar/banner (#59)", () => {
+  it("writes a valid avatar/banner path into the claimed row", async () => {
+    const res = await POST(req(validBody({ avatarPath: "/uploads/2026/07/me.webp", bannerPath: "/images/banner.webp" })));
+    expect(res.status).toBe(200);
+    const data = create.mock.calls[0][0].data;
+    expect(data.avatarPath).toBe("/uploads/2026/07/me.webp");
+    expect(data.bannerPath).toBe("/images/banner.webp");
+  });
+
+  it("rejects a bad avatar path with 400, before claiming or writing", async () => {
+    const res = await POST(req(validBody({ avatarPath: "https://evil.example/x.jpg" })));
+    expect(res.status).toBe(400);
+    expect(create).not.toHaveBeenCalled();
+    expect(writeFileSync).not.toHaveBeenCalled();
+  });
+
+  it("omits the image fields entirely when none is provided", async () => {
+    await POST(req(validBody()));
+    const data = create.mock.calls[0][0].data;
+    expect("avatarPath" in data).toBe(false);
+    expect("bannerPath" in data).toBe(false);
+  });
+});
+
 describe("/api/setup — claim ordering + rollback (the bricking fix)", () => {
   it("validates BEFORE claiming: a bad payload leaves setupDone untouched", async () => {
     const res = await POST(req(validBody({ adminSecret: "not-hex" })));
