@@ -5,10 +5,8 @@ import { prisma } from "@/lib/db";
 import type { Metadata } from "next";
 import { siteConfig } from "@/../site.config";
 import { getRuntimeProfile } from "@/lib/site-profile";
+import { getIdentity } from "@/lib/identity";
 
-const siteUrl = siteConfig.url;
-const fediHandle = siteConfig.fediHandle;
-const siteDomain = siteConfig.fediDomain;
 
 export async function generateMetadata({
   params,
@@ -16,14 +14,14 @@ export async function generateMetadata({
   params: Promise<{ username: string }>;
 }): Promise<Metadata> {
   const { username } = await params;
-  if (username !== fediHandle) return { title: "Not Found" };
+  if (username !== getIdentity().fediHandle) return { title: "Not Found" };
   const profile = await getRuntimeProfile();
   const desc = profile.authorBio || profile.authorTagline || "Follow me on the Fediverse.";
   return {
-    title: `${profile.authorName} (@${fediHandle}@${siteDomain})`,
+    title: `${profile.authorName} (@${getIdentity().fediHandle}@${getIdentity().fediDomain})`,
     description: desc,
     openGraph: {
-      title: `${profile.authorName} (@${fediHandle}@${siteDomain})`,
+      title: `${profile.authorName} (@${getIdentity().fediHandle}@${getIdentity().fediDomain})`,
       description: desc,
       images: [{ url: profile.avatarPath, width: 400, height: 400 }],
     },
@@ -36,7 +34,7 @@ export default async function UserProfilePage({
   params: Promise<{ username: string }>;
 }) {
   const { username } = await params;
-  if (username !== fediHandle) notFound();
+  if (username !== getIdentity().fediHandle) notFound();
 
   const [postCount, followerCount, followingCount, profile] = await Promise.all([
     prisma.post.count({ where: { inReplyToPostId: null } }),
@@ -67,7 +65,7 @@ export default async function UserProfilePage({
             {profile.authorName}
           </h1>
           <p className="text-neutral-500 dark:text-neutral-400 text-sm">
-            @{fediHandle}@{siteDomain}
+            @{getIdentity().fediHandle}@{getIdentity().fediDomain}
           </p>
 
           <p className="mt-3 text-neutral-700 dark:text-neutral-300 text-sm leading-relaxed">

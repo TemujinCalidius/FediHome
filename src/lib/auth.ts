@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { prisma } from "./db";
 import { recordTokenUse } from "./audit";
+import { getSiteUrl } from "./identity";
 
 export function safeCompare(a: string, b: string): boolean {
   if (!a || !b) return false;
@@ -275,7 +276,7 @@ export async function verifyAdmin(req: {
 export function verifyOrigin(req: { headers: { get(name: string): string | null } }): boolean {
   const origin = req.headers.get("origin");
   const referer = req.headers.get("referer");
-  const siteUrl = process.env.SITE_URL || "http://localhost:3000";
+  const siteUrl = getSiteUrl();
   const expected = new URL(siteUrl);
 
   const matches = (urlStr: string): boolean => {

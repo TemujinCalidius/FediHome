@@ -5,10 +5,9 @@ import { resolveActorInbox } from "@/lib/fedi-resolve";
 import { processAttachments, fetchLinkEmbed } from "@/lib/fedi-media";
 import { assertPublicHost, isPrivateUrl } from "@/lib/url-guard";
 import { sanitizeHtml } from "@/lib/sanitize";
-import { siteConfig } from "@/../site.config";
 import type { AdminBody } from "./types";
+import { getSiteUrl } from "@/lib/identity";
 
-const siteUrl = siteConfig.url;
 const REMOTE_FETCH_TIMEOUT_MS = 8000;
 
 export async function follow(body: AdminBody): Promise<NextResponse> {
@@ -140,9 +139,9 @@ export async function follow(body: AdminBody): Promise<NextResponse> {
     // Send signed Follow activity
     await deliverActivity(actor.inbox, {
       "@context": "https://www.w3.org/ns/activitystreams",
-      id: `${siteUrl}/ap/follow/${Date.now()}`,
+      id: `${getSiteUrl()}/ap/follow/${Date.now()}`,
       type: "Follow",
-      actor: `${siteUrl}/ap/actor`,
+      actor: `${getSiteUrl()}/ap/actor`,
       object: actorLink.href,
     });
 
@@ -166,12 +165,12 @@ export async function unfollow(body: AdminBody): Promise<NextResponse> {
     try {
       await deliverActivity(record.inbox, {
         "@context": "https://www.w3.org/ns/activitystreams",
-        id: `${siteUrl}/ap/undo/${Date.now()}`,
+        id: `${getSiteUrl()}/ap/undo/${Date.now()}`,
         type: "Undo",
-        actor: `${siteUrl}/ap/actor`,
+        actor: `${getSiteUrl()}/ap/actor`,
         object: {
           type: "Follow",
-          actor: `${siteUrl}/ap/actor`,
+          actor: `${getSiteUrl()}/ap/actor`,
           object: record.actorUri,
         },
       });
@@ -195,12 +194,12 @@ export async function unfollowByUri(body: AdminBody): Promise<NextResponse> {
     try {
       await deliverActivity(record.inbox, {
         "@context": "https://www.w3.org/ns/activitystreams",
-        id: `${siteUrl}/ap/undo/${Date.now()}`,
+        id: `${getSiteUrl()}/ap/undo/${Date.now()}`,
         type: "Undo",
-        actor: `${siteUrl}/ap/actor`,
+        actor: `${getSiteUrl()}/ap/actor`,
         object: {
           type: "Follow",
-          actor: `${siteUrl}/ap/actor`,
+          actor: `${getSiteUrl()}/ap/actor`,
           object: unfollowUri,
         },
       });
@@ -227,12 +226,12 @@ export async function block(body: AdminBody): Promise<NextResponse> {
     try {
       await deliverActivity(followRecord.inbox, {
         "@context": "https://www.w3.org/ns/activitystreams",
-        id: `${siteUrl}/ap/undo/${Date.now()}`,
+        id: `${getSiteUrl()}/ap/undo/${Date.now()}`,
         type: "Undo",
-        actor: `${siteUrl}/ap/actor`,
+        actor: `${getSiteUrl()}/ap/actor`,
         object: {
           type: "Follow",
-          actor: `${siteUrl}/ap/actor`,
+          actor: `${getSiteUrl()}/ap/actor`,
           object: actorUri,
         },
       });
@@ -248,9 +247,9 @@ export async function block(body: AdminBody): Promise<NextResponse> {
     try {
       await deliverActivity(follower.inbox, {
         "@context": "https://www.w3.org/ns/activitystreams",
-        id: `${siteUrl}/ap/block/${Date.now()}`,
+        id: `${getSiteUrl()}/ap/block/${Date.now()}`,
         type: "Block",
-        actor: `${siteUrl}/ap/actor`,
+        actor: `${getSiteUrl()}/ap/actor`,
         object: actorUri,
       });
     } catch {
@@ -306,10 +305,10 @@ export async function unblock(body: AdminBody): Promise<NextResponse> {
   if (inbox) {
     await deliverActivity(inbox, {
       "@context": "https://www.w3.org/ns/activitystreams",
-      id: `${siteUrl}/ap/undo/${Date.now()}`,
+      id: `${getSiteUrl()}/ap/undo/${Date.now()}`,
       type: "Undo",
-      actor: `${siteUrl}/ap/actor`,
-      object: { type: "Block", actor: `${siteUrl}/ap/actor`, object: actorUri },
+      actor: `${getSiteUrl()}/ap/actor`,
+      object: { type: "Block", actor: `${getSiteUrl()}/ap/actor`, object: actorUri },
     }).catch(() => {});
   }
 
