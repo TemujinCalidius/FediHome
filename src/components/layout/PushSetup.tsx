@@ -225,12 +225,12 @@ export default function PushSetup() {
   if (status === "loading") return null;
 
   return (
-    <div className="px-4 py-2.5 border-t border-surface-700 text-[11px] text-gray-400">
+    <div className="px-4 py-2.5 border-t border-surface-700 text-[11px] text-content-subtle">
       {status === "ios-needs-install" && (
         <p className="leading-relaxed">
           📲 To get push on your iPhone: tap the{" "}
-          <span className="text-gray-200">Share</span> icon →{" "}
-          <span className="text-gray-200">Add to Home Screen</span>, then open the app
+          <span className="text-content-strong">Share</span> icon →{" "}
+          <span className="text-content-strong">Add to Home Screen</span>, then open the app
           from your Home Screen and enable notifications here.
         </p>
       )}
@@ -255,7 +255,7 @@ export default function PushSetup() {
           >
             🔔 {busy ? "Setting up…" : "Set up phone notifications"}
           </button>
-          <p className="mt-1 text-[10px] text-gray-500 leading-relaxed">
+          <p className="mt-1 text-[10px] text-content-faint leading-relaxed">
             One click — this creates your push keys on the server, then enables
             notifications on this device.
           </p>
@@ -286,7 +286,7 @@ export default function PushSetup() {
             <button
               onClick={disable}
               disabled={busy}
-              className="text-gray-500 hover:text-red-400 transition-colors disabled:opacity-50"
+              className="text-content-faint hover:text-red-400 transition-colors disabled:opacity-50"
             >
               Turn off
             </button>
@@ -294,7 +294,7 @@ export default function PushSetup() {
         </div>
       )}
 
-      {msg && <p className="mt-1 text-[10px] text-gray-500">{msg}</p>}
+      {msg && <p className="mt-1 text-[10px] text-content-faint">{msg}</p>}
     </div>
   );
 }

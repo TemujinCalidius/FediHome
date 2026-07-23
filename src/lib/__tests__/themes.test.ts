@@ -110,8 +110,9 @@ describe("Editorial theme (#250)", () => {
   it("emits a full token override — but only what actually differs", () => {
     const css = buildThemeStyle("editorial", null);
     expect(css.startsWith(":root:root{")).toBe(true);
-    // All 18 colour tokens differ from the default, so all 18 are emitted.
+    // Every surface/accent/moss token differs from the default, so all are emitted.
     for (const token of Object.keys(DEFAULT_THEME.tokens.colors)) {
+      if (token.startsWith("content")) continue; // shares the default ramp — see below
       expect(css).toContain(`--color-${token}:`);
     }
     expect(css).toContain("--color-surface-950:#17120e");
@@ -120,6 +121,15 @@ describe("Editorial theme (#250)", () => {
     expect(css).toContain("--font-display:");
     expect(css).toContain("--font-body:");
     expect(css).not.toContain("--font-mono");
+  });
+
+  it("shares the default content ramp, so no text token is emitted (#250)", () => {
+    // Editorial hasn't customised its text colours, so every content-* token
+    // must diff out. That's what keeps `--color-content-*` resolving to the
+    // Tailwind neutral in globals.css — i.e. text renders exactly as before the
+    // migration, on this theme as well as the default.
+    const css = buildThemeStyle("editorial", null);
+    expect(css).not.toContain("--color-content");
   });
 
   it("emits its crisp/flat feel tokens (texture), diffing out the ones it shares (#250)", () => {
@@ -136,33 +146,38 @@ describe("Editorial theme (#250)", () => {
   });
 });
 
+const luminance = (hex: string) => {
+  const n = parseInt(hex.slice(1), 16);
+  const chan = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => {
+    const s = v / 255;
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * chan[0] + 0.7152 * chan[1] + 0.0722 * chan[2];
+};
+const contrast = (a: string, b: string) => {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi + 0.05) / (lo + 0.05);
+};
+
 /**
- * Guards the constraint that makes themes shippable at all: ~56 files hard-code
- * Tailwind neutrals (`text-white`, `text-gray-200`, `text-gray-400`) that no
- * theme token can reach, because `@theme` extends the palette rather than
- * replacing it. A light theme would therefore render invisible text sitewide
- * (`text-white` on paper is ~1.07:1). Until those utilities are migrated to
- * tokens, EVERY theme must keep a dark `surface-950`. This makes that
- * executable rather than tribal knowledge.
+ * Guards the constraint that makes themes shippable at all: most files still
+ * hard-code Tailwind neutrals (`text-white`, `text-gray-200`, `text-gray-400`)
+ * that no theme token can reach, because `@theme` extends the palette rather
+ * than replacing it. A light theme would therefore render invisible text
+ * sitewide (`text-white` on paper is ~1.07:1). Until those utilities are
+ * migrated to the `content-*` ramp, EVERY theme must keep a dark `surface-950`.
+ * This makes that executable rather than tribal knowledge.
+ *
+ * Delete this block only when the migration is finished — at which point the
+ * token check below is the whole invariant and light themes become possible.
  *
  * `gray-500` is deliberately excluded — it already fails on the DEFAULT theme
  * (4.09:1), so asserting it would fail on main. Tracked separately.
  */
 describe("every theme keeps hardcoded body text legible (#250)", () => {
-  const luminance = (hex: string) => {
-    const n = parseInt(hex.slice(1), 16);
-    const chan = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => {
-      const s = v / 255;
-      return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
-    });
-    return 0.2126 * chan[0] + 0.7152 * chan[1] + 0.0722 * chan[2];
-  };
-  const contrast = (a: string, b: string) => {
-    const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
-    return (hi + 0.05) / (lo + 0.05);
-  };
-  // The Tailwind neutrals our components hardcode for body/secondary text.
-  const HARDCODED_TEXT = { white: "#ffffff", "gray-200": "#e5e7eb", "gray-400": "#9ca3af" };
+  // The Tailwind v4 neutrals our un-migrated components still hardcode. (v4
+  // regenerated the palette in oklch, so these are NOT the v3 hexes.)
+  const HARDCODED_TEXT = { white: "#ffffff", "gray-200": "#e5e7eb", "gray-400": "#99a1af" };
 
   for (const [id, theme] of Object.entries(THEMES)) {
     it(`${id}: white/gray-200/gray-400 stay AA on surface-950`, () => {
@@ -170,6 +185,48 @@ describe("every theme keeps hardcoded body text legible (#250)", () => {
       for (const [name, hex] of Object.entries(HARDCODED_TEXT)) {
         const ratio = contrast(hex, ground);
         expect(ratio, `${name} on ${id} surface-950 (${ground}) = ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
+      }
+    });
+  }
+});
+
+/**
+ * The same invariant expressed against the tokens themselves (#250) — this is
+ * the one that survives the migration, and the one a light theme will have to
+ * satisfy: whatever a theme sets its readable text to must stay AA on its own
+ * ground, whichever direction that ground moves.
+ *
+ * Only the READABLE tier is asserted. `content-faint` / `-dim` / `-ghost` are
+ * metadata and decoration (timestamps, hairlines) and sit below 4.5:1 by
+ * design — `content-faint` is `gray-500`, which is exactly why that shade is
+ * excluded above too.
+ */
+describe("every theme's readable content tokens are AA on its own ground (#250)", () => {
+  const READABLE = ["content", "content-strong", "content-muted", "content-subtle"] as const;
+
+  for (const [id, theme] of Object.entries(THEMES)) {
+    it(`${id}: readable content tokens stay AA on surface-950`, () => {
+      const ground = theme.tokens.colors["surface-950"];
+      for (const token of READABLE) {
+        const hex = theme.tokens.colors[token];
+        const ratio = contrast(hex, ground);
+        expect(ratio, `${token} (${hex}) on ${id} surface-950 (${ground}) = ${ratio.toFixed(2)}:1`).toBeGreaterThanOrEqual(4.5);
+      }
+    });
+
+    it(`${id}: the content ramp is monotonic, brightest to dimmest`, () => {
+      // A ramp that isn't ordered makes "faint" louder than "muted" and the
+      // semantic names meaningless to whoever uses them next.
+      const ramp = [
+        "content", "content-strong", "content-muted", "content-subtle",
+        "content-faint", "content-dim", "content-ghost",
+      ] as const;
+      const lums = ramp.map((t) => luminance(theme.tokens.colors[t]));
+      for (let i = 1; i < lums.length; i++) {
+        expect(
+          lums[i],
+          `${ramp[i]} (${theme.tokens.colors[ramp[i]]}) should be dimmer than ${ramp[i - 1]} on ${id}`,
+        ).toBeLessThan(lums[i - 1]);
       }
     });
   }

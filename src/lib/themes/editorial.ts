@@ -1,4 +1,5 @@
 import type { Theme } from "./types";
+import { CONTENT_RAMP } from "./content";
 
 /**
  * "Editorial" (#250) — the second built-in theme, and the first proof that the
@@ -6,14 +7,15 @@ import type { Theme } from "./types";
  * A warm sepia ground with a terracotta accent, serif body copy and a compact
  * list feed — a reading-first counterpoint to the default's cool glassy Cards.
  *
- * **Why it's dark, not paper.** A light theme isn't reachable yet: ~56 files
- * (and the global body class in `app/layout.tsx`) hard-code Tailwind neutrals
- * like `text-white` / `text-gray-200`, which are NOT theme tokens — `@theme`
- * *extends* the palette, so `gray-*` stays fixed while `surface-*` moves. On a
- * paper ground `text-white` lands at 1.07:1 and `text-gray-200` at 1.16:1, i.e.
- * an invisible site. Light themes need those utilities migrated to tokens
- * first; until then every theme must be dark. `themes.test.ts` encodes this as
- * a contrast invariant so it can't be violated by accident.
+ * **Why it's dark, not paper.** A light theme isn't reachable yet: most files
+ * (and the global body class in `app/layout.tsx`) still hard-code Tailwind
+ * neutrals like `text-white` / `text-gray-200`, which are NOT theme tokens —
+ * `@theme` *extends* the palette, so `gray-*` stays fixed while `surface-*`
+ * moves. On a paper ground `text-white` lands at 1.07:1 and `text-gray-200` at
+ * 1.16:1, i.e. an invisible site. The `content-*` ramp (`content.ts`) is the
+ * migration target and the layout chrome is already on it; until the rest
+ * follows, every theme must be dark. `themes.test.ts` encodes this as a
+ * contrast invariant so it can't be violated by accident.
  *
  * **Why the fonts only swap round.** `buildThemeStyle` can swap font *families*
  * but cannot register `@font-face`, and only Inter + Source Serif 4 are
@@ -51,6 +53,8 @@ export const EDITORIAL_THEME: Theme = {
       "moss-400": "#9cb380",
       "moss-500": "#7e9a5f",
       "moss-600": "#63793f",
+      // Text ramp (#250) — unchanged for now: the migration onto these tokens is still in progress, so a warm text ramp would only apply to the already-migrated surfaces.
+      ...CONTENT_RAMP,
     },
     fonts: {
       display: '"Inter", system-ui, -apple-system, sans-serif',

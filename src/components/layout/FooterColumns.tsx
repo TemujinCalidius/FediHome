@@ -21,10 +21,10 @@ export default async function FooterColumns() {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-8">
           {/* About */}
           <div>
-            <h2 className="text-sm font-semibold text-white mb-2">{siteName}</h2>
-            <p className="text-xs text-gray-600">Self-owned. Self-hosted. Fediverse-native.</p>
+            <h2 className="text-sm font-semibold text-content mb-2">{siteName}</h2>
+            <p className="text-xs text-content-dim">Self-owned. Self-hosted. Fediverse-native.</p>
             {stats && (
-              <p className="text-xs text-gray-700 mt-2 font-mono">
+              <p className="text-xs text-content-ghost mt-2 font-mono">
                 {stats.totalHits.toLocaleString()} visits
                 {stats.totalKudos > 0 && ` · ${stats.totalKudos} kudos`}
               </p>
@@ -34,11 +34,11 @@ export default async function FooterColumns() {
           {/* Sections */}
           {navLinks.length > 0 && (
             <div>
-              <h2 className="text-sm font-semibold text-white mb-2">Sections</h2>
+              <h2 className="text-sm font-semibold text-content mb-2">Sections</h2>
               <ul className="flex flex-col gap-1.5">
                 {navLinks.map((link) => (
                   <li key={link.href}>
-                    <Link href={link.href} className="text-xs text-gray-500 hover:text-accent-400 transition-colors">
+                    <Link href={link.href} className="text-xs text-content-faint hover:text-accent-400 transition-colors">
                       {link.label}
                     </Link>
                   </li>
@@ -49,9 +49,9 @@ export default async function FooterColumns() {
 
           {/* Connect */}
           <div>
-            <h2 className="text-sm font-semibold text-white mb-2">Connect</h2>
-            <p className="text-xs text-gray-600 font-mono mb-2">{fediAddress}</p>
-            <div className="flex items-center gap-4 text-gray-500">
+            <h2 className="text-sm font-semibold text-content mb-2">Connect</h2>
+            <p className="text-xs text-content-dim font-mono mb-2">{fediAddress}</p>
+            <div className="flex items-center gap-4 text-content-faint">
               <a href="/feed.xml" className="hover:text-accent-400 transition-colors" title="RSS Feed">
                 <RssIcon />
               </a>
@@ -92,7 +92,7 @@ export default async function FooterColumns() {
           </div>
         </div>
 
-        <p className="text-xs text-gray-600 mt-8 pt-6 border-t border-surface-800">
+        <p className="text-xs text-content-dim mt-8 pt-6 border-t border-surface-800">
           &copy; {year} {authorName}
         </p>
       </div>

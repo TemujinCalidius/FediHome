@@ -19,12 +19,12 @@ export default async function HeaderCentered() {
             collapsed menu's dropdown (anchored at top-14) lines up. */}
         <div className="h-14 flex items-center justify-between">
           <div className="w-16 md:w-24" aria-hidden />
-          <Link href="/" className="font-display text-xl font-bold text-white hover:text-accent-400 transition-colors text-center">
+          <Link href="/" className="font-display text-xl font-bold text-content hover:text-accent-400 transition-colors text-center">
             {name}
           </Link>
           <div className="flex items-center gap-3 w-16 md:w-24 justify-end">
             {isAdmin && <NotificationBell />}
-            <a href="/feed.xml" className="text-gray-500 hover:text-accent-400 transition-colors hidden md:block" title="RSS Feed">
+            <a href="/feed.xml" className="text-content-faint hover:text-accent-400 transition-colors hidden md:block" title="RSS Feed">
               <RssIcon />
             </a>
             <MobileMenu isAdmin={isAdmin} links={navLinks} />
@@ -34,12 +34,12 @@ export default async function HeaderCentered() {
         {/* Row 2: centered nav links (desktop only) */}
         <div className="hidden md:flex items-center justify-center gap-6 pb-2 -mt-1">
           {navLinks.map((link) => (
-            <Link key={link.href} href={link.href} className="text-sm text-gray-400 hover:text-accent-400 transition-colors">
+            <Link key={link.href} href={link.href} className="text-sm text-content-subtle hover:text-accent-400 transition-colors">
               {link.label}
             </Link>
           ))}
           {isAdmin && (
-            <Link href="/timeline" className="text-xs text-gray-500 hover:text-accent-400 transition-colors">
+            <Link href="/timeline" className="text-xs text-content-faint hover:text-accent-400 transition-colors">
               Fedi Feed
             </Link>
           )}

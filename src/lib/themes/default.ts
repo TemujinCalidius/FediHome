@@ -1,4 +1,5 @@
 import type { Theme } from "./types";
+import { CONTENT_RAMP } from "./content";
 
 /**
  * The default ("Cards") theme — today's look, extracted verbatim from the
@@ -30,6 +31,8 @@ export const DEFAULT_THEME: Theme = {
       "moss-400": "#34d399",
       "moss-500": "#10b981",
       "moss-600": "#059669",
+      // Text ramp (#250) — the Tailwind neutrals the components already used.
+      ...CONTENT_RAMP,
     },
     fonts: {
       display: '"Source Serif 4", "Georgia", serif',
