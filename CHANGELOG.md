@@ -1,9 +1,6 @@
 # Changelog
 
-## Unreleased
-
-### Security
-- **Patched a high-severity image-processing vulnerability** (#329) — `sharp` moves to 0.35.3, clearing [GHSA-f88m-g3jw-g9cj](https://github.com/advisories/GHSA-f88m-g3jw-g9cj) (four libvips CVEs, CVSS 7.0). This one was genuinely reachable rather than theoretical: FediHome decodes images fetched from **arbitrary remote instances** when it caches fediverse media, and `/_next/image` is a public endpoint that fetches and decodes thumbnails from the allow-listed PeerTube hosts — so bytes an attacker controls reached the vulnerable decoders. Upgrading alone would **not** have fixed it: Next.js pins its own copy of `sharp`, which would have left a second, still-vulnerable one (and a duplicate native image library) in the tree, invisible to type-checking, tests and builds alike. `sharp` is therefore pinned tree-wide via `overrides`, so exactly one patched copy is installed. Giving `postcss` the same treatment clears the last remaining transitive advisory (#12), and `npm audit` now reports **0 vulnerabilities**.
+## 1.19.0 (2026-07-23)
 
 ### Added
 - **Set your avatar and banner during first-run setup** (#59) — the setup wizard now takes a profile picture and banner (optional), so a fresh install lands looking like *you* without a later trip to the admin panel. Uploads are gated by your setup token (the same one that protects setup) and go through the same optimise/EXIF-strip pipeline as everywhere else. A corrupt or mislabelled image is now a clear error instead of a 500.
@@ -14,13 +11,16 @@
 
 - **Themeable text colour** (#250) — text now resolves through a `content-*` ramp (primary → strong → muted → subtle → faint → dim → ghost) instead of fixed Tailwind greys, so a theme can move body copy and not just its background. This is the groundwork a **light theme** and the upcoming in-admin **custom palette** both need: `@theme` extends Tailwind's palette rather than replacing it, so hard-coded `text-white` / `text-gray-*` could never follow a theme — which is why every theme so far has had to be dark. **Nothing changes visually:** each token defaults to the exact neutral it replaces, and every built-in theme shares the default ramp, so the emitted CSS is unchanged. The site's header, footer, sidebar, mobile menu and notification menu are converted; the rest of the app follows in later passes, and until then themes stay dark (the contrast invariant still enforces it).
 
-### Fixed
-- **Phone notifications couldn't be switched on at all on a fresh install** (#59) — the 🔔 menu offered **Enable phone notifications** even when the server had no Web Push keypair yet, then failed on the click with a terse *"push not configured on server"* — and nothing pointed at the panel that would fix it, which sat in a different screen entirely. The menu now checks first and, when there's no keypair, offers **Set up phone notifications**: one click creates the keys *and* enables the device. If that can't work (for instance `ADMIN_SECRET` isn't set, so the private key can't be encrypted at rest) it now tells you the actual reason. iPhone users still need **Share → Add to Home Screen** first — iOS only gives push to installed apps — and the menu keeps saying so.
-
 ### Changed
 - **Web Push is documented** (#59) — `docs/configuration.md` gains a **Phone Notifications** section. Push had no documentation anywhere: how to switch it on, the iOS home-screen requirement, that regenerating keys deliberately unsubscribes every device, and that the `VAPID_*` env vars are now only a fallback.
 - **`docs/theming.md` rewritten for the current theme system** (#250) — the old guide predated themes entirely (it told you to hand-edit `globals.css` and swap avatar files on disk). It now covers what's web-editable in the admin panel, the `Theme` token contract + region×variant model, and a **developer scaffold** for adding a built-in theme (one data file + one registry line, with the dark/contrast and self-hosted-font constraints spelled out).
 - Dependency refresh: `next` 16.2.11, `react`/`react-dom` 19.2.8, `postcss` 8.5.22, `marked` 18.0.7, `@atproto/api` 0.20.31, `eslint-config-next` 16.2.11. (`typescript` remains blocked upstream — #234.)
+
+### Fixed
+- **Phone notifications couldn't be switched on at all on a fresh install** (#59) — the 🔔 menu offered **Enable phone notifications** even when the server had no Web Push keypair yet, then failed on the click with a terse *"push not configured on server"* — and nothing pointed at the panel that would fix it, which sat in a different screen entirely. The menu now checks first and, when there's no keypair, offers **Set up phone notifications**: one click creates the keys *and* enables the device. If that can't work (for instance `ADMIN_SECRET` isn't set, so the private key can't be encrypted at rest) it now tells you the actual reason. iPhone users still need **Share → Add to Home Screen** first — iOS only gives push to installed apps — and the menu keeps saying so.
+
+### Security
+- **Patched a high-severity image-processing vulnerability** (#329) — `sharp` moves to 0.35.3, clearing [GHSA-f88m-g3jw-g9cj](https://github.com/advisories/GHSA-f88m-g3jw-g9cj) (four libvips CVEs, CVSS 7.0). This one was genuinely reachable rather than theoretical: FediHome decodes images fetched from **arbitrary remote instances** when it caches fediverse media, and `/_next/image` is a public endpoint that fetches and decodes thumbnails from the allow-listed PeerTube hosts — so bytes an attacker controls reached the vulnerable decoders. Upgrading alone would **not** have fixed it: Next.js pins its own copy of `sharp`, which would have left a second, still-vulnerable one (and a duplicate native image library) in the tree, invisible to type-checking, tests and builds alike. `sharp` is therefore pinned tree-wide via `overrides`, so exactly one patched copy is installed. Giving `postcss` the same treatment clears the last remaining transitive advisory (#12), and `npm audit` now reports **0 vulnerabilities**.
 
 ## 1.18.0 (2026-07-21)
 
