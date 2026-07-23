@@ -38,14 +38,14 @@
     "next-mdx-remote": "^6.0.0",
     "nodemailer": "^9.0.1",
     "pg": "^8.21.0",
-    "postcss": "^8.5.21",
+    "postcss": "^8.5.22",
     "prisma": "^7.9.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-masonry-css": "^1.0.16",
     "remark-gfm": "^4.0.1",
     "sanitize-html": "^2.17.6",
-    "sharp": "^0.34.5",
+    "sharp": "^0.35.3",
     "tailwindcss": "^4.3.3",
     "typescript": "^6.0.3",
     "web-push": "^3.6.7"
@@ -64,6 +64,8 @@
   "overrides": {
     "yaml": "^2.8.3",
     "js-yaml": "^4.2.0",
+    "sharp": "$sharp",
+    "postcss": "$postcss",
     "@opentelemetry/core": "^2.8.0",
     "@hono/node-server": "^1.19.13"
   }
