@@ -7,8 +7,8 @@ import { assertPublicHost } from "@/lib/url-guard";
 import { sendPushToOwner } from "@/lib/push";
 import { resolveOwnedTarget } from "@/lib/notifications";
 import { htmlToText } from "@/lib/html-text";
+import { getSiteUrl } from "@/lib/identity";
 
-const siteUrl = process.env.SITE_URL || "http://localhost:3000";
 const ACTOR_FETCH_TIMEOUT_MS = 8000;
 const DEBUG = process.env.FEDIHOME_DEBUG === "true";
 
@@ -189,9 +189,9 @@ async function handleFollow(actorUri: string, activity: Record<string, unknown>)
   try {
     await deliverActivity(info.inbox, {
       "@context": "https://www.w3.org/ns/activitystreams",
-      id: `${siteUrl}/ap/accept/${Date.now()}`,
+      id: `${getSiteUrl()}/ap/accept/${Date.now()}`,
       type: "Accept",
-      actor: `${siteUrl}/ap/actor`,
+      actor: `${getSiteUrl()}/ap/actor`,
       object: activity,
     });
   } catch (err) {
@@ -571,7 +571,7 @@ async function handleNote(actorUri: string, note: Record<string, unknown>) {
   const toList = Array.isArray(note.to) ? note.to as string[] : [note.to as string].filter(Boolean);
   const ccList = Array.isArray(note.cc) ? note.cc as string[] : [note.cc as string].filter(Boolean);
   const isPublic = [...toList, ...ccList].includes("https://www.w3.org/ns/activitystreams#Public");
-  const isDirectToUs = toList.includes(`${siteUrl}/ap/actor`) && !isPublic;
+  const isDirectToUs = toList.includes(`${getSiteUrl()}/ap/actor`) && !isPublic;
 
   if (isDirectToUs) {
     // Store as a direct message

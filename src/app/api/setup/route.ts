@@ -7,6 +7,7 @@ import { verifyAdmin } from "@/lib/auth";
 import { applySiteConfig } from "@/lib/site-settings";
 import { verifySetupToken } from "@/lib/setup-token";
 import { validateImagePath } from "@/lib/media";
+import { getConfiguredSiteUrl } from "@/lib/identity";
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
@@ -62,6 +63,24 @@ function validateField(name: string, value: unknown): string {
 }
 
 /**
+ * Hosts that can't be reached from the Fediverse. Setting up against one bakes
+ * an unreachable identity into the actor id — and, because `Post.apId` stores
+ * absolute URLs, into every post published before the move. It's a legitimate
+ * thing to do while testing; it just has to be a decision rather than an
+ * accident, so the wizard requires an explicit acknowledgement (#326).
+ */
+function isLocalOrPrivateHost(hostname: string): boolean {
+  const h = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (h === "localhost" || h.endsWith(".localhost") || h === "::1") return true;
+  if (/^127\./.test(h)) return true;
+  if (/^(10\.|192\.168\.)/.test(h)) return true;
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(h)) return true;
+  if (/^169\.254\./.test(h)) return true; // link-local
+  if (/^(fc|fd)[0-9a-f]{2}:/.test(h)) return true; // IPv6 unique-local
+  return false;
+}
+
+/**
  * Validate the canonical public origin. `SITE_URL` is baked into ActivityPub
  * ids, WebFinger, signature keyIds, RSS and CSRF checks — and once setup
  * completes the wizard is unreachable (proxy redirects away), so a bad value is
@@ -69,7 +88,7 @@ function validateField(name: string, value: unknown): string {
  * real host, no credentials, no path/query/fragment. Returns the normalized
  * origin (trailing slash dropped) plus the host used for `FEDI_DOMAIN`.
  */
-function validateSiteUrl(raw: unknown): { siteUrl: string; host: string } {
+function validateSiteUrl(raw: unknown, allowLocal = false): { siteUrl: string; host: string } {
   const value = validateField("siteUrl", raw).trim();
   if (!value) throw new SetupValidationError("siteUrl is required");
   let u: URL;
@@ -85,6 +104,13 @@ function validateSiteUrl(raw: unknown): { siteUrl: string; host: string } {
   if (u.username || u.password) throw new SetupValidationError("siteUrl must not contain credentials");
   if ((u.pathname && u.pathname !== "/") || u.search || u.hash) {
     throw new SetupValidationError("siteUrl must be a bare origin — no path, query or fragment");
+  }
+  if (!allowLocal && isLocalOrPrivateHost(u.hostname)) {
+    throw new SetupValidationError(
+      `"${u.host}" can't be reached from the Fediverse, so this address would become an identity nobody can follow — ` +
+        "and it gets written into every post you publish before you move. Use your real public domain, " +
+        "or confirm you're only testing locally to continue anyway.",
+    );
   }
   return { siteUrl: u.origin, host: u.host };
 }
@@ -159,7 +185,8 @@ export async function POST(request: Request) {
     // Prefer the value the wizard submitted (correct protocol AND port), then any
     // configured SITE_URL, then the request origin.
     const { siteUrl, host: fediDomain } = validateSiteUrl(
-      body.siteUrl || process.env.SITE_URL || new URL(request.url).origin
+      body.siteUrl || getConfiguredSiteUrl() || new URL(request.url).origin,
+      body.allowLocalIdentity === true,
     );
 
     // Build .env.local content. All field values were validated above to

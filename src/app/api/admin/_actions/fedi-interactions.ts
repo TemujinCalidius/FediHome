@@ -2,10 +2,9 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { deliverActivity, deliverToFollowers } from "@/lib/http-signatures";
 import { resolveActorInbox, originalApId } from "@/lib/fedi-resolve";
-import { siteConfig } from "@/../site.config";
 import type { AdminBody } from "./types";
+import { getSiteUrl } from "@/lib/identity";
 
-const siteUrl = siteConfig.url;
 
 /**
  * The target post author's real inbox, resolved server-side from the stored
@@ -52,9 +51,9 @@ export async function like(body: AdminBody): Promise<NextResponse> {
 
   const likeActivity = {
     "@context": "https://www.w3.org/ns/activitystreams",
-    id: `${siteUrl}/ap/like/${Date.now()}`,
+    id: `${getSiteUrl()}/ap/like/${Date.now()}`,
     type: "Like",
-    actor: `${siteUrl}/ap/actor`,
+    actor: `${getSiteUrl()}/ap/actor`,
     // Federated object must be the ORIGINAL post URL, not a synthetic boost: apId.
     object: originalApId(postApId),
   };
@@ -81,14 +80,14 @@ export async function boost(body: AdminBody): Promise<NextResponse> {
 
   const announceActivity = {
     "@context": "https://www.w3.org/ns/activitystreams",
-    id: `${siteUrl}/ap/announce/${Date.now()}`,
+    id: `${getSiteUrl()}/ap/announce/${Date.now()}`,
     type: "Announce",
-    actor: `${siteUrl}/ap/actor`,
+    actor: `${getSiteUrl()}/ap/actor`,
     // Federated object must be the ORIGINAL post URL, not a synthetic boost: apId.
     object: originalApId(boostApId),
     published: new Date().toISOString(),
     to: ["https://www.w3.org/ns/activitystreams#Public"],
-    cc: [`${siteUrl}/ap/followers`],
+    cc: [`${getSiteUrl()}/ap/followers`],
   };
 
   // A boost belongs in our followers' feeds and also notifies the original
@@ -114,10 +113,10 @@ export async function unlike(body: AdminBody): Promise<NextResponse> {
 
   const undoActivity = {
     "@context": "https://www.w3.org/ns/activitystreams",
-    id: `${siteUrl}/ap/undo/${Date.now()}`,
+    id: `${getSiteUrl()}/ap/undo/${Date.now()}`,
     type: "Undo",
-    actor: `${siteUrl}/ap/actor`,
-    object: { type: "Like", actor: `${siteUrl}/ap/actor`, object: originalApId(postApId) },
+    actor: `${getSiteUrl()}/ap/actor`,
+    object: { type: "Like", actor: `${getSiteUrl()}/ap/actor`, object: originalApId(postApId) },
   };
 
   // Mirror like: the Undo goes only to the author (likes aren't broadcast). (#119)
@@ -139,10 +138,10 @@ export async function unboost(body: AdminBody): Promise<NextResponse> {
 
   const undoActivity = {
     "@context": "https://www.w3.org/ns/activitystreams",
-    id: `${siteUrl}/ap/undo/${Date.now()}`,
+    id: `${getSiteUrl()}/ap/undo/${Date.now()}`,
     type: "Undo",
-    actor: `${siteUrl}/ap/actor`,
-    object: { type: "Announce", actor: `${siteUrl}/ap/actor`, object: originalApId(boostApId) },
+    actor: `${getSiteUrl()}/ap/actor`,
+    object: { type: "Announce", actor: `${getSiteUrl()}/ap/actor`, object: originalApId(boostApId) },
   };
 
   // Mirror boost: tell our followers to drop it, plus the author directly unless

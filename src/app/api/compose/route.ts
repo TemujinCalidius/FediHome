@@ -10,8 +10,8 @@ import { buildMediaUpdate } from "@/lib/post-media";
 import { enqueueFailedCrosspost } from "@/lib/crosspost-retry";
 import { normalizeCategory } from "@/lib/categories";
 import path from "path";
+import { getSiteUrl } from "@/lib/identity";
 
-const siteUrl = process.env.SITE_URL || "http://localhost:3000";
 
 function slugify(text: string): string {
   return text
@@ -293,7 +293,7 @@ async function composeHandler(req: NextRequest) {
       audioCovers,
       published: !isScheduled,
       ...(isScheduled ? { publishedAt: scheduledForDate!, scheduledFor: scheduledForDate! } : {}),
-      apId: `${siteUrl}/post/${slug}`,
+      apId: `${getSiteUrl()}/post/${slug}`,
       ...(parentPost ? { inReplyToPostId: parentPost.id } : {}),
     },
   });
@@ -312,7 +312,7 @@ async function composeHandler(req: NextRequest) {
           tags,
           published: !isScheduled,
           publishedAt: post.publishedAt,
-          apId: `${siteUrl}/photography/${photoSlug}`,
+          apId: `${getSiteUrl()}/photography/${photoSlug}`,
         },
       }).catch(() => {
         // Ignore duplicate slug errors
@@ -339,7 +339,7 @@ async function composeHandler(req: NextRequest) {
           tags,
           published: !isScheduled,
           publishedAt: post.publishedAt,
-          apId: `${siteUrl}/videos/${videoSlug}`,
+          apId: `${getSiteUrl()}/videos/${videoSlug}`,
         },
       }).catch(() => {
         // Ignore duplicate slug errors
@@ -364,7 +364,7 @@ async function composeHandler(req: NextRequest) {
           tags,
           published: !isScheduled,
           publishedAt: post.publishedAt,
-          apId: `${siteUrl}/audio/${audioSlug}`,
+          apId: `${getSiteUrl()}/audio/${audioSlug}`,
         },
       }).catch(() => {
         // Ignore duplicate slug errors
@@ -381,7 +381,7 @@ async function composeHandler(req: NextRequest) {
       post: {
         id: post.id,
         slug: post.slug,
-        url: `${siteUrl}/post/${post.slug}`,
+        url: `${getSiteUrl()}/post/${post.slug}`,
         scheduledFor: post.scheduledFor?.toISOString() ?? null,
       },
     });
@@ -413,7 +413,7 @@ async function composeHandler(req: NextRequest) {
       ? [imageAttachment(post.coverImage)]
       : []),
     ...(photos || []).map((p) => {
-      const url = p.url.startsWith("http") ? p.url : `${siteUrl}${p.url}`;
+      const url = p.url.startsWith("http") ? p.url : `${getSiteUrl()}${p.url}`;
       const ext = url.split(".").pop()?.toLowerCase() || "jpg";
       const mimeMap: Record<string, string> = {
         jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png",
@@ -429,7 +429,7 @@ async function composeHandler(req: NextRequest) {
   ];
 
   const apAudioAttachments = (audios || []).map((a) => {
-    const url = a.url.startsWith("http") ? a.url : `${siteUrl}${a.url}`;
+    const url = a.url.startsWith("http") ? a.url : `${getSiteUrl()}${a.url}`;
     return {
       type: "Document",
       mediaType: "audio/mpeg",
@@ -457,22 +457,22 @@ async function composeHandler(req: NextRequest) {
     .map((m) => m.actorUri!);
 
   // Federation
-  const ccList = [`${siteUrl}/ap/followers`, ...mentionActorUris];
+  const ccList = [`${getSiteUrl()}/ap/followers`, ...mentionActorUris];
   const activity = {
     "@context": "https://www.w3.org/ns/activitystreams",
-    id: `${siteUrl}/ap/create/${post.id}`,
+    id: `${getSiteUrl()}/ap/create/${post.id}`,
     type: "Create",
-    actor: `${siteUrl}/ap/actor`,
+    actor: `${getSiteUrl()}/ap/actor`,
     published: post.publishedAt.toISOString(),
     to: ["https://www.w3.org/ns/activitystreams#Public"],
     cc: ccList,
     object: {
       type: isArticle ? "Article" : "Note",
       id: post.apId,
-      attributedTo: `${siteUrl}/ap/actor`,
+      attributedTo: `${getSiteUrl()}/ap/actor`,
       ...(isArticle ? { name: title!.trim() } : {}),
       content: apContent,
-      url: `${siteUrl}/post/${slug}`,
+      url: `${getSiteUrl()}/post/${slug}`,
       published: post.publishedAt.toISOString(),
       to: ["https://www.w3.org/ns/activitystreams#Public"],
       cc: ccList,
@@ -494,7 +494,7 @@ async function composeHandler(req: NextRequest) {
   }
 
   // Crossposting
-  const postUrl = `${siteUrl}/post/${slug}`;
+  const postUrl = `${getSiteUrl()}/post/${slug}`;
   const baseText = isArticle
     ? (description?.trim() || stripMarkdown(content).slice(0, 300))
     : content;
@@ -508,7 +508,7 @@ async function composeHandler(req: NextRequest) {
   if (crosspostBluesky !== false) {
     // Build image list with full URLs for Bluesky upload
     const bskyImages = (photos || []).map((p) => ({
-      url: p.url.startsWith("http") ? p.url : `${siteUrl}${p.url}`,
+      url: p.url.startsWith("http") ? p.url : `${getSiteUrl()}${p.url}`,
       alt: p.alt || "",
     }));
     // When no images attached, send the first video as an external link card.
@@ -579,7 +579,7 @@ async function composeHandler(req: NextRequest) {
 
   if (!parentPost && crosspostDayOne !== false) {
     const dayOneImages = (photos || []).map((p) => {
-      const url = p.url.startsWith("http") ? p.url : `${siteUrl}${p.url}`;
+      const url = p.url.startsWith("http") ? p.url : `${getSiteUrl()}${p.url}`;
       const localPath = url.includes("/uploads/")
         ? path.join(process.cwd(), "public", new URL(url).pathname)
         : null;
@@ -694,7 +694,7 @@ async function updatePostHandler(postId: string, input: EditInput) {
       ? [imageAttachment(updated.coverImage)]
       : []),
     ...effPhotos.map((p) => {
-      const url = p.url.startsWith("http") ? p.url : `${siteUrl}${p.url}`;
+      const url = p.url.startsWith("http") ? p.url : `${getSiteUrl()}${p.url}`;
       const ext = url.split(".").pop()?.toLowerCase() || "jpg";
       const mimeMap: Record<string, string> = {
         jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png",
@@ -704,7 +704,7 @@ async function updatePostHandler(postId: string, input: EditInput) {
     }),
   ];
   const apAudioAttachments = effAudios.map((a) => {
-    const url = a.url.startsWith("http") ? a.url : `${siteUrl}${a.url}`;
+    const url = a.url.startsWith("http") ? a.url : `${getSiteUrl()}${a.url}`;
     return { type: "Document", mediaType: "audio/mpeg", url, name: a.title || "" };
   });
   const apAttachments = [...apImageAttachments, ...apAudioAttachments];
@@ -723,22 +723,22 @@ async function updatePostHandler(postId: string, input: EditInput) {
     .map((m) => m.actorUri!);
 
   const now = new Date();
-  const ccList = [`${siteUrl}/ap/followers`, ...mentionActorUris];
+  const ccList = [`${getSiteUrl()}/ap/followers`, ...mentionActorUris];
   const activity = {
     "@context": "https://www.w3.org/ns/activitystreams",
-    id: `${siteUrl}/ap/update/${updated.id}/${Date.now()}`,
+    id: `${getSiteUrl()}/ap/update/${updated.id}/${Date.now()}`,
     type: "Update",
-    actor: `${siteUrl}/ap/actor`,
+    actor: `${getSiteUrl()}/ap/actor`,
     published: now.toISOString(),
     to: ["https://www.w3.org/ns/activitystreams#Public"],
     cc: ccList,
     object: {
       type: isArticle ? "Article" : "Note",
       id: updated.apId,
-      attributedTo: `${siteUrl}/ap/actor`,
+      attributedTo: `${getSiteUrl()}/ap/actor`,
       ...(isArticle ? { name: input.title!.trim() } : {}),
       content: apContent,
-      url: `${siteUrl}/post/${updated.slug}`,
+      url: `${getSiteUrl()}/post/${updated.slug}`,
       published: updated.publishedAt.toISOString(),
       updated: now.toISOString(),
       to: ["https://www.w3.org/ns/activitystreams#Public"],
@@ -766,7 +766,7 @@ async function updatePostHandler(postId: string, input: EditInput) {
 
   return NextResponse.json({
     success: true,
-    post: { id: updated.id, slug: updated.slug, url: `${siteUrl}/post/${updated.slug}` },
+    post: { id: updated.id, slug: updated.slug, url: `${getSiteUrl()}/post/${updated.slug}` },
     edited: true,
   });
 }

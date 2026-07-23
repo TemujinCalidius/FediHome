@@ -1,3 +1,5 @@
+import { getIdentity } from "./src/lib/identity";
+
 /**
  * FediHome — Site Configuration
  *
@@ -6,9 +8,10 @@
  * You can also edit them directly here or via the admin panel.
  */
 
-const siteUrl = process.env.SITE_URL || "http://localhost:3000";
-const fediHandle = process.env.FEDI_HANDLE || "me";
-const fediDomain = process.env.FEDI_DOMAIN || new URL(siteUrl).hostname;
+// Federation identity comes from ONE derivation (src/lib/identity.ts) so the
+// actor id, WebFinger subject and signature keyId can never disagree — see the
+// module docstring for why that class of mismatch is invisible when it breaks.
+const { siteUrl, fediHandle, fediDomain, fediAddress } = getIdentity();
 
 export const siteConfig = {
   // Site identity
@@ -25,7 +28,7 @@ export const siteConfig = {
   // Fediverse identity
   fediHandle,
   fediDomain,
-  fediAddress: `@${fediHandle}@${fediDomain}`,
+  fediAddress,
   actorSummary: process.env.ACTOR_SUMMARY || "A personal blog on the Fediverse, powered by FediHome.",
 
   // Public landing / showcase mode.

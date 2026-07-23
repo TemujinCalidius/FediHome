@@ -1,5 +1,6 @@
+import { getSiteUrl } from "@/lib/identity";
 export async function GET() {
-  const siteUrl = process.env.SITE_URL || "http://localhost:3000";
+  const siteUrl = getSiteUrl();
 
   const rsd = `<?xml version="1.0" encoding="UTF-8"?>
 <rsd version="1.0" xmlns="http://archipelago.phrasewise.com/rsd">

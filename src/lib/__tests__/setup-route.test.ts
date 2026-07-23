@@ -156,3 +156,43 @@ describe("/api/setup — claim ordering + rollback (the bricking fix)", () => {
     expect(writeFileSync).not.toHaveBeenCalled();
   });
 });
+
+describe("/api/setup — unreachable site addresses need an explicit tick (#326)", () => {
+  const LOCAL = [
+    ["localhost", "http://localhost:3000"],
+    ["loopback IP", "http://127.0.0.1:3000"],
+    ["private 192.168", "http://192.168.1.50:3000"],
+    ["private 10.x", "http://10.0.0.5:3000"],
+    ["private 172.16", "http://172.16.0.9:3000"],
+    ["link-local", "http://169.254.1.1:3000"],
+  ] as const;
+
+  for (const [label, value] of LOCAL) {
+    it(`refuses ${label} without acknowledgement, and doesn't claim or write`, async () => {
+      const res = await POST(req(validBody({ siteUrl: value })));
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toMatch(/can't be reached from the Fediverse/i);
+      expect(create).not.toHaveBeenCalled();
+      expect(writeFileSync).not.toHaveBeenCalled();
+    });
+  }
+
+  it("proceeds when the operator explicitly confirms they're testing locally", async () => {
+    // Deliberately supported — you just have to mean it.
+    const res = await POST(req(validBody({ siteUrl: "http://localhost:3000", allowLocalIdentity: true })));
+    expect(res.status).toBe(200);
+    const written = writeFileSync.mock.calls[0][1] as string;
+    expect(written).toContain('SITE_URL="http://localhost:3000"');
+    expect(written).toContain('FEDI_DOMAIN="localhost:3000"');
+  });
+
+  it("the acknowledgement does not waive the other origin rules", async () => {
+    const res = await POST(req(validBody({ siteUrl: "http://localhost:3000/blog", allowLocalIdentity: true })));
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toMatch(/bare origin/i);
+  });
+
+  it("a public domain never needs the tick", async () => {
+    expect((await POST(req(validBody({ siteUrl: "https://demo.example" })))).status).toBe(200);
+  });
+});

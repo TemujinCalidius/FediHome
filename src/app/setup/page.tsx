@@ -96,6 +96,10 @@ export default function SetupWizard() {
   const [adminSecret, setAdminSecret] = useState("");
   const [savedPassword, setSavedPassword] = useState(false);
   const [setupToken, setSetupToken] = useState("");
+  // An unreachable address is a legitimate choice while testing, but it bakes an
+  // identity nobody can follow into the actor id and into every post published
+  // before you move (#326) — so it has to be ticked, not stumbled into.
+  const [allowLocalIdentity, setAllowLocalIdentity] = useState(false);
   // Optional avatar/banner (#59) — relative /uploads/ paths from the setup-token-
   // gated upload; "" = keep the built-in default.
   const [avatarPath, setAvatarPath] = useState("");
@@ -168,16 +172,32 @@ export default function SetupWizard() {
       return "";
     }
   })();
+  /**
+   * Is this an address the Fediverse can't reach? Mirrors isLocalOrPrivateHost in
+   * /api/setup — the server enforces it, this only surfaces it.
+   */
+  const siteUrlUnreachable = (() => {
+    if (!siteUrl || !siteUrlHost) return false;
+    const h = new URL(siteUrl).hostname.toLowerCase();
+    return (
+      h === "localhost" ||
+      h.endsWith(".localhost") ||
+      h === "::1" ||
+      /^127\./.test(h) ||
+      /^(10\.|192\.168\.)/.test(h) ||
+      /^172\.(1[6-9]|2\d|3[01])\./.test(h) ||
+      /^169\.254\./.test(h) ||
+      /^(fc|fd)[0-9a-f]{2}:/.test(h)
+    );
+  })();
+
   /** Inline warnings for origins that usually aren't the real public one. */
   const siteUrlWarning = (() => {
     if (!siteUrl) return null;
     if (!siteUrlHost) return "That doesn't look like a valid URL — use a full origin, e.g. https://example.com";
     const h = new URL(siteUrl).hostname;
-    if (h === "localhost" || h.startsWith("127.") || h === "::1") {
-      return "This is a local address — federation and links will break for anyone else. Use your real public domain.";
-    }
-    if (/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(h)) {
-      return "This is a private network address — it won't be reachable from the Fediverse.";
+    if (siteUrlUnreachable) {
+      return "This address can't be reached from the Fediverse — nobody will be able to follow you, and it gets written into every post you publish before you move.";
     }
     if (siteUrl.startsWith("http://") && h !== "localhost") {
       return "Plain http:// — most Fediverse servers require https for federation.";
@@ -235,6 +255,7 @@ export default function SetupWizard() {
           adminSecret,
           siteUrl,
           setupToken,
+          ...(siteUrlUnreachable ? { allowLocalIdentity } : {}),
           ...(avatarPath ? { avatarPath } : {}),
           ...(bannerPath ? { bannerPath } : {}),
           ...(Object.keys(siteConfig).length ? { siteConfig } : {}),
@@ -756,6 +777,22 @@ export default function SetupWizard() {
                   <p className="text-amber-500/70 text-xs mt-1">
                     Go back to Your Identity to change the public site address.
                   </p>
+                  {siteUrlUnreachable && (
+                    <label className="mt-3 flex items-start gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={allowLocalIdentity}
+                        onChange={(e) => setAllowLocalIdentity(e.target.checked)}
+                        className="mt-0.5 shrink-0 cursor-pointer"
+                      />
+                      <span className="text-amber-300 text-xs leading-relaxed">
+                        I&apos;m only testing locally — set up with{" "}
+                        <span className="font-medium">{siteUrlHost}</span> anyway. I understand this
+                        instance won&apos;t federate, and that moving to a real domain later changes
+                        my identity.
+                      </span>
+                    </label>
+                  )}
                 </div>
               )}
 
@@ -769,10 +806,18 @@ export default function SetupWizard() {
                 <button onClick={prev} disabled={isSubmitting} className="btn-outlined cursor-pointer">Back</button>
                 <button
                   onClick={handleComplete}
-                  disabled={isSubmitting || !siteUrl.trim()}
-                  title={!siteUrl.trim() ? "Set your public site address on the Your Identity step" : undefined}
+                  disabled={isSubmitting || !siteUrl.trim() || (siteUrlUnreachable && !allowLocalIdentity)}
+                  title={
+                    !siteUrl.trim()
+                      ? "Set your public site address on the Your Identity step"
+                      : siteUrlUnreachable && !allowLocalIdentity
+                        ? "This address can't be reached from the Fediverse — confirm you're only testing locally, or use your real domain"
+                        : undefined
+                  }
                   className={`btn-primary cursor-pointer ${
-                    isSubmitting || !siteUrl.trim() ? "opacity-40 cursor-not-allowed" : ""
+                    isSubmitting || !siteUrl.trim() || (siteUrlUnreachable && !allowLocalIdentity)
+                      ? "opacity-40 cursor-not-allowed"
+                      : ""
                   }`}
                 >
                   {isSubmitting ? "Setting up..." : "Confirm & install"}

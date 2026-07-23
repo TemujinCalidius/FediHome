@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { buildPostObject } from "@/lib/ap-post";
+import { getSiteUrl } from "@/lib/identity";
 
-const siteUrl = process.env.SITE_URL || "http://localhost:3000";
 
 export async function GET() {
   const posts = await prisma.post.findMany({
@@ -14,7 +14,7 @@ export async function GET() {
 
   const items = posts.map((post) => ({
     type: "Create",
-    actor: `${siteUrl}/ap/actor`,
+    actor: `${getSiteUrl()}/ap/actor`,
     published: post.publishedAt.toISOString(),
     object: buildPostObject(post),
   }));
@@ -22,7 +22,7 @@ export async function GET() {
   return NextResponse.json(
     {
       "@context": "https://www.w3.org/ns/activitystreams",
-      id: `${siteUrl}/ap/outbox`,
+      id: `${getSiteUrl()}/ap/outbox`,
       type: "OrderedCollection",
       totalItems: items.length,
       orderedItems: items,

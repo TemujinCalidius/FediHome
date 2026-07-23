@@ -11,8 +11,8 @@ import {
 } from "@/lib/bluesky-graph";
 import { syncBlueskyNotifications } from "@/lib/bluesky-notifications";
 import type { AdminBody } from "./types";
+import { getSiteUrl } from "@/lib/identity";
 
-const siteUrl = siteConfig.url;
 
 export async function bskyReply(body: AdminBody): Promise<NextResponse> {
   const { content: bskyReplyContent, blueskyUri: parentUri, crosspostFedi } = body;
@@ -54,21 +54,21 @@ export async function bskyReply(body: AdminBody): Promise<NextResponse> {
           (url: string) => `<a href="${url}" rel="nofollow noopener noreferrer" target="_blank">${url}</a>`
         );
         const fediHtml = `<p>${linkedContent}</p>`;
-        const fediReplyId = `${siteUrl}/ap/reply/${Date.now()}`;
+        const fediReplyId = `${getSiteUrl()}/ap/reply/${Date.now()}`;
         const fediActivity = {
           "@context": "https://www.w3.org/ns/activitystreams",
-          id: `${siteUrl}/ap/create/bsky-reply-${Date.now()}`,
+          id: `${getSiteUrl()}/ap/create/bsky-reply-${Date.now()}`,
           type: "Create",
-          actor: `${siteUrl}/ap/actor`,
+          actor: `${getSiteUrl()}/ap/actor`,
           published: new Date().toISOString(),
           object: {
             type: "Note",
             id: fediReplyId,
-            attributedTo: `${siteUrl}/ap/actor`,
+            attributedTo: `${getSiteUrl()}/ap/actor`,
             content: fediHtml,
             published: new Date().toISOString(),
             to: ["https://www.w3.org/ns/activitystreams#Public"],
-            cc: [`${siteUrl}/ap/followers`],
+            cc: [`${getSiteUrl()}/ap/followers`],
             ...(localPostFromBsky?.apId ? { inReplyTo: localPostFromBsky.apId } : {}),
           },
         };
@@ -76,11 +76,11 @@ export async function bskyReply(body: AdminBody): Promise<NextResponse> {
           console.error("Fedi crosspost from bsky_reply failed:", err)
         );
         const fediHandle = siteConfig.fediHandle;
-        const siteDomain = new URL(siteUrl).hostname;
+        const siteDomain = new URL(getSiteUrl()).hostname;
         await prisma.fediPost.upsert({
           where: { apId: fediReplyId },
           create: {
-            actorUri: `${siteUrl}/ap/actor`,
+            actorUri: `${getSiteUrl()}/ap/actor`,
             apId: fediReplyId,
             content: bskyReplyContent,
             contentHtml: fediHtml,

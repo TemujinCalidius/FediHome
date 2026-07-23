@@ -2,10 +2,9 @@ import { createFederation, MemoryKvStore } from "@fedify/fedify";
 import { prisma } from "./db";
 import { siteConfig } from "@/../site.config";
 import { getRuntimeProfile } from "./site-profile";
+import { getIdentity, getSiteUrl } from "./identity";
 import crypto from "crypto";
 
-const siteUrl = siteConfig.url;
-const handle = siteConfig.fediHandle;
 
 // Initialize federation
 export const federation = createFederation({
@@ -144,34 +143,34 @@ export async function getActorProfile() {
       "https://www.w3.org/ns/activitystreams",
       "https://w3id.org/security/v1",
     ],
-    id: `${siteUrl}/ap/actor`,
+    id: `${getSiteUrl()}/ap/actor`,
     type: "Person",
-    preferredUsername: handle,
+    preferredUsername: getIdentity().fediHandle,
     name: profile.authorName,
     summary: profile.actorSummary,
-    url: siteUrl,
+    url: getSiteUrl(),
     manuallyApprovesFollowers: false,
     discoverable: true,
-    inbox: `${siteUrl}/ap/inbox`,
-    outbox: `${siteUrl}/ap/outbox`,
-    followers: `${siteUrl}/ap/followers`,
-    following: `${siteUrl}/ap/following`,
+    inbox: `${getSiteUrl()}/ap/inbox`,
+    outbox: `${getSiteUrl()}/ap/outbox`,
+    followers: `${getSiteUrl()}/ap/followers`,
+    following: `${getSiteUrl()}/ap/following`,
     endpoints: {
-      sharedInbox: `${siteUrl}/ap/inbox`,
+      sharedInbox: `${getSiteUrl()}/ap/inbox`,
     },
     icon: {
       type: "Image",
       mediaType: imageMediaType(profile.avatarPath),
-      url: `${siteUrl}${profile.avatarPath}`,
+      url: `${getSiteUrl()}${profile.avatarPath}`,
     },
     image: {
       type: "Image",
       mediaType: imageMediaType(profile.bannerPath),
-      url: `${siteUrl}${profile.bannerPath}`,
+      url: `${getSiteUrl()}${profile.bannerPath}`,
     },
     publicKey: {
-      id: `${siteUrl}/ap/actor#main-key`,
-      owner: `${siteUrl}/ap/actor`,
+      id: `${getSiteUrl()}/ap/actor#main-key`,
+      owner: `${getSiteUrl()}/ap/actor`,
       publicKeyPem: keys.publicKey,
     },
   };

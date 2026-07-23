@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- **Setting up on an address the Fediverse can't reach is now a deliberate choice** (#326) — the wizard used to let you finish on `localhost` or a private-network address with nothing but a warning. That bakes an identity nobody can follow into your ActivityPub actor, and because posts store their full URL, into everything you publish before you move. It's still allowed — testing locally is a perfectly reasonable thing to do — but you now have to tick a box confirming that's what you're doing. Setting up on a real domain is unchanged.
+
+### Fixed
+- **An instance could be completely undiscoverable while looking perfectly healthy** (#326) — if you set `SITE_URL` but not `FEDI_DOMAIN`, your site advertised `@you@yourdomain` on every page, served a valid profile, and federated posts — but WebFinger, the endpoint every other server uses to *find* you, answered only to `@you@localhost`. So every search from Mastodon returned "not found", nobody could follow you, and nothing in the logs said anything was wrong. Your Fediverse identity now comes from a single place, so the address your site shows and the address it answers to cannot disagree. This also means a site URL with a stray trailing slash, or a non-default port, no longer produces a subtly different identity.
+
 ## 1.19.0 (2026-07-23)
 
 ### Added

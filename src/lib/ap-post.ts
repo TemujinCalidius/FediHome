@@ -1,6 +1,5 @@
-import { siteConfig } from "@/../site.config";
+import { getSiteUrl } from "./identity";
 
-const siteUrl = siteConfig.url;
 
 const IMAGE_MIME: Record<string, string> = {
   jpg: "image/jpeg",
@@ -16,7 +15,7 @@ export function imageAttachment(url: string, name = "") {
   return {
     type: "Image",
     mediaType: IMAGE_MIME[ext] || "image/jpeg",
-    url: /^https?:\/\//i.test(url) ? url : `${siteUrl}${url}`,
+    url: /^https?:\/\//i.test(url) ? url : `${getSiteUrl()}${url}`,
     name,
   };
 }
@@ -60,13 +59,13 @@ export function buildPostObject(post: PostForAp) {
   return {
     type: post.title ? "Article" : "Note",
     id: post.apId,
-    attributedTo: `${siteUrl}/ap/actor`,
+    attributedTo: `${getSiteUrl()}/ap/actor`,
     ...(post.title ? { name: post.title } : {}),
     content: post.contentHtml || `<p>${post.content.replace(/\n/g, "<br>")}</p>`,
-    url: `${siteUrl}/post/${post.slug}`,
+    url: `${getSiteUrl()}/post/${post.slug}`,
     published: post.publishedAt.toISOString(),
     to: ["https://www.w3.org/ns/activitystreams#Public"],
-    cc: [`${siteUrl}/ap/followers`],
+    cc: [`${getSiteUrl()}/ap/followers`],
     ...(post.inReplyTo?.apId ? { inReplyTo: post.inReplyTo.apId } : {}),
     ...(attachment.length > 0 ? { attachment } : {}),
     ...(tag.length > 0 ? { tag } : {}),
