@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Added
+- **Documented what actually happens when you change your domain** (#326) — `docs/fediverse-setup.md` gains a **Changing Your Domain** section. ActivityPub has no rename: your identity is a URL, and every server that has seen you stores it. The network's answer is an alias on the new account plus a `Move` from the old one — which only works while **the old domain is still serving**, because remote servers verify the move by fetching both ends. Move first and lose the domain later and your followers can still be brought across; lose the domain first and they can't, by anyone, ever. FediHome doesn't implement that handshake yet, so for now the guidance is to treat your domain as permanent, and the recommended shape of a move (new instance alongside the old, then decommission slowly) is written down.
+
 ### Changed
 - **Setting up on an address the Fediverse can't reach is now a deliberate choice** (#326) — the wizard used to let you finish on `localhost` or a private-network address with nothing but a warning. That bakes an identity nobody can follow into your ActivityPub actor, and because posts store their full URL, into everything you publish before you move. It's still allowed — testing locally is a perfectly reasonable thing to do — but you now have to tick a box confirming that's what you're doing. Setting up on a real domain is unchanged.
 

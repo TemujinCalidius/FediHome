@@ -9,6 +9,14 @@
  */
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
+    // Federation identity first, and awaited (#326). getIdentity() is synchronous,
+    // so the database overrides have to be in place BEFORE anything can serve a
+    // request — a request answered mid-load would sign with the environment's
+    // identity instead of the configured one, which is precisely the silent
+    // actor-id mismatch that breaks federation with nothing in the logs.
+    const { loadIdentity } = await import("@/lib/identity-store");
+    await loadIdentity();
+
     const { startScheduler } = await import("@/lib/scheduler");
     startScheduler();
   }
