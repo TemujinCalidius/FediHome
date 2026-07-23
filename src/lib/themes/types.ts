@@ -6,12 +6,22 @@
  */
 import type { SidebarSide, SidebarBlock } from "@/lib/sidebar";
 
-/** Colour tokens, keyed by their `--color-<token>` custom-property suffix. */
+/**
+ * Colour tokens, keyed by their `--color-<token>` custom-property suffix.
+ *
+ * `content-*` is the text ramp (see `content.ts`): the tokens body copy resolves
+ * to, so a theme can move text colour and not only its ground. Components are
+ * being migrated onto them from hard-coded Tailwind neutrals — the prerequisite
+ * for a light theme, since `@theme` extends the palette and leaves `gray-*`
+ * fixed while `surface-*` moves.
+ */
 export type ColorToken =
   | "surface-950" | "surface-900" | "surface-800" | "surface-700" | "surface-600"
   | "accent-50" | "accent-100" | "accent-200" | "accent-300" | "accent-400"
   | "accent-500" | "accent-600" | "accent-700" | "accent-800" | "accent-900"
-  | "moss-400" | "moss-500" | "moss-600";
+  | "moss-400" | "moss-500" | "moss-600"
+  | "content" | "content-strong" | "content-muted" | "content-subtle"
+  | "content-faint" | "content-dim" | "content-ghost";
 
 export type ThemeColors = Record<ColorToken, string>;
 

@@ -55,7 +55,7 @@ const typeEmojis: Record<string, string> = {
 const sourceColors: Record<string, string> = {
   fedi: "text-accent-400",
   bluesky: "text-blue-400",
-  guest: "text-gray-400",
+  guest: "text-content-subtle",
   maintenance: "text-amber-400",
 };
 
@@ -270,7 +270,7 @@ export default function NotificationBell() {
     <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setOpen(!open)}
-        className="relative text-gray-500 hover:text-accent-400 transition-colors"
+        className="relative text-content-faint hover:text-accent-400 transition-colors"
         title="Notifications"
       >
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
@@ -281,7 +281,7 @@ export default function NotificationBell() {
           />
         </svg>
         {count > 0 && (
-          <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 flex items-center justify-center bg-red-500 text-white text-[9px] font-bold rounded-full px-1">
+          <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 flex items-center justify-center bg-red-500 text-content text-[9px] font-bold rounded-full px-1">
             {count > 99 ? "99+" : count}
           </span>
         )}
@@ -291,7 +291,7 @@ export default function NotificationBell() {
         <div className="fixed inset-x-2 top-14 sm:absolute sm:inset-x-auto sm:right-0 sm:top-8 sm:w-[460px] bg-surface-900 border border-surface-600/30 rounded-xl shadow-2xl shadow-black/50 z-50 overflow-hidden flex flex-col">
           {/* Header */}
           <div className="px-4 py-3 border-b border-surface-700 flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-white">Notifications</h3>
+            <h3 className="text-sm font-semibold text-content">Notifications</h3>
             <div className="flex items-center gap-3">
               {count > 0 && (
                 <button
@@ -310,7 +310,7 @@ export default function NotificationBell() {
             <div className="flex-1 overflow-y-auto">
               {displayItems.length === 0 ? (
                 <div className="p-6 text-center">
-                  <p className="text-xs text-gray-600">
+                  <p className="text-xs text-content-dim">
                     {activeCategory === "all" ? "No notifications" : `No ${categories.find((c) => c.key === activeCategory)?.label?.toLowerCase() || ""}`}
                   </p>
                 </div>
@@ -340,20 +340,20 @@ export default function NotificationBell() {
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs text-gray-300">
-                        <span className="font-semibold text-white">{item.actor}</span>{" "}
+                      <p className="text-xs text-content-muted">
+                        <span className="font-semibold text-content">{item.actor}</span>{" "}
                         {item.summary}
                       </p>
                       <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-[10px] text-gray-600">{timeAgo(item.createdAt)}</span>
-                        <span className={`text-[10px] ${sourceColors[item.source] || "text-gray-500"}`}>
+                        <span className="text-[10px] text-content-dim">{timeAgo(item.createdAt)}</span>
+                        <span className={`text-[10px] ${sourceColors[item.source] || "text-content-faint"}`}>
                           {item.source}
                         </span>
                         <span className="text-[10px]">{typeEmojis[item.type]}</span>
                       </div>
                     </div>
                     {item.type === "follow" && (
-                      <span className="text-[10px] text-gray-600 flex-shrink-0 mt-1">
+                      <span className="text-[10px] text-content-dim flex-shrink-0 mt-1">
                         view profile
                       </span>
                     )}
@@ -373,7 +373,7 @@ export default function NotificationBell() {
                           type="button"
                           title="Dismiss"
                           onClick={(e) => handleMaintenanceAction(e, item.maintenanceId!, "dismissed")}
-                          className="w-6 h-6 flex items-center justify-center rounded text-gray-500 hover:bg-red-500/20 hover:text-red-400 transition-colors"
+                          className="w-6 h-6 flex items-center justify-center rounded text-content-faint hover:bg-red-500/20 hover:text-red-400 transition-colors"
                         >
                           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -398,13 +398,13 @@ export default function NotificationBell() {
                     className={`relative w-9 h-9 flex items-center justify-center rounded-lg transition-colors ${
                       isActive
                         ? "bg-accent-500/20 text-accent-400"
-                        : "text-gray-500 hover:text-gray-300 hover:bg-surface-800/50"
+                        : "text-content-faint hover:text-content-muted hover:bg-surface-800/50"
                     }`}
                     title={cat.label}
                   >
                     <CategoryIcon type={cat.key} className="w-4 h-4" />
                     {unread > 0 && (
-                      <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-3.5 flex items-center justify-center bg-red-500 text-white text-[8px] font-bold rounded-full px-0.5">
+                      <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-3.5 flex items-center justify-center bg-red-500 text-content text-[8px] font-bold rounded-full px-0.5">
                         {unread > 99 ? "99" : unread}
                       </span>
                     )}

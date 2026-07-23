@@ -15,7 +15,7 @@ export default async function HeaderMinimal() {
   return (
     <nav className="border-b border-surface-800 bg-surface-950/90 backdrop-blur-md sticky top-0 z-50">
       <div className="max-w-5xl mx-auto px-6 h-14 flex items-center justify-between">
-        <Link href="/" className="font-display text-lg font-bold text-white hover:text-accent-400 transition-colors">
+        <Link href="/" className="font-display text-lg font-bold text-content hover:text-accent-400 transition-colors">
           {name}
         </Link>
         <div className="flex items-center gap-3">

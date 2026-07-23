@@ -1,4 +1,5 @@
 import type { Theme } from "./types";
+import { CONTENT_RAMP } from "./content";
 
 /**
  * "Classic Blog" (#250) — the third built-in theme, and the first to lean on the
@@ -14,9 +15,9 @@ import type { Theme } from "./types";
  * date-led index a blog wants. An owner can still override any of it.
  *
  * **Why it's dark.** Same reason as Editorial: a light ground is unreachable
- * until the hard-coded `text-white` / `gray-*` utilities become tokens, so the
- * contrast invariant in `themes.test.ts` keeps `surface-950` dark. This is a
- * warm *charcoal*, not paper.
+ * until the remaining hard-coded `text-white` / `gray-*` utilities become
+ * `content-*` tokens, so the contrast invariant in `themes.test.ts` keeps
+ * `surface-950` dark. This is a warm *charcoal*, not paper.
  *
  * **Fonts** swap round only (buildThemeStyle can't register `@font-face`): serif
  * display AND serif body — a fully bookish voice, distinct from Editorial's sans
@@ -50,6 +51,8 @@ export const CLASSIC_THEME: Theme = {
       "moss-400": "#cbb26b",
       "moss-500": "#b0904a",
       "moss-600": "#8a6f38",
+      // Text ramp (#250) — unchanged for now: the migration onto these tokens is still in progress, so a warm text ramp would only apply to the already-migrated surfaces.
+      ...CONTENT_RAMP,
     },
     fonts: {
       display: '"Source Serif 4", "Georgia", serif',

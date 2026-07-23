@@ -49,7 +49,7 @@ interface Theme {
   name: string;
   description?: string;
   tokens: {
-    colors: Record<ColorToken, string>;   // surface-950…600, accent-50…900, moss-400…600
+    colors: Record<ColorToken, string>;   // surface-950…600, accent-50…900, moss-400…600, content-*
     fonts:  { display; body; mono };
     feel:   { radiusCard; radiusButton; glassFilter };  // e.g. "8px", "blur(12px)", "none"
   };
@@ -57,6 +57,41 @@ interface Theme {
   sidebar?: { side?; blocks? };                         // preset, if shell is "sidebar"
 }
 ```
+
+### The text ramp
+
+Colour tokens cover the *ground* (`surface-*`) and the *brand* (`accent-*`), but
+body text was long hard-coded to Tailwind neutrals — which `@theme` can't move,
+because it extends the palette rather than replacing it. That's the single reason
+every theme has had to be dark.
+
+`content-*` (`src/lib/themes/content.ts`) is the text ramp that fixes it,
+brightest → dimmest:
+
+| Token | Role | Was |
+|---|---|---|
+| `content` | headings, body copy | `text-white` |
+| `content-strong` | just under primary | `text-gray-200` |
+| `content-muted` | secondary copy | `text-gray-300` |
+| `content-subtle` | labels, captions | `text-gray-400` |
+| `content-faint` | timestamps, counts, bylines | `text-gray-500` |
+| `content-dim` | decorative, de-emphasised | `text-gray-600` |
+| `content-ghost` | hairline text | `text-gray-700` |
+
+Use `text-content`, `text-content-faint`, … in components. Each token **defaults
+to the exact Tailwind neutral it replaces** (`globals.css` sets
+`--color-content-faint: var(--color-gray-500)`), so migrating a utility is a pure
+rename with no visual change, and a theme that doesn't set them renders
+identically to before.
+
+The migration is **partial** — the layout chrome is on tokens, the rest of the app
+isn't yet. Until it finishes, light themes stay blocked and the dark-only contrast
+invariant stands. If you're touching a component's text colours, moving them onto
+these tokens is the way to help (#250).
+
+`themes.test.ts` asserts the readable tier (`content` … `content-subtle`) stays AA
+on each theme's own `surface-950`, and that the ramp is monotonic. `content-faint`
+and below are metadata and decoration and sit below AA by design.
 
 ### Regions × variants
 
@@ -121,12 +156,13 @@ wiring. It auto-appears in the admin theme picker and the first-run wizard
 
 ### Constraints (enforced by `themes.test.ts`)
 
-- **Themes must be dark.** Components hard-code Tailwind neutrals (`text-white`,
-  `text-gray-*`) for body/secondary text, and `@theme` *extends* the palette so
-  those neutrals stay fixed while `surface-*` moves. On a light ground
-  `text-white` lands at ~1:1 — an invisible site. A contrast invariant requires
-  `white` / `gray-200` / `gray-400` to stay ≥ 4.5:1 (AA) on your `surface-950`.
-  (Light themes await a `text-white`/`gray-*` → token migration — tracked in #250.)
+- **Themes must (still) be dark.** Most components hard-code Tailwind neutrals
+  (`text-white`, `text-gray-*`) for body/secondary text, and `@theme` *extends*
+  the palette so those neutrals stay fixed while `surface-*` moves. On a light
+  ground `text-white` lands at ~1:1 — an invisible site. A contrast invariant
+  requires `white` / `gray-200` / `gray-400` to stay ≥ 4.5:1 (AA) on your
+  `surface-950`. The migration that lifts this is underway — see
+  [The text ramp](#the-text-ramp) — and is tracked in #250.
 - **Fonts swap families only.** `buildThemeStyle` can't register `@font-face`,
   and only **Inter** and **Source Serif 4** are self-hosted, so pick among those
   (+ system fallbacks). Adding a new face means an `@font-face` in `globals.css`.
