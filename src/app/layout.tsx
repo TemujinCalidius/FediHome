@@ -47,8 +47,9 @@ export async function generateMetadata(): Promise<Metadata> {
     },
     robots: { index: true, follow: true },
     // PWA: installable to the iOS/Android home screen. Push (incl. iOS 16.4+) is
-    // wired up via /sw.js + the NotificationBell "Enable phone notifications"
-    // (dormant until VAPID keys are set in .env.local).
+    // wired up via /sw.js + the NotificationBell "Enable phone notifications",
+    // which generates the VAPID keys in-app on first use (#59) — the VAPID_* env
+    // vars remain a fallback for automated deploys.
     manifest: "/manifest.webmanifest",
     appleWebApp: {
       capable: true,
