@@ -6,16 +6,16 @@ import MacAppMockup from "@/components/download/MacAppMockup";
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "Download for Mac",
+  title: "FediHome for Mac — native menu-bar app",
   description:
-    "A native menu-bar Mac app for your FediHome — read your feed, post with photos, video and audio, manage your profile, DMs and notifications. Requires macOS 14 or later, notarized by Apple.",
+    "The native macOS app for your FediHome. Read your feed, post photos, video and audio, manage your site, send DMs and get native notifications — right from your menu bar. On the Mac App Store, macOS 14 and later, notarized by Apple.",
 };
 
 // The app's headline capabilities — kept generic/marketing (no instance config).
 const FEATURES = [
   {
     title: "Your whole feed",
-    body: "Read everyone you follow across the Fediverse in a fast, native timeline — like, boost and reply in a click.",
+    body: "Read everyone you follow in a fast, native timeline — like, reply and reshare in a click.",
   },
   {
     title: "Compose anything",
@@ -31,7 +31,7 @@ const FEATURES = [
   },
   {
     title: "Native notifications",
-    body: "Get real macOS notifications for replies, follows, boosts and mentions as they land.",
+    body: "Get real macOS notifications for replies, follows, reshares and mentions as they land.",
   },
   {
     title: "Lives in your menu bar",

@@ -4,30 +4,33 @@ import { siteConfig } from "@/../site.config";
 import type { RuntimeSiteConfig } from "@/lib/site-settings";
 
 // What FediHome does — shown on the project showcase landing (LANDING_MODE=true).
+// Benefit-led and plain-language on purpose; the technical terms people search
+// for (ActivityPub, fediverse, RSS…) live in the "Open by design" section below,
+// where they inform without gatekeeping.
 const FEATURES = [
   {
-    title: "Own your content",
-    body: "Your posts, photos, videos and audio live on your own domain — not on a platform that can change the rules.",
+    title: "Own everything you post",
+    body: "Your words, photos, videos and audio live on your own domain — not on a platform that can change the rules, run ads against them, or lock you out.",
   },
   {
-    title: "Federated by default",
-    body: "FediHome speaks ActivityPub, so anyone on Mastodon and the wider Fediverse can follow, reply and boost.",
+    title: "Followable from anywhere",
+    body: "People follow you from wherever they already are, and your posts land in their feed. Like email, it just works across different services — no account on your site needed.",
   },
   {
-    title: "A real feed",
-    body: "Follow people across the Fediverse and read them in a timeline that lives on your own site.",
+    title: "Your own feed",
+    body: "Follow the people and creators you like and read them in one timeline on your own site — in the order they posted, never rearranged by an algorithm.",
   },
   {
-    title: "Blog + media built in",
-    body: "Articles, journal notes, a photography gallery, and video and audio sections — all first-class.",
+    title: "One home for everything",
+    body: "Quick thoughts, long articles with titles, a photo gallery, videos, and a podcast-style audio feed — every format, all first-class.",
   },
   {
-    title: "Yours to run, free forever",
-    body: "MIT-licensed and self-hosted. Update with a single command that never touches your data.",
+    title: "Post from anywhere",
+    body: "Write from the web or the Mac app, publish from your phone, and let anyone subscribe by RSS or install your site like an app.",
   },
   {
-    title: "IndieWeb friendly",
-    body: "Micropub publishing, RSS, WebFinger and installable PWA support work out of the box.",
+    title: "Free, and truly yours",
+    body: "Open source and self-hosted. Run it yourself and update with a single command that never touches your data.",
   },
 ];
 
@@ -74,7 +77,7 @@ export default function LandingShowcase({
         <section className="grid items-center gap-10 lg:grid-cols-2">
           <div>
             <span className="inline-flex items-center gap-2 rounded-full border border-accent-500/30 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-accent-400">
-              Open source · Fediverse · Self-hosted
+              Open source · Self-hosted · No lock-in
             </span>
             <h1 className="mt-5 font-display text-4xl md:text-5xl font-bold leading-tight text-white">
               {landing.headline}
@@ -114,9 +117,9 @@ export default function LandingShowcase({
               )}
             </div>
             <p className="mt-4 text-sm text-gray-500">
-              Follow{" "}
+              This whole site is a FediHome. Follow{" "}
               <span className="text-accent-400">{siteConfig.fediAddress}</span>{" "}
-              on the Fediverse.
+              and watch it show up in your feed.
             </p>
           </div>
 
@@ -127,7 +130,7 @@ export default function LandingShowcase({
             />
             <Image
               src="/landing/hero.webp"
-              alt="A glowing home connected to a network of Fediverse nodes"
+              alt="A glowing home at the heart of the open web"
               width={1024}
               height={1024}
               priority
@@ -142,8 +145,8 @@ export default function LandingShowcase({
             What FediHome does
           </h2>
           <p className="mt-2 max-w-2xl text-gray-400">
-            A complete personal site that speaks the language of the Fediverse —
-            blog, media, and a live feed, all on a domain you control.
+            A complete personal site — your posts, your photos and media, and a
+            feed of the people you follow — all on a domain that&apos;s yours.
           </p>
           <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {FEATURES.map((feature) => (
@@ -159,15 +162,24 @@ export default function LandingShowcase({
           </div>
         </section>
 
-        {/* ── Open source & AI-written ───────────────────────── */}
+        {/* ── Open by design ─────────────────────────────────────
+            The one section that names the technical standards. It's the
+            no-lock-in proof AND the SEO home for the terms people search
+            (ActivityPub, WebFinger, RSS, Mastodon, fediverse, self-hosted) —
+            deliberately below the fold so it informs without gatekeeping. */}
         <section className="mt-20 glass-card p-8 md:p-10">
           <h2 className="font-display text-2xl md:text-3xl font-semibold text-white">
-            Completely open source. Written by AI.
+            Open by design — no lock-in, ever
           </h2>
           <p className="mt-3 max-w-2xl leading-relaxed text-gray-400">
-            FediHome is MIT-licensed and built end-to-end with Claude Code —
-            every line is public on GitHub. Read it, fork it, run it, and shape
-            it. No accounts, no lock-in, no cost.
+            FediHome is free and open source (MIT-licensed) and built on the
+            open standards of the social web — <span className="text-gray-300">ActivityPub</span>,
+            WebFinger and RSS. That&apos;s the same network Mastodon and
+            thousands of other independent sites already share, often called the{" "}
+            <span className="text-gray-300">fediverse</span>. It&apos;s why
+            people can follow you from anywhere, why you&apos;re never tied to
+            one company, and why — if you ever move — your followers can come
+            with you. Read the code, fork it, or run your own.
           </p>
           <div className="mt-6 flex flex-wrap gap-3">
             <a
@@ -176,7 +188,7 @@ export default function LandingShowcase({
               rel="noopener noreferrer"
               className="btn-primary text-xs"
             >
-              Star it on GitHub
+              View the source
             </a>
             <a
               href={`${repo}/blob/main/LICENSE`}
