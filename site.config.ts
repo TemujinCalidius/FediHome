@@ -87,15 +87,20 @@ export const siteConfig = {
   // Native-app downloads (#241). When DOWNLOAD_MACOS_ENABLED=true, a "Download"
   // nav link, a homepage hero CTA, and a /download page appear — a marketing
   // surface for the FediHome macOS app. Off by default so a personal instance
-  // isn't advertising an app it may not use; the public demo turns it on. The
-  // release URL tracks GitHub Releases "latest" (always the newest notarized
-  // build); the App Store URL is an empty slot until the listing is approved.
+  // isn't advertising an app it may not use; the public demo turns it on. Both
+  // URLs default to the project's own app (there's only one FediHome macOS app):
+  // the release URL tracks GitHub Releases "latest" (the newest notarized build),
+  // and the App Store URL points at the live listing. Region-neutral on purpose,
+  // so Apple redirects each visitor to their own storefront. Override either via
+  // env or the admin panel.
   download: {
     macosEnabled: process.env.DOWNLOAD_MACOS_ENABLED === "true",
     macosReleaseUrl:
       process.env.DOWNLOAD_MACOS_RELEASE_URL ||
       "https://github.com/TemujinCalidius/FediHome-macOS/releases/latest",
-    macosAppStoreUrl: process.env.DOWNLOAD_MACOS_APP_STORE_URL || "",
+    macosAppStoreUrl:
+      process.env.DOWNLOAD_MACOS_APP_STORE_URL ||
+      "https://apps.apple.com/app/fedihome/id6790605091",
   },
 
   // Visual theme (#250). Selects a built-in theme preset (see src/lib/themes).

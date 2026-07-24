@@ -163,13 +163,13 @@ Set any of these to `false` to hide that section from the navigation. The corres
 
 ## macOS App Download
 
-FediHome has a native menu-bar Mac app. When enabled, a **Download** nav link, a homepage hero CTA, and a `/download` marketing page appear. It's **off by default** — a personal instance isn't advertising an app it may not use — and is intended for the public demo.
+FediHome has a native menu-bar Mac app, [live on the Mac App Store](https://apps.apple.com/app/fedihome/id6790605091). When enabled, a **Download** nav link, a homepage hero CTA, and a `/download` marketing page appear. It's **off by default** — a personal instance isn't advertising an app it may not use — and is intended for the public demo.
 
 | Env var | Default | Purpose |
 |---------|---------|---------|
 | `DOWNLOAD_MACOS_ENABLED` | `false` | Show the Download link, hero CTA, and `/download` page. |
-| `DOWNLOAD_MACOS_RELEASE_URL` | the app repo's GitHub Releases `latest` | Primary download — always the newest notarized build. Prefer `releases/latest` over a pinned tag so it auto-tracks new versions. |
-| `DOWNLOAD_MACOS_APP_STORE_URL` | *(empty)* | Optional Mac App Store listing. When set, a "Download on the Mac App Store" button appears alongside the GitHub download; until then that slot shows a "coming soon" placeholder. |
+| `DOWNLOAD_MACOS_RELEASE_URL` | the app repo's GitHub Releases `latest` | Direct download — always the newest notarized build. Prefer `releases/latest` over a pinned tag so it auto-tracks new versions. |
+| `DOWNLOAD_MACOS_APP_STORE_URL` | the live Mac App Store listing | The "Download on the Mac App Store" button. Region-neutral, so Apple redirects each visitor to their own storefront. Both URLs already point at the project's app; only override to point at a fork/rebuild. Clearing it shows a "coming soon" placeholder instead. |
 
 All three are also editable at runtime from **Admin → Site settings** (they overlay the env defaults, no restart).
 
