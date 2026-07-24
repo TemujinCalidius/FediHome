@@ -90,8 +90,8 @@ export default async function DownloadPage() {
               </a>
             )}
 
-            {/* Mac App Store slot — the official badge + link drops in here once
-                the listing is approved (set DOWNLOAD_MACOS_APP_STORE_URL). */}
+            {/* Mac App Store link. Defaults to the live listing; the "coming
+                soon" fallback only shows if an instance clears the URL. */}
             {macosAppStoreUrl ? (
               <a
                 href={macosAppStoreUrl}
