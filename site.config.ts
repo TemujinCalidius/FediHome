@@ -37,10 +37,10 @@ export const siteConfig = {
   // Off by default, so existing personal sites are completely unaffected.
   landingMode: process.env.LANDING_MODE === "true",
   landingHeadline:
-    process.env.LANDING_HEADLINE || "Your home on the open social web",
+    process.env.LANDING_HEADLINE || "Your own website — that people can actually follow.",
   landingSubhead:
     process.env.LANDING_SUBHEAD ||
-    "FediHome is a self-hosted personal site that speaks ActivityPub — your blog, photos, videos and a live Fediverse feed, all owned by you and federated with Mastodon and the wider network.",
+    "Share short posts, full articles, photos, video and audio — all on a site that's truly yours. Anyone can follow you and see it in their feed, and you'll see the people you follow in yours. No big platform in the middle, no algorithm deciding who sees what.",
   repoUrl: process.env.REPO_URL || "https://github.com/TemujinCalidius/fedihome",
 
   // Public read-only Fediverse feed. When PUBLIC_FEED=true, /fediverse shows a
