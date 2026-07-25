@@ -88,11 +88,14 @@ FediHome implements the **arriving** half — you can publish an `alsoKnownAs`
 alias (see [Moving Here From Another Account](#moving-here-from-another-account)),
 so someone can move *to* a FediHome from elsewhere and bring their followers.
 
+FediHome also **follows accounts that move away**: if someone you follow migrates
+to another server, their `Move` is verified and your follow is re-pointed
+automatically, and you get a notification saying so.
+
 The **leaving** half — setting `movedTo` and publishing a `Move` to your own
-followers — is **not implemented yet** (tracked in #347), and neither is
-*receiving* a `Move` for an account you follow (#339). So today there's still no
-supported way to carry your followers to a new domain, which makes the advice
-above a hard rule rather than a recommendation.
+followers — is **not implemented yet** (tracked in #347). So today there's still
+no supported way to carry your own followers to a new domain, which makes the
+advice above a hard rule rather than a recommendation.
 
 If you must move, the shape that works with the grain of the protocol is:
 
