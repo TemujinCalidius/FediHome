@@ -32,12 +32,12 @@ vi.mock("@/lib/url-guard", () => ({ assertPublicHost }));
 vi.mock("@/lib/db", () => ({
   prisma: {
     blockedActor: { findUnique: vi.fn() },
-    fediPost: { findUnique: vi.fn(), update: vi.fn(), upsert: vi.fn(), findFirst: vi.fn(), findMany: vi.fn() },
+    fediPost: { findUnique: vi.fn(), update: vi.fn(), upsert: vi.fn(), create: vi.fn(), findFirst: vi.fn(), findMany: vi.fn() },
     fediInteraction: { updateMany: vi.fn(), findFirst: vi.fn(), create: vi.fn() },
     fediFollowing: { findUnique: vi.fn() },
     fediFollower: { findUnique: vi.fn(), findMany: vi.fn(), upsert: vi.fn(), create: vi.fn(), delete: vi.fn() },
-    post: { findFirst: vi.fn() },
-    photo: { findFirst: vi.fn() },
+    post: { findFirst: vi.fn(), updateMany: vi.fn() },
+    photo: { findFirst: vi.fn(), updateMany: vi.fn() },
     directMessage: { findUnique: vi.fn(), upsert: vi.fn() },
   },
 }));
@@ -160,5 +160,57 @@ describe("everyone else is unaffected", () => {
     const res = await POST(req({ type: "Follow", actor: ALLOWED, id: `${ALLOWED}#f1`, object: "https://demo.example/ap/actor" }));
     expect(res.status).toBe(202);
     expect(prisma.fediFollower.upsert).toHaveBeenCalled();
+  });
+});
+
+describe("a blocked actor can't get back in via someone else's boost", () => {
+  const BOOSTER = "https://mastodon.example/users/carol"; // we follow Carol
+  const BOOSTED_NOTE = `${BLOCKED}/statuses/9`;
+
+  beforeEach(() => {
+    // We follow the booster, so the feed-store path is reached.
+    vi.mocked(prisma.fediFollowing.findUnique).mockResolvedValue({ actorUri: BOOSTER } as never);
+    vi.mocked(prisma.fediPost.findUnique).mockResolvedValue(null as never);
+    global.fetch = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          type: "Note",
+          id: BOOSTED_NOTE,
+          content: "<p>from the blocked account</p>",
+          attributedTo: BLOCKED, // the ORIGINAL author is the blocked one
+          published: "2026-07-01T00:00:00Z",
+        }),
+        { status: 200 },
+      ),
+    ) as unknown as typeof fetch;
+  });
+
+  it("does not store the boosted post when its author is blocked", async () => {
+    // The inbox block check only covers the SENDER — Carol, who isn't blocked.
+    // Without a second check the blocked author's post, name and avatar land
+    // right back in the feed under their own actorUri.
+    const res = await POST(
+      req({ type: "Announce", actor: BOOSTER, object: BOOSTED_NOTE }),
+    );
+    expect(res.status).toBe(202);
+    expect(prisma.fediPost.create).not.toHaveBeenCalled();
+  });
+
+  it("still stores a boost of a post by someone NOT blocked", async () => {
+    global.fetch = vi.fn(async () =>
+      new Response(
+        JSON.stringify({
+          type: "Note",
+          id: `${ALLOWED}/statuses/1`,
+          content: "<p>fine</p>",
+          attributedTo: ALLOWED,
+          published: "2026-07-01T00:00:00Z",
+        }),
+        { status: 200 },
+      ),
+    ) as unknown as typeof fetch;
+
+    await POST(req({ type: "Announce", actor: BOOSTER, object: `${ALLOWED}/statuses/1` }));
+    expect(prisma.fediPost.create).toHaveBeenCalled();
   });
 });
