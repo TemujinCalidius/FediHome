@@ -52,24 +52,44 @@ describe("block() records the block (#180)", () => {
         }),
       }),
     );
-    // Still delivers the Block + purges content (existing behaviour).
-    expect(deliver).toHaveBeenCalled();
+    // Content is still purged...
     expect(prisma.fediPost.deleteMany).toHaveBeenCalledWith({ where: { actorUri: ACTOR } });
+    expect(prisma.fediInteraction.deleteMany).toHaveBeenCalledWith({ where: { actorUri: ACTOR } });
+    // ...and the follower row dropped.
+    expect(prisma.fediFollower.delete).toHaveBeenCalledWith({ where: { actorUri: ACTOR } });
+    // ...but NO Block activity is federated. ActivityPub says a server SHOULD
+    // NOT deliver Block to its object; sending it is what lets a blocked person
+    // on Mastodon detect the block. Enforcement is local (lib/blocks.ts).
+    expect(deliver).not.toHaveBeenCalled();
+  });
+
+  it("still sends Undo(Follow) when we were following them", async () => {
+    // Ending our own follow is between us and their server, and it has to be
+    // federated or we keep receiving their posts.
+    vi.mocked(prisma.fediFollowing.findUnique).mockResolvedValue(
+      { actorUri: ACTOR, inbox: "https://x.social/inbox" } as never,
+    );
+    vi.mocked(prisma.fediFollowing.delete).mockResolvedValue({} as never);
+
+    await block({ actorUri: ACTOR } as never);
+
+    const kinds = deliver.mock.calls.map((c) => (c[1] as { type: string }).type);
+    expect(kinds).toContain("Undo");
+    expect(kinds).not.toContain("Block");
   });
 });
 
 describe("unblock() reverses it (#180)", () => {
-  it("delivers Undo(Block) to the cached inbox and removes the row", async () => {
+  it("removes the row and federates nothing", async () => {
     vi.mocked(prisma.blockedActor.findUnique).mockResolvedValue(
       { actorUri: ACTOR, inbox: "https://x.social/inbox" } as never,
     );
     const res = await unblock({ actorUri: ACTOR } as never);
     expect(res.status).toBe(200);
-    const activity = deliver.mock.calls[0][1] as { type: string; object: { type: string; object: string } };
-    expect(activity.type).toBe("Undo");
-    expect(activity.object.type).toBe("Block");
-    expect(activity.object.object).toBe(ACTOR);
     expect(prisma.blockedActor.deleteMany).toHaveBeenCalledWith({ where: { actorUri: ACTOR } });
+    // No Undo(Block), because no Block was ever sent — and announcing "you were
+    // blocked, and now you aren't" is the disclosure we're avoiding.
+    expect(deliver).not.toHaveBeenCalled();
   });
 
   it("400 without an actorUri", async () => {
