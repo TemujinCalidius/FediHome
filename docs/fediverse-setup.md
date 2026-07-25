@@ -23,6 +23,32 @@ This is set by two environment variables in `.env.local`:
 
 Together, these form `@sam@samcorner.com`. This is what people type into Mastodon's search bar to find and follow you.
 
+## Moving Here From Another Account
+
+Coming to FediHome from Mastodon (or anywhere else that speaks ActivityPub)?
+You can bring your **followers** with you.
+
+The network verifies a move from both ends, so the order matters:
+
+1. **On FediHome**, go to **Admin → Site settings → Moving here from another
+   account** and add your old profile address (e.g.
+   `https://mastodon.social/users/you`). This publishes it as an `alsoKnownAs`
+   alias on your actor — it's how the other server confirms the two accounts are
+   really the same person.
+2. **On the old account**, start the move (on Mastodon: **Preferences → Account →
+   Moving to a different account**) and give it your FediHome address.
+3. Their server sends a `Move` to everyone following you. Each of those servers
+   fetches *your FediHome actor*, checks that the alias from step 1 names the old
+   account, and only then re-points the follow.
+
+**Keep the old account online.** The verification in step 3 fetches both ends, so
+if the old server is gone the move can't be checked and nothing happens. Give it
+weeks, not hours.
+
+**Only followers move.** Your posts, the list of people *you* follow, and any
+blocks or mutes stay behind — export and re-import those separately. Mastodon
+also enforces a 30-day cooldown between moves, and a move can't be undone.
+
 ## Changing Your Domain
 
 **Choose your domain before you federate, and treat it as permanent.**
@@ -58,10 +84,15 @@ move, or that don't implement `Move`, will keep pointing at the old address.
 
 ### What this means for FediHome today
 
-FediHome does **not** implement `alsoKnownAs`, `Move`, or `movedTo` yet — in
-either direction (tracked in #326). So today there is no supported way to carry
-followers to a new domain, which makes the advice above a hard rule rather than a
-recommendation.
+FediHome implements the **arriving** half — you can publish an `alsoKnownAs`
+alias (see [Moving Here From Another Account](#moving-here-from-another-account)),
+so someone can move *to* a FediHome from elsewhere and bring their followers.
+
+The **leaving** half — setting `movedTo` and publishing a `Move` to your own
+followers — is **not implemented yet** (tracked in #347), and neither is
+*receiving* a `Move` for an account you follow (#339). So today there's still no
+supported way to carry your followers to a new domain, which makes the advice
+above a hard rule rather than a recommendation.
 
 If you must move, the shape that works with the grain of the protocol is:
 
