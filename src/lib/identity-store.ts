@@ -71,6 +71,73 @@ export async function loadIdentity(): Promise<void> {
 }
 
 /**
+ * Account aliases — `alsoKnownAs` (#326).
+ *
+ * This is the "I am also that account over there" half of a Fediverse move, and
+ * it's what lets someone bring their followers TO a FediHome from somewhere
+ * else. The old server publishes a `Move`; every receiving server then fetches
+ * the *target* actor — us — and only re-points the follow if our `alsoKnownAs`
+ * names the old account. Without this property the move is refused and the
+ * followers stay put.
+ *
+ * Stored as one `identity.alsoKnownAs` row (whitespace/comma separated) rather
+ * than in the sync accessor: only the actor document reads it, and that's
+ * already an async context. `alsoKnownAs` is defined by the ActivityStreams
+ * core context we already serve, so no JSON-LD changes are needed.
+ */
+export const ALSO_KNOWN_AS_KEY = "identity.alsoKnownAs";
+
+/** Cap the list — this is a personal alias set, not a directory. */
+const MAX_ALIASES = 10;
+
+/**
+ * Parse a stored/submitted alias list into absolute http(s) actor URIs.
+ * Anything unparseable is dropped rather than emitted: a malformed entry in our
+ * actor document is worse than a missing one, since it can make the whole
+ * property unusable to a server verifying a move.
+ */
+export function parseAliases(raw: string): string[] {
+  const out: string[] = [];
+  for (const piece of raw.split(/[\s,]+/)) {
+    const v = piece.trim();
+    if (!v) continue;
+    let u: URL;
+    try {
+      u = new URL(v);
+    } catch {
+      continue;
+    }
+    if (u.protocol !== "https:" && u.protocol !== "http:") continue;
+    const normalized = u.toString().replace(/\/+$/, "");
+    if (!out.includes(normalized)) out.push(normalized);
+    if (out.length >= MAX_ALIASES) break;
+  }
+  return out;
+}
+
+/** The configured aliases, or `[]` — never throws, so the actor always serves. */
+export async function getAlsoKnownAs(): Promise<string[]> {
+  try {
+    const row = await prisma.siteSetting.findUnique({ where: { key: ALSO_KNOWN_AS_KEY } });
+    return row ? parseAliases(row.value) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Replace the alias list. Returns what was actually stored, after validation. */
+export async function setAlsoKnownAs(raw: string): Promise<string[]> {
+  const aliases = parseAliases(raw);
+  const value = aliases.join("\n");
+  await prisma.siteSetting.upsert({
+    where: { key: ALSO_KNOWN_AS_KEY },
+    update: { value },
+    create: { key: ALSO_KNOWN_AS_KEY, value },
+  });
+  return aliases;
+}
+
+/**
  * Re-read the overrides after a write.
  *
  * ⚠️ Process-local, like the load itself. Under a multi-process deployment

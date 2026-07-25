@@ -12,6 +12,7 @@ import { getPushKeyStatus } from "@/lib/push-config";
 import { secretBoxAvailable } from "@/lib/secret-box";
 import TimelineLogin from "../../timeline/TimelineLogin";
 import SiteSettingsClient from "./SiteSettingsClient";
+import { getAlsoKnownAs } from "@/lib/identity-store";
 
 export const metadata = {
   title: "Site settings",
@@ -35,10 +36,11 @@ export default async function AdminSitePage() {
   // Resolve the collecting-embed code so the panel can confirm analytics is
   // actually collecting (vs configured-but-silently-404ing) (#288), and the
   // encrypted API-key status (#59) so the panel can set/show it in-app.
-  const [embedCode, analyticsKey, pushKey] = await Promise.all([
+  const [embedCode, analyticsKey, pushKey, aliases] = await Promise.all([
     resolveTinylyticsEmbed(effective.analytics),
     getAnalyticsKeyStatus(),
     getPushKeyStatus(),
+    getAlsoKnownAs(),
   ]);
   const analyticsConfigured = !!(effective.analytics.siteId || effective.analytics.embedId);
   const analyticsStatus = {
@@ -67,6 +69,7 @@ export default async function AdminSitePage() {
       analyticsStatus={analyticsStatus}
       analyticsKey={analyticsKey}
       pushKey={pushKey}
+      aliases={aliases}
       encryptionAvailable={secretBoxAvailable()}
     />
   );

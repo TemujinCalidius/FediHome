@@ -2,6 +2,7 @@ import { createFederation, MemoryKvStore } from "@fedify/fedify";
 import { prisma } from "./db";
 import { siteConfig } from "@/../site.config";
 import { getRuntimeProfile } from "./site-profile";
+import { getAlsoKnownAs } from "./identity-store";
 import { getIdentity, getSiteUrl } from "./identity";
 import crypto from "crypto";
 
@@ -137,6 +138,9 @@ export async function getActorProfile() {
   const keys = await ensureActorKeys();
   // Runtime-editable profile (#201) overlaid on env defaults.
   const profile = await getRuntimeProfile();
+  // Account aliases (#326). Only emitted when set, so a default instance's
+  // actor document is byte-identical to before.
+  const alsoKnownAs = await getAlsoKnownAs();
 
   return {
     "@context": [
@@ -151,6 +155,10 @@ export async function getActorProfile() {
     url: getSiteUrl(),
     manuallyApprovesFollowers: false,
     discoverable: true,
+    // "I am also that account" — the property a remote server checks before it
+    // will move someone's followers to us. `alsoKnownAs` is already defined by
+    // the activitystreams context above, so no extra JSON-LD term is required.
+    ...(alsoKnownAs.length > 0 ? { alsoKnownAs } : {}),
     inbox: `${getSiteUrl()}/ap/inbox`,
     outbox: `${getSiteUrl()}/ap/outbox`,
     followers: `${getSiteUrl()}/ap/followers`,
