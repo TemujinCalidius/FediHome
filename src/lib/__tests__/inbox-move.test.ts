@@ -232,3 +232,31 @@ describe("Moves we should simply ignore", () => {
     expect(signedGet).not.toHaveBeenCalled();
   });
 });
+
+describe("hostile input can't stall the inbox (js/polynomial-redos)", () => {
+  it("handles an alias made of a huge run of slashes in constant-ish time", async () => {
+    // The trailing-slash comparison used to be /\/+$/, which backtracks
+    // quadratically on slashes-followed-by-anything. These strings come out of a
+    // REMOTE actor document, so this is a value an attacker fully controls.
+    const nasty = `${"/".repeat(120_000)}a`;
+    signedGet.mockResolvedValue(targetDoc([nasty, OLD_ACTOR]));
+
+    const started = performance.now();
+    const res = await POST(req(move()));
+    const elapsed = performance.now() - started;
+
+    expect(res.status).toBe(202);
+    // The quadratic version takes seconds on input this size; the scan is O(n).
+    expect(elapsed).toBeLessThan(2000);
+    // ...and the legitimate alias in the same list still verifies.
+    expect(prisma.fediFollowing.upsert).toHaveBeenCalled();
+  });
+
+  it("handles a slash-heavy actor URI on the activity itself", async () => {
+    const nastyTarget = `https://new.example/users/${"/".repeat(120_000)}a`;
+    signedGet.mockResolvedValue(targetDoc([OLD_ACTOR]));
+    const started = performance.now();
+    await POST(req(move({ target: nastyTarget })));
+    expect(performance.now() - started).toBeLessThan(2000);
+  });
+});

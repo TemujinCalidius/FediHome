@@ -90,7 +90,12 @@ export interface Identity {
  * already normalises what it writes (#59), but `.env.local` can be hand-edited.
  */
 function normalizeOrigin(raw: string): string {
-  return raw.trim().replace(/\/+$/, "");
+  // Character scan rather than /\/+$/, which backtracks quadratically on a long
+  // run of slashes (js/polynomial-redos). Same fix as the inbox's sameActor.
+  const s = raw.trim();
+  let end = s.length;
+  while (end > 0 && s.charCodeAt(end - 1) === 47 /* "/" */) end--;
+  return s.slice(0, end);
 }
 
 export function getIdentity(): Identity {

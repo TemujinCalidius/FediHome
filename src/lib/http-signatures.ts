@@ -363,7 +363,14 @@ export function actorMatchesSigner(signerUri: string, claimedActorUri: string): 
   try {
     const norm = (u: string) => {
       const x = new URL(u);
-      return `${x.protocol}//${x.host.toLowerCase()}${x.pathname.replace(/\/+$/, "")}`;
+      // Character scan, not /\/+$/. That regex backtracks quadratically on a
+      // long run of slashes, and this runs on the signer URI of EVERY inbound
+      // activity — i.e. on a value a remote server fully controls
+      // (js/polynomial-redos).
+      const path = x.pathname;
+      let end = path.length;
+      while (end > 0 && path.charCodeAt(end - 1) === 47 /* "/" */) end--;
+      return `${x.protocol}//${x.host.toLowerCase()}${path.slice(0, end)}`;
     };
     return norm(signerUri) === norm(claimedActorUri);
   } catch {

@@ -221,9 +221,24 @@ async function handleUnfollow(actorUri: string) {
   await prisma.fediFollower.delete({ where: { actorUri } }).catch(() => {});
 }
 
+/**
+ * Strip trailing slashes without a regex.
+ *
+ * `/\/+$/` looks harmless but backtracks quadratically on a long run of slashes
+ * followed by anything else — and these strings come straight out of a REMOTE
+ * actor document, so a hostile server could send 100KB of slashes and burn CPU
+ * in our inbox. Caught by CodeQL (js/polynomial-redos). A character scan is O(n)
+ * and cannot backtrack.
+ */
+function stripTrailingSlashes(s: string): string {
+  let end = s.length;
+  while (end > 0 && s.charCodeAt(end - 1) === 47 /* "/" */) end--;
+  return s.slice(0, end);
+}
+
 /** Compare actor ids the way a remote server does — exact, bar a trailing slash. */
 function sameActor(a: string, b: string): boolean {
-  return a.replace(/\/+$/, "") === b.replace(/\/+$/, "");
+  return stripTrailingSlashes(a) === stripTrailingSlashes(b);
 }
 
 /**

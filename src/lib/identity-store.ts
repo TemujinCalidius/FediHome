@@ -108,7 +108,12 @@ export function parseAliases(raw: string): string[] {
       continue;
     }
     if (u.protocol !== "https:" && u.protocol !== "http:") continue;
-    const normalized = u.toString().replace(/\/+$/, "");
+    // Character scan, not /\/+$/ — that backtracks quadratically on a long run
+    // of slashes (js/polynomial-redos).
+    let end = u.toString().length;
+    const str = u.toString();
+    while (end > 0 && str.charCodeAt(end - 1) === 47) end--;
+    const normalized = str.slice(0, end);
     if (!out.includes(normalized)) out.push(normalized);
     if (out.length >= MAX_ALIASES) break;
   }
