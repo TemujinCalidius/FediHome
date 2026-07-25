@@ -28,6 +28,7 @@ export default function SiteSettingsClient({
   analyticsStatus,
   analyticsKey,
   pushKey,
+  aliases,
   encryptionAvailable,
   profile,
   profileDefaults,
@@ -39,6 +40,7 @@ export default function SiteSettingsClient({
   analyticsStatus: { embedCode: string | null; unresolved: boolean };
   analyticsKey: { configured: boolean; source: "db" | "env" | null };
   pushKey: { configured: boolean; source: "db" | "env" | null; subject: string };
+  aliases: string[];
   encryptionAvailable: boolean;
   profile: {
     authorName: string; authorTagline: string; authorBio: string;
@@ -61,6 +63,38 @@ export default function SiteSettingsClient({
   // private key is encrypted at rest and never sent to the browser.
   const [pushStatus, setPushStatus] = useState(pushKey);
   const [pushBusy, setPushBusy] = useState(false);
+  // Account aliases / alsoKnownAs (#326) — its own route; identity-adjacent, so
+  // it's cookie-only and never round-tripped through the site-config save.
+  const [aliasText, setAliasText] = useState(aliases.join("\n"));
+  const [aliasSaved, setAliasSaved] = useState<string[]>(aliases);
+  const [aliasBusy, setAliasBusy] = useState(false);
+
+  async function saveAliases(): Promise<void> {
+    setAliasBusy(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/admin/aliases", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ aliases: aliasText }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setResult({ ok: false, msg: data?.error || "Couldn't save aliases." });
+        return;
+      }
+      setAliasSaved(data.aliases || []);
+      setAliasText((data.aliases || []).join("\n"));
+      setResult({
+        ok: true,
+        msg: (data.aliases || []).length
+          ? `Saved ${(data.aliases || []).length} alias(es).`
+          : "Aliases cleared.",
+      });
+    } finally {
+      setAliasBusy(false);
+    }
+  }
 
   async function postPushKeys(action: "generate" | "clear"): Promise<void> {
     if (action === "generate" && pushStatus.configured &&
@@ -776,6 +810,52 @@ export default function SiteSettingsClient({
                 Clear saved keys
               </button>
             )}
+          </div>
+        </>)}
+
+        {section("Moving here from another account", <>
+          <p className="text-xs text-gray-600 m-0">
+            Moving to FediHome from Mastodon (or anywhere else that speaks ActivityPub) and want to
+            bring your followers? Add your <strong>old</strong> account here first, then start the
+            move from that old account. Their server checks this list before it will move anyone —
+            without it, the move is refused and your followers stay behind.
+          </p>
+          <p className="text-xs text-gray-600 m-0">
+            Use the full profile address, one per line — e.g.{" "}
+            <code>https://mastodon.social/users/you</code>. Anything that isn&apos;t a web address is
+            ignored.
+          </p>
+          <textarea
+            value={aliasText}
+            onChange={(e) => setAliasText(e.target.value)}
+            rows={3}
+            spellCheck={false}
+            placeholder="https://mastodon.social/users/you"
+            className="w-full rounded-lg border border-surface-700 bg-surface-950/60 p-2 font-mono text-xs text-white"
+          />
+          <p className="text-xs m-0">
+            {aliasSaved.length > 0 ? (
+              <span className="text-green-400">
+                ✓ {aliasSaved.length} alias{aliasSaved.length === 1 ? "" : "es"} published on your profile.
+              </span>
+            ) : (
+              <span className="text-gray-500">No aliases set.</span>
+            )}
+          </p>
+          <p className="text-xs text-amber-400/80 m-0">
+            ⚠️ Keep the old account online until the move finishes. Its server has to still be
+            answering for the move to be verified — once it&apos;s gone, followers can&apos;t be
+            moved by anyone.
+          </p>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={saveAliases}
+              disabled={aliasBusy}
+              className="btn-primary text-xs disabled:opacity-50"
+            >
+              {aliasBusy ? "Saving…" : "Save aliases"}
+            </button>
           </div>
         </>)}
 
