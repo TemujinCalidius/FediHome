@@ -14,6 +14,7 @@ import { getPathHits, getKudosForPath } from "@/lib/tinylytics";
 import GuestCommentForm from "@/components/fedi/GuestCommentForm";
 import FediInteractions from "@/components/fedi/FediInteractions";
 import ReplyToComment from "@/components/fedi/ReplyToComment";
+import ActorActions from "@/components/fedi/ActorActions";
 import EditReplyForm from "@/components/fedi/EditReplyForm";
 import AuthorFollowUpForm from "@/components/fedi/AuthorFollowUpForm";
 import KudosButton from "@/components/ui/KudosButton";
@@ -117,13 +118,13 @@ export default async function PostPage({
       })
     : [];
   const likeAvatars = [
-    ...likes.map((l) => ({ id: l.id, label: `@${l.username}@${l.domain}`, avatarUrl: l.avatarUrl, source: "fedi" as const })),
+    ...likes.map((l) => ({ id: l.id, label: `@${l.username}@${l.domain}`, avatarUrl: l.avatarUrl, source: "fedi" as const, actorUri: l.actorUri, displayName: l.displayName })),
     ...bskyInteractions
       .filter((i) => i.type === "like")
       .map((b) => ({ id: b.id, label: `@${b.authorHandle}`, avatarUrl: b.avatarUrl, source: "bluesky" as const })),
   ];
   const repostAvatars = [
-    ...boosts.map((b) => ({ id: b.id, label: `@${b.username}@${b.domain}`, avatarUrl: b.avatarUrl, source: "fedi" as const })),
+    ...boosts.map((b) => ({ id: b.id, label: `@${b.username}@${b.domain}`, avatarUrl: b.avatarUrl, source: "fedi" as const, actorUri: b.actorUri, displayName: b.displayName })),
     ...bskyInteractions
       .filter((i) => i.type === "repost")
       .map((b) => ({ id: b.id, label: `@${b.authorHandle}`, avatarUrl: b.avatarUrl, source: "bluesky" as const })),
@@ -359,6 +360,7 @@ export default async function PostPage({
         bskyLikeCount={post.bskyLikeCount}
         bskyRepostCount={post.bskyRepostCount}
         replyCount={replies.length + blueskyReplies.length}
+        isAdmin={isAdmin}
       />
 
       {/* Comments section */}
@@ -418,12 +420,34 @@ export default async function PostPage({
                   ) : (
                     <div className="w-6 h-6 rounded-full bg-surface-700" />
                   )}
-                  <span className="text-sm font-semibold text-white">
-                    {reply.displayName || reply.username}
-                  </span>
-                  <span className="text-xs text-gray-600">
-                    @{reply.username}@{reply.domain}
-                  </span>
+                  {/* The replier is now reachable: profile link for anyone, and
+                      follow/unfollow/block for the owner. Everything needed was
+                      already here — it just wasn't wired to anything. */}
+                  {reply.actorUri && !reply.isOwn ? (
+                    <ActorActions
+                      actorUri={reply.actorUri}
+                      handle={`@${reply.username}@${reply.domain}`}
+                      displayName={reply.displayName}
+                      avatarUrl={reply.avatarUrl}
+                      isAdmin={isAdmin}
+                    >
+                      <span className="text-sm font-semibold text-content">
+                        {reply.displayName || reply.username}
+                      </span>
+                      <span className="ml-2 text-xs text-content-dim">
+                        @{reply.username}@{reply.domain}
+                      </span>
+                    </ActorActions>
+                  ) : (
+                    <>
+                      <span className="text-sm font-semibold text-content">
+                        {reply.displayName || reply.username}
+                      </span>
+                      <span className="text-xs text-content-dim">
+                        @{reply.username}@{reply.domain}
+                      </span>
+                    </>
+                  )}
                   {reply.isOwn ? (
                     <span className="text-xs text-accent-400">Author</span>
                   ) : (
