@@ -47,6 +47,26 @@ export async function follow(body: AdminBody): Promise<NextResponse> {
     }
   }
 
+  // Refuse to follow someone who is blocked. Otherwise the backfill below
+  // re-imports up to 10 of their posts into the feed while the block is still
+  // in place — an incoherent state where the block list shows them blocked, the
+  // inbox drops everything they send, and their content is on screen anyway.
+  // It also matters for scopes: `follow` needs only `interact`, while `unblock`
+  // needs `manage`, so without this an interact-scoped token could undo the
+  // visible effect of a block it has no authority to lift.
+  if (directActorUri) {
+    const blocked = await prisma.blockedActor.findUnique({
+      where: { actorUri: directActorUri },
+      select: { id: true },
+    });
+    if (blocked) {
+      return NextResponse.json(
+        { error: "You've blocked this account. Unblock them first if you want to follow them." },
+        { status: 409 },
+      );
+    }
+  }
+
   // Discover actor via WebFinger
   try {
     let actorLink: { href: string };
@@ -83,6 +103,21 @@ export async function follow(body: AdminBody): Promise<NextResponse> {
         throw new Error("blocked: actor URL resolves to private host");
       }
       actorLink = found;
+    }
+
+    // Authoritative block check, now that WebFinger has told us the real actor
+    // URI. The early check above only sees a caller-supplied URI; following by
+    // HANDLE resolves to the actor URI here, so a blocked account could
+    // otherwise be followed simply by typing their @handle instead.
+    const blockedActor = await prisma.blockedActor.findUnique({
+      where: { actorUri: actorLink.href },
+      select: { id: true },
+    });
+    if (blockedActor) {
+      return NextResponse.json(
+        { error: "You've blocked this account. Unblock them first if you want to follow them." },
+        { status: 409 },
+      );
     }
 
     // Fetch actor profile
@@ -300,8 +335,34 @@ export async function block(body: AdminBody): Promise<NextResponse> {
   // Delete all their posts from our timeline
   await prisma.fediPost.deleteMany({ where: { actorUri } });
 
-  // Delete their interactions
+  // Their likes/boosts are cached as counters on the post as well as rows in
+  // FediInteraction, so deleting the rows alone leaves the number wrong — a post
+  // reading "3 likes" while showing two faces, permanently. And it can't
+  // self-correct: an Undo(Like) from a blocked actor is now dropped at the
+  // inbox, so nothing will ever decrement it. Read the rows first, then take the
+  // counters down with them.
+  const theirInteractions = await prisma.fediInteraction.findMany({
+    where: { actorUri, type: { in: ["like", "boost"] } },
+    select: { type: true, targetApId: true },
+  });
+
   await prisma.fediInteraction.deleteMany({ where: { actorUri } });
+
+  for (const it of theirInteractions) {
+    // Floor at zero: a counter can already be out of step with the rows (a
+    // pre-#118 duplicate, a manual edit), and a negative count renders worse
+    // than a stale one.
+    const where =
+      it.type === "like"
+        ? { apId: it.targetApId, likeCount: { gt: 0 } }
+        : { apId: it.targetApId, boostCount: { gt: 0 } };
+    const data =
+      it.type === "like"
+        ? { likeCount: { decrement: 1 } }
+        : { boostCount: { decrement: 1 } };
+    await prisma.post.updateMany({ where, data }).catch(() => {});
+    await prisma.photo.updateMany({ where, data }).catch(() => {});
+  }
 
   // Record the block so it's listable + reversible (#180).
   await prisma.blockedActor

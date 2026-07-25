@@ -555,6 +555,15 @@ async function handleBoost(actorUri: string, activity: Record<string, unknown>) 
     const originalActorUri = typeof note.attributedTo === "string"
       ? note.attributedTo
       : note.attributedTo?.id;
+
+    // The block check at the top of the inbox only covers the SENDER — here
+    // that's the booster, who isn't blocked. Without this, someone you follow
+    // boosting a blocked person's post puts that person's content, name and
+    // avatar straight back into your feed, under their own actorUri. Blocking
+    // purges their posts, so silently re-creating them is exactly the
+    // "one-shot purge, not a block" failure this is all meant to close.
+    if (originalActorUri && (await isBlockedSender(originalActorUri))) return;
+
     const originalInfo = originalActorUri ? await fetchActorInfo(originalActorUri) : null;
 
     const boostTitle = typeof note.name === "string" ? note.name.trim() : "";

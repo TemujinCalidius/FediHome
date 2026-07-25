@@ -3,17 +3,20 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const { deliver, resolveInbox } = vi.hoisted(() => ({ deliver: vi.fn(), resolveInbox: vi.fn() }));
 vi.mock("@/lib/http-signatures", () => ({ deliverActivity: deliver }));
 vi.mock("@/lib/fedi-resolve", () => ({ resolveActorInbox: resolveInbox }));
+vi.mock("@/lib/url-guard", () => ({ assertPublicHost: vi.fn(async () => true), isPrivateUrl: vi.fn(() => false) }));
 vi.mock("@/lib/db", () => ({
   prisma: {
-    fediFollowing: { findUnique: vi.fn(), delete: vi.fn() },
+    fediFollowing: { findUnique: vi.fn(), delete: vi.fn(), upsert: vi.fn() },
     fediFollower: { findUnique: vi.fn(), delete: vi.fn() },
     fediPost: { findFirst: vi.fn(), deleteMany: vi.fn() },
-    fediInteraction: { deleteMany: vi.fn() },
+    fediInteraction: { deleteMany: vi.fn(), findMany: vi.fn() },
     blockedActor: { upsert: vi.fn(), findUnique: vi.fn(), deleteMany: vi.fn() },
+    post: { updateMany: vi.fn() },
+    photo: { updateMany: vi.fn() },
   },
 }));
 
-import { block, unblock } from "@/app/api/admin/_actions/fedi-graph";
+import { block, unblock, follow } from "@/app/api/admin/_actions/fedi-graph";
 import { prisma } from "@/lib/db";
 
 const ACTOR = "https://x.social/users/bob";
@@ -27,8 +30,13 @@ beforeEach(() => {
   vi.mocked(prisma.fediPost.findFirst).mockResolvedValue(null as never);
   vi.mocked(prisma.fediPost.deleteMany).mockResolvedValue({ count: 0 } as never);
   vi.mocked(prisma.fediInteraction.deleteMany).mockResolvedValue({ count: 0 } as never);
+  vi.mocked(prisma.fediInteraction.findMany).mockResolvedValue([] as never);
+  vi.mocked(prisma.post.updateMany).mockResolvedValue({ count: 0 } as never);
+  vi.mocked(prisma.photo.updateMany).mockResolvedValue({ count: 0 } as never);
   vi.mocked(prisma.blockedActor.upsert).mockResolvedValue({} as never);
   vi.mocked(prisma.blockedActor.deleteMany).mockResolvedValue({ count: 1 } as never);
+  vi.mocked(prisma.blockedActor.findUnique).mockResolvedValue(null as never);
+  vi.mocked(prisma.fediFollowing.upsert).mockResolvedValue({} as never);
 });
 
 describe("block() records the block (#180)", () => {
@@ -95,5 +103,110 @@ describe("unblock() reverses it (#180)", () => {
   it("400 without an actorUri", async () => {
     expect((await unblock({} as never)).status).toBe(400);
     expect(prisma.blockedActor.deleteMany).not.toHaveBeenCalled();
+  });
+});
+
+describe("block() takes the cached counters down with the interactions", () => {
+  it("decrements likeCount and boostCount for each purged interaction", async () => {
+    // Deleting FediInteraction rows alone leaves the number wrong — a post
+    // reading "3 likes" while showing two faces. It can't self-correct either:
+    // an Undo(Like) from a blocked actor is now dropped at the inbox, so nothing
+    // will ever decrement it.
+    vi.mocked(prisma.fediInteraction.findMany).mockResolvedValue([
+      { type: "like", targetApId: "https://demo.example/post/a" },
+      { type: "boost", targetApId: "https://demo.example/post/b" },
+    ] as never);
+
+    await block({ actorUri: ACTOR } as never);
+
+    expect(prisma.post.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ apId: "https://demo.example/post/a" }),
+        data: { likeCount: { decrement: 1 } },
+      }),
+    );
+    expect(prisma.post.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ apId: "https://demo.example/post/b" }),
+        data: { boostCount: { decrement: 1 } },
+      }),
+    );
+  });
+
+  it("never drives a counter below zero", async () => {
+    vi.mocked(prisma.fediInteraction.findMany).mockResolvedValue([
+      { type: "like", targetApId: "https://demo.example/post/a" },
+    ] as never);
+
+    await block({ actorUri: ACTOR } as never);
+
+    // The gt:0 guard is what stops an already-out-of-step counter going negative.
+    expect(prisma.post.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ likeCount: { gt: 0 } }) }),
+    );
+  });
+
+  it("reads the interactions BEFORE deleting them", async () => {
+    const order: string[] = [];
+    vi.mocked(prisma.fediInteraction.findMany).mockImplementation((async () => {
+      order.push("read");
+      return [];
+    }) as never);
+    vi.mocked(prisma.fediInteraction.deleteMany).mockImplementation((async () => {
+      order.push("delete");
+      return { count: 0 };
+    }) as never);
+
+    await block({ actorUri: ACTOR } as never);
+    expect(order).toEqual(["read", "delete"]);
+  });
+});
+
+describe("follow() refuses a blocked account", () => {
+  beforeEach(() => {
+    global.fetch = vi.fn(async () =>
+      new Response(
+        JSON.stringify({ id: ACTOR, preferredUsername: "bob", inbox: `${ACTOR}/inbox` }),
+        { status: 200 },
+      ),
+    ) as unknown as typeof fetch;
+  });
+
+  it("409s on follow-by-URI without importing anything", async () => {
+    // Otherwise the outbox backfill re-imports up to 10 of their posts while the
+    // block is still in place — the block list says blocked, the inbox drops
+    // everything they send, and their content is on screen anyway.
+    vi.mocked(prisma.blockedActor.findUnique).mockResolvedValue({ id: "b1" } as never);
+    const res = await follow({ actorUri: ACTOR } as never);
+    expect(res.status).toBe(409);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it("also refuses when reached by HANDLE, not just by URI", async () => {
+    // The by-URI guard runs early; the handle path only learns the real actor
+    // URI from WebFinger, so it needs its own check — or a blocked account could
+    // be followed simply by typing their @handle.
+    vi.mocked(prisma.blockedActor.findUnique).mockImplementation(
+      (async ({ where }: { where: { actorUri: string } }) =>
+        where.actorUri === ACTOR ? { id: "b1" } : null) as never,
+    );
+    global.fetch = vi.fn(async (url: unknown) =>
+      String(url).includes("webfinger")
+        ? new Response(
+            JSON.stringify({ links: [{ rel: "self", type: "application/activity+json", href: ACTOR }] }),
+            { status: 200 },
+          )
+        : new Response(JSON.stringify({ id: ACTOR, inbox: `${ACTOR}/inbox` }), { status: 200 }),
+    ) as unknown as typeof fetch;
+
+    const res = await follow({ handle: "@bob@x.social" } as never);
+    expect(res.status).toBe(409);
+    expect(prisma.fediFollowing.upsert).not.toHaveBeenCalled();
+  });
+
+  it("still follows a non-blocked account normally", async () => {
+    vi.mocked(prisma.blockedActor.findUnique).mockResolvedValue(null as never);
+    const res = await follow({ actorUri: ACTOR } as never);
+    expect(res.status).toBe(200);
   });
 });
