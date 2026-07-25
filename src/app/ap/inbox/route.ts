@@ -8,6 +8,7 @@ import { sendPushToOwner } from "@/lib/push";
 import { resolveOwnedTarget } from "@/lib/notifications";
 import { htmlToText } from "@/lib/html-text";
 import { getSiteUrl } from "@/lib/identity";
+import { isBlockedSender } from "@/lib/blocks";
 
 const ACTOR_FETCH_TIMEOUT_MS = 8000;
 const DEBUG = process.env.FEDIHOME_DEBUG === "true";
@@ -63,6 +64,16 @@ export async function POST(req: NextRequest) {
       `AP inbox: keyId/actor mismatch (signer=${verification.actorUri} claimed=${actorUri})`
     );
     return NextResponse.json({ error: "keyId/actor mismatch" }, { status: 401 });
+  }
+
+  // Blocked senders are dropped here, after the signature is verified (so the
+  // actor is proven) and before ANY handler runs. Blocking used to be a one-shot
+  // purge that nothing re-checked, so a blocked account could simply re-follow,
+  // re-like and reply again. Returns the usual 202 rather than an error, so the
+  // block stays invisible to the sender — see lib/blocks.ts.
+  if (await isBlockedSender(actorUri)) {
+    if (DEBUG) console.log(`AP inbox: dropped ${type} from blocked ${encodeURIComponent(actorUri)}`);
+    return new NextResponse(null, { status: 202 });
   }
 
   // L1: encode actorUri before logging to prevent log-injection via newlines

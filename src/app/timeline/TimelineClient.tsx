@@ -32,6 +32,11 @@ function PostMedia({ urls, types, maxH }: { urls: string[]; types: string[]; max
 interface FediPostItem {
   id: string;
   apId: string;
+  /** The real actor URI as stored. Never rebuild this from username+domain:
+   *  that assumes Mastodon's /users/<name> shape and is wrong for Lemmy,
+   *  Akkoma, PeerTube and FediHome itself (/ap/actor), so block/unfollow and
+   *  reply-inbox resolution silently target a non-existent actor. */
+  actorUri?: string | null;
   content: string;
   contentHtml: string | null;
   mediaUrls: string[];
@@ -301,7 +306,9 @@ function PostCard({
   const countsLoaded = Boolean(liveCounts.countsFetchedAt);
   const countsLoading = Boolean(liveCounts.loading);
 
-  const actorUri = `https://${post.domain}/users/${post.username}`;
+  // Prefer the stored actor URI; the Mastodon-shaped guess is only a fallback
+  // for rows saved before it was carried through.
+  const actorUri = post.actorUri || `https://${post.domain}/users/${post.username}`;
   const inbox = `https://${post.domain}/users/${post.username}/inbox`;
 
   const handleLike = async () => {
@@ -487,7 +494,7 @@ function PostCard({
                     content: replyContent.trim(),
                     inReplyTo: post.apId,
                     targetInbox: `https://${post.domain}/users/${post.username}/inbox`,
-                    actorUri: `https://${post.domain}/users/${post.username}`,
+                    actorUri: post.actorUri || `https://${post.domain}/users/${post.username}`,
                     mentionHandle: `@${post.username}@${post.domain}`,
                     crosspostBluesky: hasBskyMention,
                   }),
@@ -617,7 +624,7 @@ function ThreadView({
           content: replyContent.trim(),
           inReplyTo: post.apId,
           targetInbox: `https://${post.domain}/users/${post.username}/inbox`,
-          actorUri: `https://${post.domain}/users/${post.username}`,
+          actorUri: post.actorUri || `https://${post.domain}/users/${post.username}`,
           mentionHandle: `@${post.username}@${post.domain}`,
         }),
       });

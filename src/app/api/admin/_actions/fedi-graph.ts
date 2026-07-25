@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { deliverActivity } from "@/lib/http-signatures";
-import { resolveActorInbox } from "@/lib/fedi-resolve";
 import { processAttachments, fetchLinkEmbed } from "@/lib/fedi-media";
 import { assertPublicHost, isPrivateUrl } from "@/lib/url-guard";
 import { sanitizeHtml } from "@/lib/sanitize";
@@ -241,20 +240,14 @@ export async function block(body: AdminBody): Promise<NextResponse> {
     await prisma.fediFollowing.delete({ where: { actorUri } });
   }
 
-  // Send Block activity
+  // Drop them as a follower. We deliberately DON'T federate a Block activity:
+  // ActivityPub says a server SHOULD NOT deliver Block to its object, so the
+  // blocked person can't tell. Mastodon sends it anyway, which is why blocked
+  // users there can detect a block. Enforcement is local instead — the inbox
+  // now drops everything from a blocked actor (lib/blocks.ts), which achieves
+  // the same result without notifying them.
   const follower = await prisma.fediFollower.findUnique({ where: { actorUri } });
   if (follower) {
-    try {
-      await deliverActivity(follower.inbox, {
-        "@context": "https://www.w3.org/ns/activitystreams",
-        id: `${getSiteUrl()}/ap/block/${Date.now()}`,
-        type: "Block",
-        actor: `${getSiteUrl()}/ap/actor`,
-        object: actorUri,
-      });
-    } catch {
-      // Continue
-    }
     await prisma.fediFollower.delete({ where: { actorUri } });
   }
 
@@ -298,20 +291,10 @@ export async function unblock(body: AdminBody): Promise<NextResponse> {
     return NextResponse.json({ error: "actorUri required" }, { status: 400 });
   }
 
-  const blocked = await prisma.blockedActor.findUnique({ where: { actorUri } });
-
-  // Deliver Undo(Block) best-effort — prefer the cached inbox, else resolve it.
-  const inbox = blocked?.inbox || (await resolveActorInbox(actorUri).catch(() => null));
-  if (inbox) {
-    await deliverActivity(inbox, {
-      "@context": "https://www.w3.org/ns/activitystreams",
-      id: `${getSiteUrl()}/ap/undo/${Date.now()}`,
-      type: "Undo",
-      actor: `${getSiteUrl()}/ap/actor`,
-      object: { type: "Block", actor: `${getSiteUrl()}/ap/actor`, object: actorUri },
-    }).catch(() => {});
-  }
-
+  // No Undo(Block) is federated, because no Block is federated either — blocks
+  // are local-only now, so there is nothing on the remote side to undo. Sending
+  // one would also announce "you were blocked, and now you aren't", which is
+  // exactly the disclosure keeping blocks local is meant to avoid.
   await prisma.blockedActor.deleteMany({ where: { actorUri } });
   return NextResponse.json({ success: true });
 }
