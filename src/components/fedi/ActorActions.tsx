@@ -110,6 +110,11 @@ export default function ActorActions({
         return;
       }
       window.location.reload();
+    } catch {
+      // A dropped connection must not look like success. Without this the
+      // promise rejects unhandled, nothing tells the owner, and they walk away
+      // believing they blocked someone they didn't.
+      alert("Couldn't reach the server — nothing was changed. Check your connection and try again.");
     } finally {
       setBusy(false);
     }
