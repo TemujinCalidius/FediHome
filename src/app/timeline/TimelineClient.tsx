@@ -1,5 +1,7 @@
 "use client";
 
+import ActorActions from "@/components/fedi/ActorActions";
+
 /* eslint-disable @next/next/no-img-element -- this timeline renders avatars, media and link-embed thumbnails sourced from arbitrary federated instances; next/image can't enumerate unbounded remote hosts, and the CSP already restricts img-src */
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -671,13 +673,23 @@ function ThreadView({
                 )}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <p className="text-sm font-semibold text-white truncate">
-                      {post.displayName || post.username}
-                    </p>
-                    <p className="text-xs text-gray-600 truncate">
-                      @{post.username}@{post.domain}
-                    </p>
-                    <p className="text-xs text-gray-700">
+                    {/* Anyone in a thread is someone you may want to follow or
+                        block — reading a conversation shouldn't be a dead end. */}
+                    <ActorActions
+                      actorUri={post.actorUri || `https://${post.domain}/users/${post.username}`}
+                      handle={`@${post.username}@${post.domain}`}
+                      displayName={post.displayName}
+                      avatarUrl={post.avatarUrl}
+                      isAdmin
+                    >
+                      <span className="text-sm font-semibold text-content truncate">
+                        {post.displayName || post.username}
+                      </span>
+                      <span className="ml-2 text-xs text-content-dim truncate">
+                        @{post.username}@{post.domain}
+                      </span>
+                    </ActorActions>
+                    <p className="text-xs text-content-ghost">
                       {new Date(post.publishedAt).toLocaleDateString()}
                     </p>
                   </div>

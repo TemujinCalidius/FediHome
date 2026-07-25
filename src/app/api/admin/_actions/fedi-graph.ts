@@ -11,42 +11,78 @@ const REMOTE_FETCH_TIMEOUT_MS = 8000;
 
 export async function follow(body: AdminBody): Promise<NextResponse> {
   const { handle } = body;
-  // Parse handle: @user@domain or user@domain
-  const cleaned = handle.replace(/^@/, "");
-  const [username, domain] = cleaned.split("@");
+  // Follow by actor URI when the caller already has one (a reply's author, a
+  // liker, a boost). WebFinger only exists to turn a handle INTO an actor URI,
+  // so when we already hold the real one — the exact string the remote server
+  // published — going back through a handle would be a lossy round-trip, and
+  // relies on rebuilding a handle we may not have.
+  const directActorUri = typeof body.actorUri === "string" ? body.actorUri.trim() : "";
 
-  if (!username || !domain) {
-    return NextResponse.json(
-      { error: "Invalid handle format. Use @user@domain" },
-      { status: 400 }
-    );
+  let username = "";
+  let domain = "";
+
+  if (directActorUri) {
+    let parsed: URL;
+    try {
+      parsed = new URL(directActorUri);
+    } catch {
+      return NextResponse.json({ error: "Invalid actor URI" }, { status: 400 });
+    }
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+      return NextResponse.json({ error: "Invalid actor URI" }, { status: 400 });
+    }
+    domain = parsed.host;
+    // Provisional; the actor's own preferredUsername wins once fetched.
+    username = parsed.pathname.split("/").filter(Boolean).pop() || "";
+  } else {
+    // Parse handle: @user@domain or user@domain
+    const cleaned = (handle || "").replace(/^@/, "");
+    [username, domain] = cleaned.split("@");
+
+    if (!username || !domain) {
+      return NextResponse.json(
+        { error: "Invalid handle format. Use @user@domain" },
+        { status: 400 }
+      );
+    }
   }
 
   // Discover actor via WebFinger
   try {
-    // Validate domain — same character set we'd accept from a Mastodon handle.
-    if (!/^[a-z0-9.-]+$/i.test(domain) || domain.includes("..")) {
-      throw new Error("invalid domain");
-    }
-    const wfUrl = `https://${domain}/.well-known/webfinger?resource=acct:${encodeURIComponent(username)}@${encodeURIComponent(domain)}`;
-    if (isPrivateUrl(wfUrl)) throw new Error("blocked: private host");
-    const wfRes = await fetch(wfUrl, {
-      headers: { Accept: "application/jrd+json" },
-      signal: AbortSignal.timeout(REMOTE_FETCH_TIMEOUT_MS),
-    });
-    if (!wfRes.ok) throw new Error("WebFinger failed");
+    let actorLink: { href: string };
 
-    const wfData = await wfRes.json();
-    const actorLink = wfData.links?.find(
-      (l: { rel: string; type?: string }) =>
-        l.rel === "self" && l.type === "application/activity+json"
-    );
+    if (directActorUri) {
+      // Same SSRF guard the WebFinger path applies to the URL it discovers.
+      if (!(await assertPublicHost(directActorUri))) {
+        throw new Error("blocked: actor URL resolves to private host");
+      }
+      actorLink = { href: directActorUri };
+    } else {
+      // Validate domain — same character set we'd accept from a Mastodon handle.
+      if (!/^[a-z0-9.-]+$/i.test(domain) || domain.includes("..")) {
+        throw new Error("invalid domain");
+      }
+      const wfUrl = `https://${domain}/.well-known/webfinger?resource=acct:${encodeURIComponent(username)}@${encodeURIComponent(domain)}`;
+      if (isPrivateUrl(wfUrl)) throw new Error("blocked: private host");
+      const wfRes = await fetch(wfUrl, {
+        headers: { Accept: "application/jrd+json" },
+        signal: AbortSignal.timeout(REMOTE_FETCH_TIMEOUT_MS),
+      });
+      if (!wfRes.ok) throw new Error("WebFinger failed");
 
-    if (!actorLink?.href) throw new Error("No actor link found");
-    // H8: a malicious WebFinger response could point us at internal services.
-    // Use assertPublicHost (DNS-resolves) so a rebinding hostname is caught.
-    if (!(await assertPublicHost(actorLink.href))) {
-      throw new Error("blocked: actor URL resolves to private host");
+      const wfData = await wfRes.json();
+      const found = wfData.links?.find(
+        (l: { rel: string; type?: string }) =>
+          l.rel === "self" && l.type === "application/activity+json"
+      );
+
+      if (!found?.href) throw new Error("No actor link found");
+      // H8: a malicious WebFinger response could point us at internal services.
+      // Use assertPublicHost (DNS-resolves) so a rebinding hostname is caught.
+      if (!(await assertPublicHost(found.href))) {
+        throw new Error("blocked: actor URL resolves to private host");
+      }
+      actorLink = found;
     }
 
     // Fetch actor profile
