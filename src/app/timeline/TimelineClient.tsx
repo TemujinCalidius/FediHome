@@ -31,6 +31,22 @@ function PostMedia({ urls, types, maxH }: { urls: string[]; types: string[]; max
   );
 }
 
+interface BlockedActorItem {
+  id: string;
+  actorUri: string;
+  handle: string | null;
+  displayName: string | null;
+  avatarUrl: string | null;
+  createdAt: string;
+}
+
+interface BlockedDomainItem {
+  id: string;
+  domain: string;
+  reason: string | null;
+  createdAt: string;
+}
+
 interface FediPostItem {
   id: string;
   apId: string;
@@ -1602,12 +1618,160 @@ function MessagesTab({
   );
 }
 
+/**
+ * The blocklist, in the browser.
+ *
+ * Blocking already worked from the timeline popup, but nothing in the web app
+ * could SHOW a block — `/api/graph` carried the list purely for the native app.
+ * So blocking from a browser was a one-way door: no way to see who you'd
+ * blocked, and no way to undo it.
+ */
+function ModerationBlocklist({
+  blockedActors,
+  blockedDomains,
+}: {
+  blockedActors: BlockedActorItem[];
+  blockedDomains: BlockedDomainItem[];
+}) {
+  const [domainInput, setDomainInput] = useState("");
+  const [reasonInput, setReasonInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const post = async (body: Record<string, unknown>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setError(data?.error || "That didn't work.");
+        return;
+      }
+      window.location.reload();
+    } catch {
+      setError("Couldn't reach the server — nothing was changed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="divider my-6" />
+
+      <h2 className="text-xs font-semibold uppercase tracking-wider text-content-faint">
+        Blocked accounts
+      </h2>
+      {blockedActors.length === 0 ? (
+        <p className="text-sm text-content-faint">
+          Nobody blocked. You can block someone from their name on any post or reply.
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {blockedActors.map((b) => (
+            <div key={b.id} className="glass-card p-3 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                {b.avatarUrl ? (
+                  <img src={b.avatarUrl} alt="" className="w-8 h-8 rounded-full" />
+                ) : (
+                  <div className="w-8 h-8 rounded-full bg-surface-700" />
+                )}
+                <div className="min-w-0">
+                  <p className="text-sm text-content truncate">{b.displayName || b.handle || b.actorUri}</p>
+                  <p className="text-xs text-content-faint truncate">{b.handle || b.actorUri}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => post({ action: "unblock", actorUri: b.actorUri })}
+                disabled={busy}
+                className="text-xs text-content-subtle hover:text-moss-400 transition-colors disabled:opacity-40 shrink-0"
+              >
+                Unblock
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="divider my-6" />
+
+      <h2 className="text-xs font-semibold uppercase tracking-wider text-content-faint">
+        Blocked servers
+      </h2>
+      <p className="text-xs text-content-faint">
+        Blocking one account works until the same server produces ten more. Blocking a server
+        refuses everything from it — subdomains included — and removes what it has already sent.
+        Nothing is sent to them; they aren&apos;t told.
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          value={domainInput}
+          onChange={(e) => setDomainInput(e.target.value)}
+          placeholder="spam.example"
+          className="rounded-lg border border-surface-700 bg-surface-950/60 px-3 py-1.5 text-xs text-white"
+        />
+        <input
+          value={reasonInput}
+          onChange={(e) => setReasonInput(e.target.value)}
+          placeholder="Reason (optional)"
+          className="rounded-lg border border-surface-700 bg-surface-950/60 px-3 py-1.5 text-xs text-white"
+        />
+        <button
+          onClick={() => {
+            if (!domainInput.trim()) return;
+            if (
+              !confirm(
+                `Block ${domainInput.trim()}? This deletes every post, like, boost and follow from that server — including any subdomains — and refuses anything it sends from now on.`,
+              )
+            )
+              return;
+            post({ action: "block_domain", domain: domainInput.trim(), reason: reasonInput.trim() });
+          }}
+          disabled={busy || !domainInput.trim()}
+          className="btn-outlined text-xs disabled:opacity-40"
+        >
+          Block server
+        </button>
+      </div>
+      {error && <p className="text-xs text-red-400">{error}</p>}
+      {blockedDomains.length === 0 ? (
+        <p className="text-sm text-content-faint">No servers blocked.</p>
+      ) : (
+        <div className="space-y-2">
+          {blockedDomains.map((d) => (
+            <div key={d.id} className="glass-card p-3 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm text-content truncate">{d.domain}</p>
+                {d.reason && <p className="text-xs text-content-faint truncate">{d.reason}</p>}
+              </div>
+              <button
+                onClick={() => post({ action: "unblock_domain", domain: d.domain })}
+                disabled={busy}
+                className="text-xs text-content-subtle hover:text-moss-400 transition-colors disabled:opacity-40 shrink-0"
+              >
+                Unblock
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
 export default function TimelineClient({
   initialPosts,
   initialCursor,
   following,
   followers,
   pendingComments,
+  blockedActors = [],
+  blockedDomains = [],
   directMessages = [],
   dmReadState: initialDmReadState = {},
   analyticsData,
@@ -1618,6 +1782,8 @@ export default function TimelineClient({
   followers: FollowerItem[];
   following: FollowingItem[];
   pendingComments: PendingComment[];
+  blockedActors?: BlockedActorItem[];
+  blockedDomains?: BlockedDomainItem[];
   directMessages?: DirectMessageItem[];
   dmReadState?: Record<string, string>;
   analyticsData?: AnalyticsData | null;
@@ -2099,6 +2265,9 @@ export default function TimelineClient({
       {/* Moderation */}
       {tab === "moderation" && (
         <div className="space-y-4">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-content-faint">
+            Pending comments
+          </h2>
           {pendingComments.length === 0 ? (
             <div className="glass-card p-8 text-center">
               <p className="text-gray-500">No pending comments to moderate.</p>
@@ -2160,6 +2329,8 @@ export default function TimelineClient({
               </div>
             ))
           )}
+
+          <ModerationBlocklist blockedActors={blockedActors} blockedDomains={blockedDomains} />
         </div>
       )}
 

@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
+import { normalizeDomain } from "@/lib/blocks";
 import { prisma } from "@/lib/db";
 import { deliverActivity } from "@/lib/http-signatures";
 import { processAttachments, fetchLinkEmbed } from "@/lib/fedi-media";
 import { assertPublicHost, isPrivateUrl } from "@/lib/url-guard";
 import { sanitizeHtml } from "@/lib/sanitize";
 import type { AdminBody } from "./types";
-import { getSiteUrl } from "@/lib/identity";
+import { getSiteUrl, getIdentity } from "@/lib/identity";
 
 const REMOTE_FETCH_TIMEOUT_MS = 8000;
 
@@ -393,5 +394,90 @@ export async function unblock(body: AdminBody): Promise<NextResponse> {
   // one would also announce "you were blocked, and now you aren't", which is
   // exactly the disclosure keeping blocks local is meant to avoid.
   await prisma.blockedActor.deleteMany({ where: { actorUri } });
+  return NextResponse.json({ success: true });
+}
+
+/**
+ * Block an entire instance.
+ *
+ * Blocking individuals works until the same server produces ten more of them.
+ * A domain block drops everything from that host (and its subdomains — a server
+ * handing out subdomains could otherwise sidestep it endlessly) and purges what
+ * it has already sent us.
+ *
+ * Local-only, like actor blocks: nothing is federated, so the instance is never
+ * told.
+ */
+export async function blockDomain(body: AdminBody): Promise<NextResponse> {
+  const domain = normalizeDomain(typeof body.domain === "string" ? body.domain : "");
+  if (!domain || !/^[a-z0-9.-]+\.[a-z]{2,}$/.test(domain)) {
+    return NextResponse.json({ error: "Enter a domain, e.g. spam.example" }, { status: 400 });
+  }
+
+  // Refuse to block ourselves — it would drop our own federated traffic and
+  // there is no obvious way to notice why everything stopped working.
+  if (domain === normalizeDomain(getIdentity().fediDomain) || domain === normalizeDomain(getSiteUrl())) {
+    return NextResponse.json({ error: "That's this site's own domain." }, { status: 400 });
+  }
+
+  const reason =
+    typeof body.reason === "string" && body.reason.trim() ? body.reason.trim().slice(0, 300) : null;
+
+  await prisma.blockedDomain.upsert({
+    where: { domain },
+    create: { domain, reason },
+    update: { reason },
+  });
+
+  // Purge what they've already sent. `endsWith` covers subdomains the same way
+  // the inbox check does.
+  const suffix = `.${domain}`;
+  const [posts, interactions] = await Promise.all([
+    prisma.fediPost.findMany({
+      where: { OR: [{ domain }, { domain: { endsWith: suffix } }] },
+      select: { id: true },
+    }),
+    prisma.fediInteraction.findMany({
+      where: { OR: [{ domain }, { domain: { endsWith: suffix } }] },
+      select: { type: true, targetApId: true },
+    }),
+  ]);
+
+  await prisma.fediPost.deleteMany({ where: { id: { in: posts.map((p) => p.id) } } });
+  await prisma.fediInteraction.deleteMany({
+    where: { OR: [{ domain }, { domain: { endsWith: suffix } }] },
+  });
+
+  // Same counter correction as an actor block — deleting the rows without
+  // taking the cached counts down leaves every affected post overstated.
+  for (const it of interactions) {
+    if (it.type !== "like" && it.type !== "boost") continue;
+    const where =
+      it.type === "like"
+        ? { apId: it.targetApId, likeCount: { gt: 0 } }
+        : { apId: it.targetApId, boostCount: { gt: 0 } };
+    const data =
+      it.type === "like" ? { likeCount: { decrement: 1 } } : { boostCount: { decrement: 1 } };
+    await prisma.post.updateMany({ where, data }).catch(() => {});
+    await prisma.photo.updateMany({ where, data }).catch(() => {});
+  }
+
+  // Drop the relationships too, so we stop delivering to them.
+  await prisma.fediFollower.deleteMany({
+    where: { OR: [{ domain }, { domain: { endsWith: suffix } }] },
+  });
+  await prisma.fediFollowing.deleteMany({
+    where: { OR: [{ domain }, { domain: { endsWith: suffix } }] },
+  });
+
+  return NextResponse.json({ success: true, domain });
+}
+
+export async function unblockDomain(body: AdminBody): Promise<NextResponse> {
+  const domain = normalizeDomain(typeof body.domain === "string" ? body.domain : "");
+  if (!domain) {
+    return NextResponse.json({ error: "domain required" }, { status: 400 });
+  }
+  await prisma.blockedDomain.deleteMany({ where: { domain } });
   return NextResponse.json({ success: true });
 }

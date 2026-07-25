@@ -112,6 +112,30 @@ Some settings are stored in the database (`SiteSettings` table) and managed thro
 
 Changes made in the admin panel are saved to the database and take effect immediately without restarting the server.
 
+## Blocking People and Servers
+
+Everything here is **local and private**. Nothing is sent to the person or server
+you block — unlike Mastodon, which notifies them, so a blocked user there can
+tell. FediHome just stops accepting anything they send.
+
+**Blocking a person.** Click their name or avatar anywhere they appear — a reply
+on one of your posts, someone who liked or boosted it, anyone in a thread — and
+choose **Block**. That unfollows them, deletes their posts and interactions from
+your site, corrects the like/boost counts, and refuses everything they send from
+then on.
+
+**Blocking a whole server.** Go to **Timeline → Moderation → Blocked servers**.
+Useful when one instance keeps producing new accounts. It covers **subdomains**
+too, deletes everything that server has already sent, and drops any follows in
+either direction. You can't block your own domain.
+
+**Undoing either** is in the same **Moderation** tab, which also lists everyone
+and everything you've blocked.
+
+A blocked account can still read your public posts — anyone can, they're public.
+Blocking stops them reaching *you*: no replies, no likes, no follows, nothing in
+your feed or notifications.
+
 ## Phone Notifications (Web Push)
 
 FediHome can push likes, boosts, replies, follows, DMs and comments to your phone

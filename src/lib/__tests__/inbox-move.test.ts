@@ -34,6 +34,7 @@ vi.mock("@/lib/url-guard", () => ({ assertPublicHost }));
 vi.mock("@/lib/db", () => ({
   prisma: {
     blockedActor: { findUnique: vi.fn() },
+    blockedDomain: { findFirst: vi.fn() },
     fediFollowing: { findUnique: vi.fn(), upsert: vi.fn(), delete: vi.fn() },
     fediFollower: { findUnique: vi.fn(), findMany: vi.fn() },
     fediPost: { findUnique: vi.fn(), upsert: vi.fn(), findFirst: vi.fn() },

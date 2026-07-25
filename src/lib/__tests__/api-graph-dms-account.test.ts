@@ -10,6 +10,7 @@ vi.mock("@/lib/db", () => ({
     blueskyFollower: { findMany: vi.fn(), count: vi.fn() },
     blueskyFollowing: { findMany: vi.fn(), count: vi.fn() },
     blockedActor: { findMany: vi.fn() },
+    blockedDomain: { findMany: vi.fn(() => Promise.resolve([])) },
     directMessage: { findMany: vi.fn() },
     dmConversationRead: { findMany: vi.fn() },
     post: { count: vi.fn() },
