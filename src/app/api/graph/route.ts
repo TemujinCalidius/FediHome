@@ -12,12 +12,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const [following, followers, bskyFollowers, bskyFollowing, blockedRows] = await Promise.all([
+  const [following, followers, bskyFollowers, bskyFollowing, blockedRows, blockedDomainRows] = await Promise.all([
     prisma.fediFollowing.findMany({ orderBy: { createdAt: "desc" } }),
     prisma.fediFollower.findMany({ orderBy: { createdAt: "desc" } }),
     prisma.blueskyFollower.findMany({ orderBy: { createdAt: "desc" } }),
     prisma.blueskyFollowing.findMany({ orderBy: { createdAt: "desc" } }),
     prisma.blockedActor.findMany({ orderBy: { createdAt: "desc" } }),
+    prisma.blockedDomain.findMany({ orderBy: { createdAt: "desc" } }),
   ]);
 
   const blocked = blockedRows.map((b) => ({
@@ -73,14 +74,22 @@ export async function GET(req: NextRequest) {
     })),
   ].sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
 
+  const blockedDomains = blockedDomainRows.map((d) => ({
+    domain: d.domain,
+    reason: d.reason,
+    createdAt: d.createdAt,
+  }));
+
   return NextResponse.json({
     followers: mergedFollowers,
     following: mergedFollowing,
     blocked,
+    blockedDomains,
     counts: {
       followers: followers.length + bskyFollowers.length,
       following: following.length + bskyFollowing.length,
       blocked: blocked.length,
+      blockedDomains: blockedDomains.length,
     },
   });
 }

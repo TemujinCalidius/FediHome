@@ -200,7 +200,9 @@ One endpoint, dispatched on a JSON `action` field, each gated on its own scope.
 | `mark_dm_read` / `mark_all_dms_read` | `dm` | `conversationKey` / — |
 | `approve_comment` / `reject_comment` | `manage` | guest-comment moderation |
 | `backfill_replies` / `sync_bluesky_graph` | `manage` | maintenance |
-| `block` | `manage` | `actorUri` (unfollows + deletes their posts/interactions) |
+| `block` | `manage` | `actorUri` (unfollows + deletes their posts/interactions, and corrects the cached like/boost counts) |
+| `block_domain` | `manage` | `domain`, optional `reason` — blocks a whole instance **including subdomains**, purging its posts/interactions/follows. Refuses your own domain. |
+| `unblock_domain` | `manage` | `domain` |
 
 Marking notifications read: `POST /api/notifications` (empty body) — requires
 `interact` (it's a write).

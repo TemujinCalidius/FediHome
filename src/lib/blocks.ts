@@ -26,7 +26,45 @@ export function actorHost(actorUri: string): string | null {
 }
 
 /**
- * Whether an incoming activity from this actor should be dropped.
+ * Normalise a domain for storage and comparison: lowercased, no port, no
+ * trailing dot, no leading `@` or scheme someone may have pasted in.
+ */
+export function normalizeDomain(input: string): string {
+  let d = input.trim().toLowerCase();
+  if (!d) return "";
+  // Accept a pasted URL or @handle@domain as well as a bare domain — people
+  // will paste whatever they have to hand.
+  if (d.includes("://")) {
+    try {
+      d = new URL(d).hostname;
+    } catch {
+      return "";
+    }
+  } else if (d.includes("@")) {
+    d = d.slice(d.lastIndexOf("@") + 1);
+  }
+  d = d.split("/")[0].split(":")[0]; // strip any path / port
+  while (d.endsWith(".")) d = d.slice(0, -1); // trailing dot is the same host
+  return d;
+}
+
+/**
+ * The domains a block on `host` should cover: the host itself and every parent.
+ * Blocking `spam.example` is meant to stop `a.spam.example` too — an instance
+ * that can hand out subdomains could otherwise sidestep the block endlessly.
+ * Bounded by the label count, so it can't be blown up by a long hostname.
+ */
+export function domainChain(host: string): string[] {
+  const parts = host.split(".").filter(Boolean);
+  const out: string[] = [];
+  // Stop at two labels: never let a block on "example.com" be tested as "com".
+  for (let i = 0; i + 1 < parts.length; i++) out.push(parts.slice(i).join("."));
+  return out.length > 0 ? out : parts;
+}
+
+/**
+ * Whether an incoming activity from this actor should be dropped — because the
+ * actor is blocked, or because their whole instance is.
  *
  * Fails **open** on a database error: an inbox that rejects everything because
  * the DB hiccuped is a worse failure than briefly honouring one activity from a
@@ -35,11 +73,17 @@ export function actorHost(actorUri: string): string | null {
  */
 export async function isBlockedSender(actorUri: string): Promise<boolean> {
   try {
-    const blocked = await prisma.blockedActor.findUnique({
-      where: { actorUri },
-      select: { id: true },
-    });
-    return !!blocked;
+    const host = actorHost(actorUri);
+    const [actor, domain] = await Promise.all([
+      prisma.blockedActor.findUnique({ where: { actorUri }, select: { id: true } }),
+      host
+        ? prisma.blockedDomain.findFirst({
+            where: { domain: { in: domainChain(host) } },
+            select: { id: true },
+          })
+        : Promise.resolve(null),
+    ]);
+    return !!actor || !!domain;
   } catch {
     return false;
   }

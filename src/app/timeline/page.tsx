@@ -47,6 +47,15 @@ export default async function TimelinePage() {
   });
 
   // Fetch pending guest comments for moderation
+  // Blocked actors + domains, so the moderation tab can list and undo them.
+  // Until now the only web consumer of a block was creating one — /api/graph
+  // carried the list for the native app, and the browser had no way to see or
+  // reverse it.
+  const [blockedActors, blockedDomains] = await Promise.all([
+    prisma.blockedActor.findMany({ orderBy: { createdAt: "desc" } }),
+    prisma.blockedDomain.findMany({ orderBy: { createdAt: "desc" } }),
+  ]);
+
   const pendingComments = await prisma.guestComment.findMany({
     where: { status: "pending" },
     orderBy: { createdAt: "desc" },
@@ -203,6 +212,8 @@ export default async function TimelinePage() {
         following={JSON.parse(JSON.stringify(mergedFollowing))}
         followers={JSON.parse(JSON.stringify(mergedFollowers))}
         pendingComments={JSON.parse(JSON.stringify(pendingComments))}
+        blockedActors={JSON.parse(JSON.stringify(blockedActors))}
+        blockedDomains={JSON.parse(JSON.stringify(blockedDomains))}
         directMessages={JSON.parse(JSON.stringify(directMessages))}
         dmReadState={dmReadState}
         analyticsData={analyticsData ? JSON.parse(JSON.stringify(analyticsData)) : null}

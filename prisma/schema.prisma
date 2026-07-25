@@ -273,6 +273,17 @@ model BlockedActor {
   createdAt   DateTime @default(now())
 }
 
+/// An entire instance you don't want to hear from. Blocking one bad actor works
+/// until the same server produces ten more, which is what domain blocks are for.
+/// `domain` is stored lowercased and WITHOUT a port, matching the actor URI's
+/// hostname, so the inbox can look it up directly.
+model BlockedDomain {
+  id        String   @id @default(cuid())
+  domain    String   @unique
+  reason    String?
+  createdAt DateTime @default(now())
+}
+
 model BlueskyFollower {
   id          String   @id @default(cuid())
   did         String   @unique
