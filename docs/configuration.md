@@ -12,7 +12,7 @@ All environment variables are set in `.env.local` at the project root. The `.env
 |----------|-------------|---------|
 | `DATABASE_URL` | PostgreSQL connection string. Used by Prisma to connect to your database. | `postgresql://user:pass@localhost:5432/fedihome` |
 | `SITE_URL` | The full public URL of your site, including protocol. No trailing slash. Used for ActivityPub, RSS, link generation, and CORS. | `https://myblog.com` |
-| `ADMIN_SECRET` | A random secret string used to authenticate admin actions. Generated automatically by the install script, or set manually. Keep this safe. | `a1b2c3d4e5f6...` (64-char hex string recommended) |
+| `ADMIN_SECRET` | A random secret used to authenticate admin actions **and** to encrypt every credential you save (Bluesky, Threads, analytics, Web Push). Generated automatically by the install script. **Back it up separately — it is not in the database**, so restoring a database onto a host with a new secret makes all of those credentials permanently unreadable. | `a1b2c3d4e5f6...` (64-char hex recommended) |
 | `FEDI_HANDLE` | Your Fediverse username (the part before the `@domain`). | `sam` |
 | `FEDI_DOMAIN` | The domain portion of your Fediverse identity. Usually matches your site domain. | `myblog.com` |
 

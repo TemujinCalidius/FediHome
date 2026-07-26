@@ -243,16 +243,26 @@ docker compose up -d
 
 ## Backups
 
-> **A database dump on its own is NOT a complete backup.** Your instance has two
+> **A database dump on its own is NOT a complete backup.** Your instance has three
 > pieces of state, and only one of them is in PostgreSQL:
 >
 > | What | Where | Lose it and… |
 > |---|---|---|
 > | Posts, followers, comments, settings, **federation keys** | PostgreSQL | everything goes |
 > | Uploaded images, photos, audio, cached feed media | `public/uploads/` | posts survive but every image and audio player 404s |
+> | **`ADMIN_SECRET`** | `.env.local` | you can't log in, and every saved credential becomes unreadable |
 >
 > The database stores file **paths**, not the files. So restoring a `pg_dump` alone
 > gives you back a site that *looks* intact with every piece of media missing.
+>
+> **⚠️ `ADMIN_SECRET` is not in the database at all.** It's your login *and* the key
+> that encrypts every credential you've saved — your Bluesky app password, Threads
+> token, Tinylytics key, and the Web Push signing key. Restore a database onto a host
+> with a freshly generated secret and all four become permanently undecryptable:
+> push notifications stop arriving and crossposting stops happening, while the admin
+> panel still shows them as configured. FediHome now detects this and raises an alert
+> naming exactly what needs re-entering — but the credentials themselves are gone.
+> Back up `.env.local` alongside your database.
 >
 > **⚠️ The single most important row is `ActorKeys`** — your ActivityPub signing keypair.
 > It's what proves posts came from you. Restore a dump without it and your instance

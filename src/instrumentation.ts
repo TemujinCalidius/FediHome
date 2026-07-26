@@ -25,6 +25,12 @@ export async function register() {
     assertUsableIdentity();
     await markSetupCompleteIfConfigured();
 
+    // Diagnostic, not a gate — fire-and-forget so it can never delay or fail a
+    // boot. Catches the silent case where ADMIN_SECRET changed and every stored
+    // credential became unreadable (#359).
+    const { checkStoredCredentials } = await import("@/lib/secret-health");
+    void checkStoredCredentials();
+
     const { startScheduler } = await import("@/lib/scheduler");
     startScheduler();
   }
