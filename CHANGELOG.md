@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.20.0 (2026-07-26)
 
 ### Added
 - **You can finally set a real admin password** (#356, #359) — until now the thing you typed to sign in was also the key that encrypted every credential you'd saved, which meant you could never change it: doing so silently destroyed your Bluesky password, Threads token, analytics key and push keys. Those are now separate. Set a password in **Admin → Site settings → Security** and change it as often as you like — your saved connections are unaffected, and other signed-in devices get signed out. Existing installs keep working untouched: sign in with your `ADMIN_SECRET` exactly as before, and you'll be prompted to pick a real one. Scripted and hosted installs can set `ADMIN_PASSWORD` instead, which is used once on first boot — no more reading a 64-character key out of a file just to log in.
