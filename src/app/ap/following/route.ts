@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getRuntimeSiteConfig } from "@/lib/site-settings";
+import { getSiteUrl } from "@/lib/identity";
 
-const siteUrl = process.env.SITE_URL || "http://localhost:3000";
 
 export async function GET() {
   const hidden = (await getRuntimeSiteConfig()).hideSocialGraph;
@@ -11,7 +11,7 @@ export async function GET() {
 
   const collection: Record<string, unknown> = {
     "@context": "https://www.w3.org/ns/activitystreams",
-    id: `${siteUrl}/ap/following`,
+    id: `${getSiteUrl()}/ap/following`,
     type: "OrderedCollection",
     totalItems,
   };

@@ -12,7 +12,7 @@ All environment variables are set in `.env.local` at the project root. The `.env
 |----------|-------------|---------|
 | `DATABASE_URL` | PostgreSQL connection string. Used by Prisma to connect to your database. | `postgresql://user:pass@localhost:5432/fedihome` |
 | `SITE_URL` | The full public URL of your site, including protocol. No trailing slash. Used for ActivityPub, RSS, link generation, and CORS. | `https://myblog.com` |
-| `ADMIN_SECRET` | A random secret string used to authenticate admin actions. Generated automatically by the install script, or set manually. Keep this safe. | `a1b2c3d4e5f6...` (64-char hex string recommended) |
+| `ADMIN_SECRET` | A random secret used to authenticate admin actions **and** to encrypt every credential you save (Bluesky, Threads, analytics, Web Push). Generated automatically by the install script. **Back it up separately — it is not in the database**, so restoring a database onto a host with a new secret makes all of those credentials permanently unreadable. | `a1b2c3d4e5f6...` (64-char hex recommended) |
 | `FEDI_HANDLE` | Your Fediverse username (the part before the `@domain`). | `sam` |
 | `FEDI_DOMAIN` | The domain portion of your Fediverse identity. Usually matches your site domain. | `myblog.com` |
 
@@ -112,6 +112,52 @@ Some settings are stored in the database (`SiteSettings` table) and managed thro
 
 Changes made in the admin panel are saved to the database and take effect immediately without restarting the server.
 
+## Your Admin Password
+
+Your password and `ADMIN_SECRET` are **two different things**, and it matters:
+
+| | What it is | Can you change it? |
+|---|---|---|
+| **Password** | What you type to sign in. Stored hashed (scrypt) in the database. | **Yes, freely** — in **Admin → Site settings → Security** |
+| **`ADMIN_SECRET`** | The key that signs your session and encrypts saved credentials. Never typed. | It shouldn't need to — and changing it makes saved credentials unreadable |
+
+Changing your password is safe: your Bluesky app password, Threads token,
+analytics key and push-notification key all keep working, because none of them
+are encrypted with your password. Other signed-in devices are signed out, which
+is what you want if you're changing it because a device went missing.
+
+**Upgrading an existing install?** Nothing breaks. Sign in with `ADMIN_SECRET`
+exactly as before, and you'll be prompted to choose a real password. After that
+the secret goes back to being key material you never type.
+
+**Scripted or hosted installs** can set `ADMIN_PASSWORD` in the environment — it's
+consumed once on first boot and then ignored, so you can remove it afterwards.
+Minimum 12 characters.
+
+## Blocking People and Servers
+
+Everything here is **local and private**. Nothing is sent to the person or server
+you block — unlike Mastodon, which notifies them, so a blocked user there can
+tell. FediHome just stops accepting anything they send.
+
+**Blocking a person.** Click their name or avatar anywhere they appear — a reply
+on one of your posts, someone who liked or boosted it, anyone in a thread — and
+choose **Block**. That unfollows them, deletes their posts and interactions from
+your site, corrects the like/boost counts, and refuses everything they send from
+then on.
+
+**Blocking a whole server.** Go to **Timeline → Moderation → Blocked servers**.
+Useful when one instance keeps producing new accounts. It covers **subdomains**
+too, deletes everything that server has already sent, and drops any follows in
+either direction. You can't block your own domain.
+
+**Undoing either** is in the same **Moderation** tab, which also lists everyone
+and everything you've blocked.
+
+A blocked account can still read your public posts — anyone can, they're public.
+Blocking stops them reaching *you*: no replies, no likes, no follows, nothing in
+your feed or notifications.
+
 ## Phone Notifications (Web Push)
 
 FediHome can push likes, boosts, replies, follows, DMs and comments to your phone
@@ -163,13 +209,13 @@ Set any of these to `false` to hide that section from the navigation. The corres
 
 ## macOS App Download
 
-FediHome has a native menu-bar Mac app. When enabled, a **Download** nav link, a homepage hero CTA, and a `/download` marketing page appear. It's **off by default** — a personal instance isn't advertising an app it may not use — and is intended for the public demo.
+FediHome has a native menu-bar Mac app, [live on the Mac App Store](https://apps.apple.com/app/fedihome/id6790605091). When enabled, a **Download** nav link, a homepage hero CTA, and a `/download` marketing page appear. It's **off by default** — a personal instance isn't advertising an app it may not use — and is intended for the public demo.
 
 | Env var | Default | Purpose |
 |---------|---------|---------|
 | `DOWNLOAD_MACOS_ENABLED` | `false` | Show the Download link, hero CTA, and `/download` page. |
-| `DOWNLOAD_MACOS_RELEASE_URL` | the app repo's GitHub Releases `latest` | Primary download — always the newest notarized build. Prefer `releases/latest` over a pinned tag so it auto-tracks new versions. |
-| `DOWNLOAD_MACOS_APP_STORE_URL` | *(empty)* | Optional Mac App Store listing. When set, a "Download on the Mac App Store" button appears alongside the GitHub download; until then that slot shows a "coming soon" placeholder. |
+| `DOWNLOAD_MACOS_RELEASE_URL` | the app repo's GitHub Releases `latest` | Direct download — always the newest notarized build. Prefer `releases/latest` over a pinned tag so it auto-tracks new versions. |
+| `DOWNLOAD_MACOS_APP_STORE_URL` | the live Mac App Store listing | The "Download on the Mac App Store" button. Region-neutral, so Apple redirects each visitor to their own storefront. Both URLs already point at the project's app; only override to point at a fork/rebuild. Clearing it shows a "coming soon" placeholder instead. |
 
 All three are also editable at runtime from **Admin → Site settings** (they overlay the env defaults, no restart).
 

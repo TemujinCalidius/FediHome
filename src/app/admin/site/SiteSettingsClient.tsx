@@ -28,6 +28,7 @@ export default function SiteSettingsClient({
   analyticsStatus,
   analyticsKey,
   pushKey,
+  aliases,
   encryptionAvailable,
   profile,
   profileDefaults,
@@ -39,6 +40,7 @@ export default function SiteSettingsClient({
   analyticsStatus: { embedCode: string | null; unresolved: boolean };
   analyticsKey: { configured: boolean; source: "db" | "env" | null };
   pushKey: { configured: boolean; source: "db" | "env" | null; subject: string };
+  aliases: string[];
   encryptionAvailable: boolean;
   profile: {
     authorName: string; authorTagline: string; authorBio: string;
@@ -61,6 +63,88 @@ export default function SiteSettingsClient({
   // private key is encrypted at rest and never sent to the browser.
   const [pushStatus, setPushStatus] = useState(pushKey);
   const [pushBusy, setPushBusy] = useState(false);
+  // Account aliases / alsoKnownAs (#326) — its own route; identity-adjacent, so
+  // it's cookie-only and never round-tripped through the site-config save.
+  const [aliasText, setAliasText] = useState(aliases.join("\n"));
+  const [aliasSaved, setAliasSaved] = useState<string[]>(aliases);
+  const [aliasBusy, setAliasBusy] = useState(false);
+  // Admin password (#356) — its own route; the hash never round-trips through
+  // the plaintext site-config save.
+  const [pwHas, setPwHas] = useState<boolean | null>(null);
+  const [pwCurrent, setPwCurrent] = useState("");
+  const [pwNext, setPwNext] = useState("");
+  const [pwConfirm, setPwConfirm] = useState("");
+  const [pwBusy, setPwBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/admin/password")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (!cancelled && d) setPwHas(!!d.hasPassword); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  async function savePassword(): Promise<void> {
+    if (pwNext !== pwConfirm) {
+      setResult({ ok: false, msg: "Those two passwords don't match." });
+      return;
+    }
+    setPwBusy(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/admin/password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentPassword: pwCurrent, newPassword: pwNext }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setResult({ ok: false, msg: data?.error || "Couldn't change the password." });
+        return;
+      }
+      setPwHas(true);
+      setPwCurrent(""); setPwNext(""); setPwConfirm("");
+      const n = data?.otherSessionsRevoked ?? 0;
+      setResult({
+        ok: true,
+        msg: n > 0
+          ? `Password updated. ${n} other session${n === 1 ? "" : "s"} signed out.`
+          : "Password updated.",
+      });
+    } catch {
+      setResult({ ok: false, msg: "Couldn't reach the server — nothing was changed." });
+    } finally {
+      setPwBusy(false);
+    }
+  }
+
+  async function saveAliases(): Promise<void> {
+    setAliasBusy(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/admin/aliases", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ aliases: aliasText }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setResult({ ok: false, msg: data?.error || "Couldn't save aliases." });
+        return;
+      }
+      setAliasSaved(data.aliases || []);
+      setAliasText((data.aliases || []).join("\n"));
+      setResult({
+        ok: true,
+        msg: (data.aliases || []).length
+          ? `Saved ${(data.aliases || []).length} alias(es).`
+          : "Aliases cleared.",
+      });
+    } finally {
+      setAliasBusy(false);
+    }
+  }
 
   async function postPushKeys(action: "generate" | "clear"): Promise<void> {
     if (action === "generate" && pushStatus.configured &&
@@ -779,7 +863,96 @@ export default function SiteSettingsClient({
           </div>
         </>)}
 
+        {section("Moving here from another account", <>
+          <p className="text-xs text-gray-600 m-0">
+            Moving to FediHome from Mastodon (or anywhere else that speaks ActivityPub) and want to
+            bring your followers? Add your <strong>old</strong> account here first, then start the
+            move from that old account. Their server checks this list before it will move anyone —
+            without it, the move is refused and your followers stay behind.
+          </p>
+          <p className="text-xs text-gray-600 m-0">
+            Use the full profile address, one per line — e.g.{" "}
+            <code>https://mastodon.social/users/you</code>. Anything that isn&apos;t a web address is
+            ignored.
+          </p>
+          <textarea
+            value={aliasText}
+            onChange={(e) => setAliasText(e.target.value)}
+            rows={3}
+            spellCheck={false}
+            placeholder="https://mastodon.social/users/you"
+            className="w-full rounded-lg border border-surface-700 bg-surface-950/60 p-2 font-mono text-xs text-white"
+          />
+          <p className="text-xs m-0">
+            {aliasSaved.length > 0 ? (
+              <span className="text-green-400">
+                ✓ {aliasSaved.length} alias{aliasSaved.length === 1 ? "" : "es"} published on your profile.
+              </span>
+            ) : (
+              <span className="text-gray-500">No aliases set.</span>
+            )}
+          </p>
+          <p className="text-xs text-amber-400/80 m-0">
+            ⚠️ Keep the old account online until the move finishes. Its server has to still be
+            answering for the move to be verified — once it&apos;s gone, followers can&apos;t be
+            moved by anyone.
+          </p>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={saveAliases}
+              disabled={aliasBusy}
+              className="btn-primary text-xs disabled:opacity-50"
+            >
+              {aliasBusy ? "Saving…" : "Save aliases"}
+            </button>
+          </div>
+        </>)}
+
         {section("Security", <>
+          <div className="rounded-lg border border-surface-700 p-3 flex flex-col gap-2">
+            <p className="text-xs font-semibold text-content m-0">
+              {pwHas === false ? "Choose a password" : "Change your password"}
+            </p>
+            {pwHas === false && (
+              <p className="text-xs text-amber-400/90 m-0">
+                You&apos;re still signing in with <code>ADMIN_SECRET</code> — a 64-character
+                key that was never meant to be typed. Pick a real password; your saved
+                connections are unaffected.
+              </p>
+            )}
+            <p className="text-xs text-gray-600 m-0">
+              Separate from <code>ADMIN_SECRET</code>, so changing it is safe: your saved
+              Bluesky, Threads, analytics and notification credentials keep working.
+              Other signed-in devices are signed out.
+            </p>
+            <input
+              type="password" autoComplete="current-password"
+              placeholder={pwHas === false ? "Current ADMIN_SECRET" : "Current password"}
+              value={pwCurrent} onChange={(e) => setPwCurrent(e.target.value)}
+              className="bg-surface-800 border border-surface-700 rounded-md px-2 py-1.5 text-sm text-white"
+            />
+            <input
+              type="password" autoComplete="new-password" placeholder="New password (min 12 characters)"
+              value={pwNext} onChange={(e) => setPwNext(e.target.value)}
+              className="bg-surface-800 border border-surface-700 rounded-md px-2 py-1.5 text-sm text-white"
+            />
+            <input
+              type="password" autoComplete="new-password" placeholder="Confirm new password"
+              value={pwConfirm} onChange={(e) => setPwConfirm(e.target.value)}
+              className="bg-surface-800 border border-surface-700 rounded-md px-2 py-1.5 text-sm text-white"
+            />
+            <div>
+              <button
+                type="button" onClick={savePassword}
+                disabled={pwBusy || !pwCurrent || pwNext.length < 12 || !pwConfirm}
+                className="btn-primary text-xs disabled:opacity-50"
+              >
+                {pwBusy ? "Saving…" : pwHas === false ? "Set password" : "Change password"}
+              </button>
+            </div>
+          </div>
+
           <p className="text-xs text-gray-600 m-0">
             Session and token lifetimes, in days. Changes apply to <strong>newly-created</strong> sessions and
             tokens only — existing ones keep their original expiry.

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { SUPPORTED_SCOPES } from "@/lib/oauth";
+import { getSiteUrl } from "@/lib/identity";
 
 /**
  * OAuth 2.0 Authorization Server Metadata (RFC 8414). Native FediHome apps fetch
@@ -7,7 +8,7 @@ import { SUPPORTED_SCOPES } from "@/lib/oauth";
  * PKCE S256 + public clients are supported before starting the login flow.
  */
 export async function GET() {
-  const siteUrl = process.env.SITE_URL || "http://localhost:3000";
+  const siteUrl = getSiteUrl();
 
   return NextResponse.json(
     {

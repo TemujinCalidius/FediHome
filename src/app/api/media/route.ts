@@ -4,6 +4,7 @@ import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import { parseBuffer as parseAudioMetadata } from "music-metadata";
 import { saveUploadedImage, IMAGE_TYPES } from "@/lib/media";
+import { getSiteUrl } from "@/lib/identity";
 
 // Audio cap (per-file)
 const MAX_AUDIO_SIZE = 100 * 1024 * 1024; // 100 MB
@@ -43,7 +44,7 @@ export async function POST(req: NextRequest) {
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: 400 });
   }
-  const siteUrl = process.env.SITE_URL || "http://localhost:3000";
+  const siteUrl = getSiteUrl();
   const url = `${siteUrl}${result.path}`;
   return NextResponse.json({ url }, { status: 201, headers: { Location: url } });
 }
@@ -80,7 +81,7 @@ async function handleAudioUpload(file: File): Promise<NextResponse> {
   const filePath = path.join(audioDir, filename);
   await writeFile(filePath, buffer);
 
-  const siteUrl = process.env.SITE_URL || "http://localhost:3000";
+  const siteUrl = getSiteUrl();
   const url = `${siteUrl}/uploads/audio/${year}/${month}/${filename}`;
 
   return NextResponse.json(

@@ -7,6 +7,7 @@ import { extractParam, extractStruct, between } from "@/lib/xmlrpc";
 import { rateLimitKey } from "@/lib/client-ip";
 import { buildPostObject } from "@/lib/ap-post";
 import { deletePostWithFederation } from "@/lib/delete-post";
+import { getSiteUrl } from "@/lib/identity";
 
 /**
  * XML-RPC endpoint (MetaWeblog API) for compatibility with micro.blog app
@@ -102,7 +103,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const siteUrl = process.env.SITE_URL || "http://localhost:3000";
+  const siteUrl = getSiteUrl();
 
   switch (method) {
     case "system.listMethods":

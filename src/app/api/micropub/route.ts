@@ -8,6 +8,7 @@ import { publishPost } from "@/lib/publish-post";
 import { deletePostWithFederation } from "@/lib/delete-post";
 import { getRuntimeSiteConfig } from "@/lib/site-settings";
 import { categoryEntries } from "@/lib/categories";
+import { getSiteUrl } from "@/lib/identity";
 
 /**
  * The resolved gallery categories for API discovery (#284) — the SAME source of
@@ -62,7 +63,7 @@ export async function GET(req: NextRequest) {
 
   if (q === "config") {
     return NextResponse.json({
-      "media-endpoint": `${process.env.SITE_URL || "http://localhost:3000"}/api/media`,
+      "media-endpoint": `${getSiteUrl()}/api/media`,
       "post-types": [
         { type: "note", name: "Note" },
         { type: "article", name: "Article" },
@@ -177,7 +178,7 @@ export async function POST(req: NextRequest) {
   }
 
   const slug = generateSlug(title, content);
-  const siteUrl = process.env.SITE_URL || "http://localhost:3000";
+  const siteUrl = getSiteUrl();
   const contentHtml = sanitizeHtml(marked.parse(content) as string);
 
   const post = await prisma.post.create({

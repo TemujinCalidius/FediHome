@@ -2,10 +2,10 @@ import { createFederation, MemoryKvStore } from "@fedify/fedify";
 import { prisma } from "./db";
 import { siteConfig } from "@/../site.config";
 import { getRuntimeProfile } from "./site-profile";
+import { getAlsoKnownAs } from "./identity-store";
+import { getIdentity, getSiteUrl } from "./identity";
 import crypto from "crypto";
 
-const siteUrl = siteConfig.url;
-const handle = siteConfig.fediHandle;
 
 // Initialize federation
 export const federation = createFederation({
@@ -138,40 +138,47 @@ export async function getActorProfile() {
   const keys = await ensureActorKeys();
   // Runtime-editable profile (#201) overlaid on env defaults.
   const profile = await getRuntimeProfile();
+  // Account aliases (#326). Only emitted when set, so a default instance's
+  // actor document is byte-identical to before.
+  const alsoKnownAs = await getAlsoKnownAs();
 
   return {
     "@context": [
       "https://www.w3.org/ns/activitystreams",
       "https://w3id.org/security/v1",
     ],
-    id: `${siteUrl}/ap/actor`,
+    id: `${getSiteUrl()}/ap/actor`,
     type: "Person",
-    preferredUsername: handle,
+    preferredUsername: getIdentity().fediHandle,
     name: profile.authorName,
     summary: profile.actorSummary,
-    url: siteUrl,
+    url: getSiteUrl(),
     manuallyApprovesFollowers: false,
     discoverable: true,
-    inbox: `${siteUrl}/ap/inbox`,
-    outbox: `${siteUrl}/ap/outbox`,
-    followers: `${siteUrl}/ap/followers`,
-    following: `${siteUrl}/ap/following`,
+    // "I am also that account" — the property a remote server checks before it
+    // will move someone's followers to us. `alsoKnownAs` is already defined by
+    // the activitystreams context above, so no extra JSON-LD term is required.
+    ...(alsoKnownAs.length > 0 ? { alsoKnownAs } : {}),
+    inbox: `${getSiteUrl()}/ap/inbox`,
+    outbox: `${getSiteUrl()}/ap/outbox`,
+    followers: `${getSiteUrl()}/ap/followers`,
+    following: `${getSiteUrl()}/ap/following`,
     endpoints: {
-      sharedInbox: `${siteUrl}/ap/inbox`,
+      sharedInbox: `${getSiteUrl()}/ap/inbox`,
     },
     icon: {
       type: "Image",
       mediaType: imageMediaType(profile.avatarPath),
-      url: `${siteUrl}${profile.avatarPath}`,
+      url: `${getSiteUrl()}${profile.avatarPath}`,
     },
     image: {
       type: "Image",
       mediaType: imageMediaType(profile.bannerPath),
-      url: `${siteUrl}${profile.bannerPath}`,
+      url: `${getSiteUrl()}${profile.bannerPath}`,
     },
     publicKey: {
-      id: `${siteUrl}/ap/actor#main-key`,
-      owner: `${siteUrl}/ap/actor`,
+      id: `${getSiteUrl()}/ap/actor#main-key`,
+      owner: `${getSiteUrl()}/ap/actor`,
       publicKeyPem: keys.publicKey,
     },
   };

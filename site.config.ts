@@ -1,3 +1,5 @@
+import { getIdentity } from "./src/lib/identity";
+
 /**
  * FediHome — Site Configuration
  *
@@ -6,9 +8,10 @@
  * You can also edit them directly here or via the admin panel.
  */
 
-const siteUrl = process.env.SITE_URL || "http://localhost:3000";
-const fediHandle = process.env.FEDI_HANDLE || "me";
-const fediDomain = process.env.FEDI_DOMAIN || new URL(siteUrl).hostname;
+// Federation identity comes from ONE derivation (src/lib/identity.ts) so the
+// actor id, WebFinger subject and signature keyId can never disagree — see the
+// module docstring for why that class of mismatch is invisible when it breaks.
+const { siteUrl, fediHandle, fediDomain, fediAddress } = getIdentity();
 
 export const siteConfig = {
   // Site identity
@@ -25,7 +28,7 @@ export const siteConfig = {
   // Fediverse identity
   fediHandle,
   fediDomain,
-  fediAddress: `@${fediHandle}@${fediDomain}`,
+  fediAddress,
   actorSummary: process.env.ACTOR_SUMMARY || "A personal blog on the Fediverse, powered by FediHome.",
 
   // Public landing / showcase mode.
@@ -34,10 +37,10 @@ export const siteConfig = {
   // Off by default, so existing personal sites are completely unaffected.
   landingMode: process.env.LANDING_MODE === "true",
   landingHeadline:
-    process.env.LANDING_HEADLINE || "Your home on the open social web",
+    process.env.LANDING_HEADLINE || "Your own website — that people can actually follow.",
   landingSubhead:
     process.env.LANDING_SUBHEAD ||
-    "FediHome is a self-hosted personal site that speaks ActivityPub — your blog, photos, videos and a live Fediverse feed, all owned by you and federated with Mastodon and the wider network.",
+    "Share short posts, full articles, photos, video and audio — all on a site that's truly yours. Anyone can follow you and see it in their feed, and you'll see the people you follow in yours. No big platform in the middle, no algorithm deciding who sees what.",
   repoUrl: process.env.REPO_URL || "https://github.com/TemujinCalidius/fedihome",
 
   // Public read-only Fediverse feed. When PUBLIC_FEED=true, /fediverse shows a
@@ -84,15 +87,20 @@ export const siteConfig = {
   // Native-app downloads (#241). When DOWNLOAD_MACOS_ENABLED=true, a "Download"
   // nav link, a homepage hero CTA, and a /download page appear — a marketing
   // surface for the FediHome macOS app. Off by default so a personal instance
-  // isn't advertising an app it may not use; the public demo turns it on. The
-  // release URL tracks GitHub Releases "latest" (always the newest notarized
-  // build); the App Store URL is an empty slot until the listing is approved.
+  // isn't advertising an app it may not use; the public demo turns it on. Both
+  // URLs default to the project's own app (there's only one FediHome macOS app):
+  // the release URL tracks GitHub Releases "latest" (the newest notarized build),
+  // and the App Store URL points at the live listing. Region-neutral on purpose,
+  // so Apple redirects each visitor to their own storefront. Override either via
+  // env or the admin panel.
   download: {
     macosEnabled: process.env.DOWNLOAD_MACOS_ENABLED === "true",
     macosReleaseUrl:
       process.env.DOWNLOAD_MACOS_RELEASE_URL ||
       "https://github.com/TemujinCalidius/FediHome-macOS/releases/latest",
-    macosAppStoreUrl: process.env.DOWNLOAD_MACOS_APP_STORE_URL || "",
+    macosAppStoreUrl:
+      process.env.DOWNLOAD_MACOS_APP_STORE_URL ||
+      "https://apps.apple.com/app/fedihome/id6790605091",
   },
 
   // Visual theme (#250). Selects a built-in theme preset (see src/lib/themes).

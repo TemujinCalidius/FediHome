@@ -3,6 +3,7 @@ import { hashToken, generateToken } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { rateLimitKey } from "@/lib/client-ip";
 import { getClient, verifyPkceS256, makeRateLimiter, sanitizeScope, bodyTooLarge } from "@/lib/oauth";
+import { getSiteUrl } from "@/lib/identity";
 
 /**
  * OAuth 2.0 / IndieAuth token endpoint. Exchanges a single-use, PKCE-bound
@@ -121,7 +122,7 @@ export async function POST(req: NextRequest) {
       access_token: accessToken,
       token_type: "Bearer",
       scope: grantedScope,
-      me: process.env.SITE_URL || "http://localhost:3000",
+      me: getSiteUrl(),
     },
     { headers: { "Cache-Control": "no-store", Pragma: "no-cache" } }
   );

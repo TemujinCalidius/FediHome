@@ -1,26 +1,46 @@
+import ActorActions from "./ActorActions";
+
 export interface InteractionAvatar {
   id: string;
   label: string; // hover title, e.g. @user@domain (fedi) or @handle (bluesky)
   avatarUrl: string | null;
   source: "fedi" | "bluesky";
+  /** Present for fedi actors — makes the avatar clickable. */
+  actorUri?: string | null;
+  displayName?: string | null;
 }
 
 // Up to 5 overlapping avatars with a source-colored ring (fedi = accent, bsky =
 // blue), then a +N overflow. Used for both likers and reposters.
-function AvatarStack({ people }: { people: InteractionAvatar[] }) {
+function AvatarStack({ people, isAdmin }: { people: InteractionAvatar[]; isAdmin?: boolean }) {
   if (people.length === 0) return null;
   return (
     <div className="flex -space-x-1">
       {people.slice(0, 5).map((p) => {
         const ring = p.source === "bluesky" ? "ring-blue-500/60" : "ring-accent-500/60";
-        return (
+        const face = p.avatarUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={p.avatarUrl} alt="" className={`w-5 h-5 rounded-full ring-1 ${ring}`} />
+        ) : (
+          <div className={`w-5 h-5 rounded-full bg-surface-700 ring-1 ${ring}`} />
+        );
+        // Someone who liked or boosted your post is exactly someone you might
+        // want to follow back — so the face is a handle to them, not decoration.
+        return p.actorUri ? (
+          <ActorActions
+            key={p.id}
+            actorUri={p.actorUri}
+            handle={p.label}
+            displayName={p.displayName}
+            avatarUrl={p.avatarUrl}
+            isAdmin={isAdmin}
+            source={p.source}
+          >
+            <span title={p.label}>{face}</span>
+          </ActorActions>
+        ) : (
           <div key={p.id} title={p.label}>
-            {p.avatarUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={p.avatarUrl} alt="" className={`w-5 h-5 rounded-full ring-1 ${ring}`} />
-            ) : (
-              <div className={`w-5 h-5 rounded-full bg-surface-700 ring-1 ${ring}`} />
-            )}
+            {face}
           </div>
         );
       })}
@@ -41,6 +61,7 @@ export default function FediInteractions({
   bskyLikeCount = 0,
   bskyRepostCount = 0,
   replyCount = 0,
+  isAdmin = false,
 }: {
   likeAvatars: InteractionAvatar[];
   repostAvatars: InteractionAvatar[];
@@ -48,6 +69,8 @@ export default function FediInteractions({
   boostCount: number;
   bskyLikeCount?: number;
   bskyRepostCount?: number;
+  /** Owner-only actions on the liker/booster avatars. */
+  isAdmin?: boolean;
   replyCount?: number;
 }) {
   const totalLikes = likeCount + bskyLikeCount;
@@ -74,7 +97,7 @@ export default function FediInteractions({
               </span>
             )}
             {/* Who liked — fedi + Bluesky (per-actor data from the notification sync, #134) */}
-            <AvatarStack people={likeAvatars} />
+            <AvatarStack people={likeAvatars} isAdmin={isAdmin} />
           </div>
         )}
 
@@ -93,7 +116,7 @@ export default function FediInteractions({
               </span>
             )}
             {/* Who reposted — fedi + Bluesky */}
-            <AvatarStack people={repostAvatars} />
+            <AvatarStack people={repostAvatars} isAdmin={isAdmin} />
           </div>
         )}
 

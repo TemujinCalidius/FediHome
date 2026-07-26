@@ -1,8 +1,8 @@
 import crypto from "crypto";
 import { prisma } from "./db";
 import { assertPublicHost } from "./url-guard";
+import { getIdentity } from "./identity";
 
-const SITE_URL = process.env.SITE_URL || "http://localhost:3000";
 
 const REQUIRED_SIGNED_HEADERS = ["(request-target)", "host", "date", "digest"];
 const ACTOR_FETCH_TIMEOUT_MS = 8000;
@@ -24,7 +24,7 @@ export async function signedFetch(
   const keys = await prisma.actorKeys.findUnique({ where: { id: "main" } });
   if (!keys) throw new Error("Actor keys not found");
 
-  const keyId = `${SITE_URL}/ap/actor#main-key`;
+  const keyId = getIdentity().keyId;
   const parsedUrl = new URL(url);
   const date = new Date().toUTCString();
   const digest = "SHA-256=" + crypto.createHash("sha256").update(body).digest("base64");
@@ -78,7 +78,7 @@ export async function signedGet(url: string, timeoutMs = 10000): Promise<Respons
   const keys = await prisma.actorKeys.findUnique({ where: { id: "main" } });
   if (!keys) throw new Error("Actor keys not found");
 
-  const keyId = `${SITE_URL}/ap/actor#main-key`;
+  const keyId = getIdentity().keyId;
   const parsedUrl = new URL(url);
   const date = new Date().toUTCString();
   const target = `${parsedUrl.pathname}${parsedUrl.search}`;
@@ -363,7 +363,14 @@ export function actorMatchesSigner(signerUri: string, claimedActorUri: string): 
   try {
     const norm = (u: string) => {
       const x = new URL(u);
-      return `${x.protocol}//${x.host.toLowerCase()}${x.pathname.replace(/\/+$/, "")}`;
+      // Character scan, not /\/+$/. That regex backtracks quadratically on a
+      // long run of slashes, and this runs on the signer URI of EVERY inbound
+      // activity — i.e. on a value a remote server fully controls
+      // (js/polynomial-redos).
+      const path = x.pathname;
+      let end = path.length;
+      while (end > 0 && path.charCodeAt(end - 1) === 47 /* "/" */) end--;
+      return `${x.protocol}//${x.host.toLowerCase()}${path.slice(0, end)}`;
     };
     return norm(signerUri) === norm(claimedActorUri);
   } catch {

@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { getRuntimeSiteConfig } from "@/lib/site-settings";
 import { getRuntimeProfile } from "@/lib/site-profile";
+import { getSiteUrl } from "@/lib/identity";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +23,7 @@ function formatDuration(sec: number | null): string {
 }
 
 export async function GET() {
-  const siteUrl = process.env.SITE_URL || "http://localhost:3000";
+  const siteUrl = getSiteUrl();
   // Web-editable overrides (#59) with sensible per-profile defaults, so a
   // web-edited author name / podcast title is reflected here (previously this
   // read process.env directly and ignored admin edits).

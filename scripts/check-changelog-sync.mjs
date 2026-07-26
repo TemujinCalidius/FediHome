@@ -20,6 +20,12 @@
  *    No `## Unreleased` heading may remain (release prep must have converted
  *    it), and the top version heading must match package.json's version.
  *
+ * Both modes also validate the `###` subsections of the section being written
+ * (Unreleased, or the release-prep section it became): each must be one of
+ * Added / Changed / Fixed / Security / Schema, appear at most once, and appear
+ * in that order (docs/releasing.md). Released sections are exempt — they're
+ * immutable, and some predate the convention.
+ *
  * Both modes validate heading syntax. Detection is CommonMark-aware: anything
  * that would RENDER as an h1/h2 (up to 3 leading spaces, space/tab after the
  * hashes) is treated as a heading and must be in canonical form —
@@ -44,6 +50,10 @@ const UNRELEASED_HEADING = "## Unreleased";
 // spaces, then the hashes, then space/tab/end-of-line.
 const H2_RENDERED = /^ {0,3}##(?:[ \t]|$)/;
 const H1_RENDERED = /^ {0,3}#(?:[ \t]|$)/;
+const H3_RENDERED = /^ {0,3}###(?:[ \t]|$)/;
+// docs/releasing.md:14. Order is meaningful: readers scan a release top-down for
+// what they gain, then what moved, then what broke.
+const SUBSECTIONS = ["Added", "Changed", "Fixed", "Security", "Schema"];
 const FENCE = /^ {0,3}(?:```|~~~)/;
 
 /** Normalize line endings and split into lines. */
@@ -65,10 +75,12 @@ function scanHeadings(lines) {
       continue;
     }
     if (inFence) continue;
-    if (H2_RENDERED.test(line)) {
-      out.push({ line, index, h1: false, h2: true, version: VERSION_HEADING.exec(line)?.[1] ?? null });
+    if (H3_RENDERED.test(line)) {
+      out.push({ line, index, h1: false, h2: false, h3: true, version: null });
+    } else if (H2_RENDERED.test(line)) {
+      out.push({ line, index, h1: false, h2: true, h3: false, version: VERSION_HEADING.exec(line)?.[1] ?? null });
     } else if (H1_RENDERED.test(line)) {
-      out.push({ line, index, h1: true, h2: false, version: null });
+      out.push({ line, index, h1: true, h2: false, h3: false, version: null });
     }
   }
   return out;
@@ -105,6 +117,54 @@ export function validateHeadings(lines) {
   const firstVersion = h2s.find((h) => h.version);
   if (unreleased.length === 1 && firstVersion && unreleased[0].index > firstVersion.index) {
     errors.push(`"## Unreleased" (line ${unreleased[0].index + 1}) must come before all version sections`);
+  }
+  return errors;
+}
+
+/**
+ * Validate the `###` subsections of ONE `##` section.
+ *
+ * Only ever applied to the section being written — the Unreleased block, or the
+ * release-prep section it just became. Released history is immutable and some of
+ * it predates the convention (1.18.0 has two `### Fixed` blocks), so validating
+ * the whole file would make the check unfixable.
+ *
+ * The rules are the ones a person merging a PR can't see: the Unreleased block
+ * grows one conflict resolution at a time, and duplicate/misordered sections are
+ * how it silently drifted before — twice, unnoticed, because this script only
+ * ever looked at `##` headings.
+ */
+export function validateSubsections(lines, sectionIndex, label) {
+  const errors = [];
+  if (sectionIndex === -1) return errors;
+  const hs = scanHeadings(lines);
+  const after = hs.filter((h) => h.index > sectionIndex);
+  const end = after.find((h) => h.h1 || h.h2)?.index ?? lines.length;
+
+  const seen = new Map();
+  let highestRank = -1;
+  for (const { line, index } of after.filter((h) => h.h3 && h.index < end)) {
+    const name = line.replace(/^ {0,3}###[ \t]*/, "").trim();
+    const rank = SUBSECTIONS.indexOf(name);
+    if (rank === -1 || line !== `### ${name}`) {
+      errors.push(
+        `line ${index + 1}: unknown subsection ${JSON.stringify(line)} in ${label} — expected exactly one of ${SUBSECTIONS.map((s) => `"### ${s}"`).join(", ")} (docs/releasing.md)`,
+      );
+      continue;
+    }
+    if (seen.has(name)) {
+      errors.push(
+        `line ${index + 1}: duplicate "### ${name}" in ${label} (already at line ${seen.get(name) + 1}) — merge the two into one section; a merge-conflict resolution usually causes this`,
+      );
+      continue;
+    }
+    seen.set(name, index);
+    if (rank < highestRank) {
+      errors.push(
+        `line ${index + 1}: "### ${name}" is out of order in ${label} — subsections must appear as ${SUBSECTIONS.join(", ")} (docs/releasing.md)`,
+      );
+    }
+    highestRank = Math.max(highestRank, rank);
   }
   return errors;
 }
@@ -176,6 +236,12 @@ export function checkDevSync(prText, mainText, pkgVersion) {
     );
   }
 
+  // The Unreleased block is the only section a normal PR writes; during release
+  // prep it has already been renamed to the version being cut, which sits above
+  // main's history and is checked below via `prefix`.
+  const unreleasedIndex = prLines.findIndex((line) => line === UNRELEASED_HEADING);
+  errors.push(...validateSubsections(prLines, unreleasedIndex, "the Unreleased block"));
+
   const prReleased = releasedBody(prLines);
   const mainReleased = releasedBody(mainLines);
 
@@ -225,6 +291,8 @@ export function checkDevSync(prText, mainText, pkgVersion) {
       errors.push(`new version section "${m[1]}" was already released on main`);
     } else if (mainTop && !semverGreater(m[1], mainTop)) {
       errors.push(`new version section "${m[1]}" isn't greater than main's latest release ${mainTop}`);
+    } else if (unreleasedIndex === -1) {
+      errors.push(...validateSubsections(prLines, firstVersionIndex(prLines), `the ${m[1]} section`));
     }
   }
   return errors;
@@ -243,6 +311,8 @@ export function checkReleaseReady(text, pkgVersion) {
       "an '## Unreleased' section is still present — run scripts/prepare-release.mjs to convert it to the release version before merging to main",
     );
   }
+  errors.push(...validateSubsections(lines, firstVersionIndex(lines), "the release section"));
+
   const top = topVersion(lines);
   if (!top) {
     errors.push("no version sections found");

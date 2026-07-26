@@ -3,7 +3,7 @@ import { authenticateApiRequest, verifyOrigin, hasScope } from "@/lib/auth";
 import { approveComment, rejectComment } from "./_actions/comments";
 import { reply, editReply, backfillReplies } from "./_actions/replies";
 import { fediDm, bskyDm, markDmRead, markAllDmsRead } from "./_actions/dms";
-import { follow, unfollow, unfollowByUri, block, unblock } from "./_actions/fedi-graph";
+import { follow, unfollow, unfollowByUri, block, unblock, blockDomain, unblockDomain } from "./_actions/fedi-graph";
 import { like, boost, unlike, unboost } from "./_actions/fedi-interactions";
 import { bskyReply, syncGraph, bskyFollow, bskyUnfollow } from "./_actions/bluesky";
 import { updateProfile } from "./_actions/profile";
@@ -24,6 +24,8 @@ const ACTION_SCOPE: Record<string, string> = {
   sync_bluesky_graph: "manage",
   block: "manage", // unfollows + deletes the actor's posts/interactions → destructive
   unblock: "manage", // reverses block: removes the record + delivers Undo Block
+  block_domain: "manage", // purges every post/interaction/relationship from a host → destructive
+  unblock_domain: "manage",
   update_profile: "manage", // edits the owner's public profile + federates actor Update
   reply: "interact",
   edit_reply: "interact",
@@ -94,6 +96,8 @@ export async function POST(req: NextRequest) {
     case "unfollow_by_uri": return unfollowByUri(body);
     case "block": return block(body);
     case "unblock": return unblock(body);
+    case "block_domain": return blockDomain(body);
+    case "unblock_domain": return unblockDomain(body);
     case "update_profile": return updateProfile(body);
     case "like": return like(body);
     case "unlike": return unlike(body);

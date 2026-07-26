@@ -5,8 +5,8 @@ import { siteConfig } from "@/../site.config";
 import { parseMentions, linkMentions, buildApMentionTags, collectMentionInboxes } from "@/lib/mentions";
 import { resolveActorInbox, originalApId } from "@/lib/fedi-resolve";
 import type { AdminBody } from "./types";
+import { getSiteUrl } from "@/lib/identity";
 
-const siteUrl = siteConfig.url;
 
 export async function reply(body: AdminBody): Promise<NextResponse> {
   // Reply to a Fedi post/comment from the admin panel
@@ -50,8 +50,8 @@ export async function reply(body: AdminBody): Promise<NextResponse> {
     : "";
   const contentHtml = `<p>${mentionHtml}${withMentions}</p>`;
 
-  const replyId = `${siteUrl}/ap/reply/${Date.now()}`;
-  const ccList = [`${siteUrl}/ap/followers`];
+  const replyId = `${getSiteUrl()}/ap/reply/${Date.now()}`;
+  const ccList = [`${getSiteUrl()}/ap/followers`];
   if (replyActorUri) ccList.push(replyActorUri);
   for (const m of replyMentions.fedi) {
     if (m.actorUri && !ccList.includes(m.actorUri)) ccList.push(m.actorUri);
@@ -67,14 +67,14 @@ export async function reply(body: AdminBody): Promise<NextResponse> {
 
   const activity = {
     "@context": "https://www.w3.org/ns/activitystreams",
-    id: `${siteUrl}/ap/create/reply-${Date.now()}`,
+    id: `${getSiteUrl()}/ap/create/reply-${Date.now()}`,
     type: "Create",
-    actor: `${siteUrl}/ap/actor`,
+    actor: `${getSiteUrl()}/ap/actor`,
     published: new Date().toISOString(),
     object: {
       type: "Note",
       id: replyId,
-      attributedTo: `${siteUrl}/ap/actor`,
+      attributedTo: `${getSiteUrl()}/ap/actor`,
       // Federated inReplyTo must be the ORIGINAL post URL, not a synthetic boost: apId.
       inReplyTo: originalApId(inReplyTo),
       content: contentHtml,
@@ -105,11 +105,11 @@ export async function reply(body: AdminBody): Promise<NextResponse> {
 
   // Store our outgoing reply so we can match incoming replies to it
   const fediHandle = siteConfig.fediHandle;
-  const siteDomain = new URL(siteUrl).hostname;
+  const siteDomain = new URL(getSiteUrl()).hostname;
   await prisma.fediPost.upsert({
     where: { apId: replyId },
     create: {
-      actorUri: `${siteUrl}/ap/actor`,
+      actorUri: `${getSiteUrl()}/ap/actor`,
       apId: replyId,
       content: bodyText,
       contentHtml,
@@ -191,20 +191,20 @@ export async function editReply(body: AdminBody): Promise<NextResponse> {
   const editMentionActors = editMentions.fedi
     .filter((m) => !!m.actorUri)
     .map((m) => m.actorUri!);
-  const ccList = [`${siteUrl}/ap/followers`, ...editMentionActors];
+  const ccList = [`${getSiteUrl()}/ap/followers`, ...editMentionActors];
   const editTags = buildApMentionTags(editMentions);
   const updateActivity = {
     "@context": "https://www.w3.org/ns/activitystreams",
-    id: `${siteUrl}/ap/update/reply-${existingReply.id}/${Date.now()}`,
+    id: `${getSiteUrl()}/ap/update/reply-${existingReply.id}/${Date.now()}`,
     type: "Update",
-    actor: `${siteUrl}/ap/actor`,
+    actor: `${getSiteUrl()}/ap/actor`,
     published: now.toISOString(),
     to: ["https://www.w3.org/ns/activitystreams#Public"],
     cc: ccList,
     object: {
       type: "Note",
       id: existingReply.apId,
-      attributedTo: `${siteUrl}/ap/actor`,
+      attributedTo: `${getSiteUrl()}/ap/actor`,
       inReplyTo: existingReply.inReplyTo,
       content: newContentHtml,
       published: existingReply.publishedAt.toISOString(),

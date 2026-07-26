@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { deliverToFollowers } from "@/lib/http-signatures";
-import { siteConfig } from "@/../site.config";
 import type { AdminBody } from "./types";
+import { getSiteUrl } from "@/lib/identity";
 
-const siteUrl = siteConfig.url;
 
 export async function approveComment(body: AdminBody): Promise<NextResponse> {
   const { commentId } = body;
@@ -20,30 +19,30 @@ export async function approveComment(body: AdminBody): Promise<NextResponse> {
   // Bridge to Fediverse — publish as reply from our actor
   const targetApId = comment.post?.apId || comment.photo?.apId;
   if (targetApId) {
-    const noteId = `${siteUrl}/ap/comment/${comment.id}`;
+    const noteId = `${getSiteUrl()}/ap/comment/${comment.id}`;
     // H3: HTML-escape guest-supplied content before embedding it in the
     // federated Note. Receivers re-sanitize, but unsanitized HTML on the
     // wire is still a stored-XSS waiting to happen on small fedi servers
     // and on our own site if rendering paths change.
     const escape = (s: string) =>
       s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    const noteContent = `<p><strong>${escape(comment.guestName)}</strong> (via ${escape(new URL(siteUrl).hostname)}):</p><p>${escape(comment.content)}</p>`;
+    const noteContent = `<p><strong>${escape(comment.guestName)}</strong> (via ${escape(new URL(getSiteUrl()).hostname)}):</p><p>${escape(comment.content)}</p>`;
 
     const activity = {
       "@context": "https://www.w3.org/ns/activitystreams",
-      id: `${siteUrl}/ap/create/${comment.id}`,
+      id: `${getSiteUrl()}/ap/create/${comment.id}`,
       type: "Create",
-      actor: `${siteUrl}/ap/actor`,
+      actor: `${getSiteUrl()}/ap/actor`,
       published: new Date().toISOString(),
       object: {
         type: "Note",
         id: noteId,
-        attributedTo: `${siteUrl}/ap/actor`,
+        attributedTo: `${getSiteUrl()}/ap/actor`,
         inReplyTo: targetApId,
         content: noteContent,
         published: new Date().toISOString(),
         to: ["https://www.w3.org/ns/activitystreams#Public"],
-        cc: [`${siteUrl}/ap/followers`],
+        cc: [`${getSiteUrl()}/ap/followers`],
       },
     };
 

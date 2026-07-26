@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
 
 const { deliverToFollowers, getActorProfile, getRuntimeProfile, invalidateProfileCache } = vi.hoisted(() => ({
   deliverToFollowers: vi.fn(),
@@ -9,13 +9,21 @@ const { deliverToFollowers, getActorProfile, getRuntimeProfile, invalidateProfil
 vi.mock("@/lib/http-signatures", () => ({ deliverToFollowers }));
 vi.mock("@/lib/federation", () => ({ getActorProfile }));
 vi.mock("@/lib/site-profile", () => ({ getRuntimeProfile, invalidateProfileCache }));
-vi.mock("@/../site.config", () => ({ siteConfig: { url: "https://demo.example" } }));
 vi.mock("@/lib/db", () => ({ prisma: { siteSettings: { upsert: vi.fn() } } }));
 
 import { updateProfile } from "@/app/api/admin/_actions/profile";
 import { prisma } from "@/lib/db";
 
+// Identity resolves from the env through src/lib/identity (#326), not from a
+// stubbed site.config — so set the real variable the accessor reads.
+const OLD_SITE_URL = process.env.SITE_URL;
+afterAll(() => {
+  if (OLD_SITE_URL === undefined) delete process.env.SITE_URL;
+  else process.env.SITE_URL = OLD_SITE_URL;
+});
+
 beforeEach(() => {
+  process.env.SITE_URL = "https://demo.example";
   vi.clearAllMocks();
   deliverToFollowers.mockResolvedValue(undefined);
   getActorProfile.mockResolvedValue({ type: "Person", name: "New" });

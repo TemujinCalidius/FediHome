@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { deliverActivity, verifyIncomingSignature, actorMatchesSigner } from "@/lib/http-signatures";
+import { deliverActivity, verifyIncomingSignature, actorMatchesSigner, signedGet } from "@/lib/http-signatures";
 import { processAttachments, fetchLinkEmbed } from "@/lib/fedi-media";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { assertPublicHost } from "@/lib/url-guard";
 import { sendPushToOwner } from "@/lib/push";
 import { resolveOwnedTarget } from "@/lib/notifications";
 import { htmlToText } from "@/lib/html-text";
+import { getSiteUrl } from "@/lib/identity";
+import { isBlockedSender } from "@/lib/blocks";
 
-const siteUrl = process.env.SITE_URL || "http://localhost:3000";
 const ACTOR_FETCH_TIMEOUT_MS = 8000;
 const DEBUG = process.env.FEDIHOME_DEBUG === "true";
 
@@ -65,6 +66,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "keyId/actor mismatch" }, { status: 401 });
   }
 
+  // Blocked senders are dropped here, after the signature is verified (so the
+  // actor is proven) and before ANY handler runs. Blocking used to be a one-shot
+  // purge that nothing re-checked, so a blocked account could simply re-follow,
+  // re-like and reply again. Returns the usual 202 rather than an error, so the
+  // block stays invisible to the sender — see lib/blocks.ts.
+  if (await isBlockedSender(actorUri)) {
+    if (DEBUG) console.log(`AP inbox: dropped ${type} from blocked ${encodeURIComponent(actorUri)}`);
+    return new NextResponse(null, { status: 202 });
+  }
+
   // L1: encode actorUri before logging to prevent log-injection via newlines
   if (DEBUG) console.log(`AP inbox: ${type} from ${encodeURIComponent(actorUri)}`);
 
@@ -119,6 +130,13 @@ export async function POST(req: NextRequest) {
 
     case "Accept":
       // Our follow request was accepted
+      break;
+
+    case "Move":
+      // Someone we follow migrated servers (#339). Without this the Move is
+      // ignored, our follow stays pointed at the dead account, and their posts
+      // simply stop arriving with nothing to explain why.
+      await handleMove(actorUri, activity);
       break;
 
     default:
@@ -189,9 +207,9 @@ async function handleFollow(actorUri: string, activity: Record<string, unknown>)
   try {
     await deliverActivity(info.inbox, {
       "@context": "https://www.w3.org/ns/activitystreams",
-      id: `${siteUrl}/ap/accept/${Date.now()}`,
+      id: `${getSiteUrl()}/ap/accept/${Date.now()}`,
       type: "Accept",
-      actor: `${siteUrl}/ap/actor`,
+      actor: `${getSiteUrl()}/ap/actor`,
       object: activity,
     });
   } catch (err) {
@@ -201,6 +219,144 @@ async function handleFollow(actorUri: string, activity: Record<string, unknown>)
 
 async function handleUnfollow(actorUri: string) {
   await prisma.fediFollower.delete({ where: { actorUri } }).catch(() => {});
+}
+
+/**
+ * Strip trailing slashes without a regex.
+ *
+ * `/\/+$/` looks harmless but backtracks quadratically on a long run of slashes
+ * followed by anything else — and these strings come straight out of a REMOTE
+ * actor document, so a hostile server could send 100KB of slashes and burn CPU
+ * in our inbox. Caught by CodeQL (js/polynomial-redos). A character scan is O(n)
+ * and cannot backtrack.
+ */
+function stripTrailingSlashes(s: string): string {
+  let end = s.length;
+  while (end > 0 && s.charCodeAt(end - 1) === 47 /* "/" */) end--;
+  return s.slice(0, end);
+}
+
+/** Compare actor ids the way a remote server does — exact, bar a trailing slash. */
+function sameActor(a: string, b: string): boolean {
+  return stripTrailingSlashes(a) === stripTrailingSlashes(b);
+}
+
+/**
+ * Fetch an actor for Move verification, including `alsoKnownAs`.
+ *
+ * Uses `signedGet`, unlike `fetchActorInfo`: an instance running authorized
+ * fetch (Mastodon's secure mode) answers an unsigned actor request with 401,
+ * and silently failing to verify would mean silently refusing every move from
+ * such a server.
+ */
+async function fetchActorForMove(actorUri: string) {
+  if (!(await assertPublicHost(actorUri))) return null;
+  try {
+    const res = await signedGet(actorUri, ACTOR_FETCH_TIMEOUT_MS);
+    if (!res.ok) return null;
+    const actor = await res.json();
+    const aka = actor.alsoKnownAs;
+    return {
+      inbox: typeof actor.inbox === "string" ? actor.inbox : null,
+      username: actor.preferredUsername || "unknown",
+      domain: new URL(actorUri).hostname,
+      displayName: actor.name || null,
+      avatarUrl: actor.icon?.url || null,
+      alsoKnownAs: (Array.isArray(aka) ? aka : aka ? [aka] : []).filter(
+        (v: unknown): v is string => typeof v === "string",
+      ),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * An account we follow moved to a new server.
+ *
+ * The verification is the entire point. The HTTP signature already proves the
+ * OLD account sent this. What it does not prove is that the NEW account agrees —
+ * so without checking that the target's `alsoKnownAs` names the origin, a `Move`
+ * is an account-hijack primitive: anyone could redirect a follow they don't own
+ * to an account they control. Both ends must agree, exactly as Mastodon requires.
+ */
+async function handleMove(originActorUri: string, activity: Record<string, unknown>) {
+  const target =
+    typeof activity.target === "string"
+      ? activity.target
+      : ((activity.target as Record<string, unknown>)?.id as string | undefined);
+  if (!target || typeof target !== "string") return;
+  if (sameActor(target, originActorUri)) return; // a move to itself is meaningless
+
+  // Only relevant if we actually follow the origin. This also makes redelivery
+  // idempotent for free: after a successful move the origin row is gone, so a
+  // repeat Move finds nothing and stops here.
+  const existing = await prisma.fediFollowing.findUnique({ where: { actorUri: originActorUri } });
+  if (!existing) return;
+
+  const targetActor = await fetchActorForMove(target);
+  if (!targetActor?.inbox) return;
+
+  // THE check: the destination must claim the origin as one of its own aliases.
+  if (!targetActor.alsoKnownAs.some((alias) => sameActor(alias, originActorUri))) {
+    console.warn(
+      `AP inbox: refused Move ${encodeURIComponent(originActorUri)} -> ${encodeURIComponent(target)} — target does not list it in alsoKnownAs`,
+    );
+    return;
+  }
+
+  // Re-point the follow. Upsert rather than create: we may already follow the
+  // destination independently, in which case this just refreshes it.
+  await prisma.fediFollowing.upsert({
+    where: { actorUri: target },
+    create: {
+      actorUri: target,
+      inbox: targetActor.inbox,
+      username: targetActor.username,
+      domain: targetActor.domain,
+      displayName: targetActor.displayName,
+      avatarUrl: targetActor.avatarUrl,
+    },
+    update: {
+      inbox: targetActor.inbox,
+      displayName: targetActor.displayName,
+      avatarUrl: targetActor.avatarUrl,
+    },
+  });
+  await prisma.fediFollowing.delete({ where: { actorUri: originActorUri } }).catch(() => {});
+
+  // Tell both servers, best-effort. The new one needs a Follow to start
+  // delivering; the old one gets an Undo so it stops.
+  const followId = `${getSiteUrl()}/ap/follow/${encodeURIComponent(target)}`;
+  await deliverActivity(targetActor.inbox, {
+    "@context": "https://www.w3.org/ns/activitystreams",
+    id: followId,
+    type: "Follow",
+    actor: `${getSiteUrl()}/ap/actor`,
+    object: target,
+  }).catch(() => {});
+  if (existing.inbox) {
+    await deliverActivity(existing.inbox, {
+      "@context": "https://www.w3.org/ns/activitystreams",
+      id: `${getSiteUrl()}/ap/undo/${encodeURIComponent(originActorUri)}`,
+      type: "Undo",
+      actor: `${getSiteUrl()}/ap/actor`,
+      object: {
+        type: "Follow",
+        actor: `${getSiteUrl()}/ap/actor`,
+        object: originActorUri,
+      },
+    }).catch(() => {});
+  }
+
+  const label = targetActor.displayName || `@${targetActor.username}@${targetActor.domain}`;
+  void sendPushToOwner({
+    title: "Someone you follow moved",
+    body: `${existing.displayName || `@${existing.username}@${existing.domain}`} is now ${label} — your follow moved with them.`,
+    url: "/timeline",
+    type: "move",
+    icon: targetActor.avatarUrl || undefined,
+  }).catch(() => {});
 }
 
 async function handleLike(actorUri: string, activity: Record<string, unknown>) {
@@ -399,6 +555,15 @@ async function handleBoost(actorUri: string, activity: Record<string, unknown>) 
     const originalActorUri = typeof note.attributedTo === "string"
       ? note.attributedTo
       : note.attributedTo?.id;
+
+    // The block check at the top of the inbox only covers the SENDER — here
+    // that's the booster, who isn't blocked. Without this, someone you follow
+    // boosting a blocked person's post puts that person's content, name and
+    // avatar straight back into your feed, under their own actorUri. Blocking
+    // purges their posts, so silently re-creating them is exactly the
+    // "one-shot purge, not a block" failure this is all meant to close.
+    if (originalActorUri && (await isBlockedSender(originalActorUri))) return;
+
     const originalInfo = originalActorUri ? await fetchActorInfo(originalActorUri) : null;
 
     const boostTitle = typeof note.name === "string" ? note.name.trim() : "";
@@ -571,7 +736,7 @@ async function handleNote(actorUri: string, note: Record<string, unknown>) {
   const toList = Array.isArray(note.to) ? note.to as string[] : [note.to as string].filter(Boolean);
   const ccList = Array.isArray(note.cc) ? note.cc as string[] : [note.cc as string].filter(Boolean);
   const isPublic = [...toList, ...ccList].includes("https://www.w3.org/ns/activitystreams#Public");
-  const isDirectToUs = toList.includes(`${siteUrl}/ap/actor`) && !isPublic;
+  const isDirectToUs = toList.includes(`${getSiteUrl()}/ap/actor`) && !isPublic;
 
   if (isDirectToUs) {
     // Store as a direct message

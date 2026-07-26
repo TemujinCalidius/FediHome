@@ -1,7 +1,13 @@
 import { describe, it, expect } from "vitest";
 // The CI guard + release-prep logic live in dependency-free .mjs scripts so the
 // workflow can run them without npm ci; tested here from the same source.
-import { checkDevSync, checkReleaseReady, validateHeadings, toLines } from "../../../scripts/check-changelog-sync.mjs";
+import {
+  checkDevSync,
+  checkReleaseReady,
+  validateHeadings,
+  validateSubsections,
+  toLines,
+} from "../../../scripts/check-changelog-sync.mjs";
 import { bumpVersion, convertUnreleased } from "../../../scripts/prepare-release.mjs";
 
 const MAIN = `# Changelog
@@ -180,5 +186,84 @@ describe("prepare-release", () => {
     expect(() => convertUnreleased(MAIN, "1.8.0", "2026-07-03")).toThrow(/no '## Unreleased'/);
     const empty = "# Changelog\n\n## Unreleased\n\n" + MAIN.split("\n").slice(2).join("\n");
     expect(() => convertUnreleased(empty, "1.8.0", "2026-07-03")).toThrow(/empty/);
+  });
+});
+
+describe("check-changelog-sync: subsection validation", () => {
+  // This is the case that actually happened: the Unreleased block grew two
+  // separate `### Added` sections over a session of merge-conflict resolutions,
+  // with headings out of order — and CI passed every time, because the script
+  // only ever looked at `##` headings.
+  const withUnreleased = (body: string) => `# Changelog
+
+## Unreleased
+
+${body}
+${MAIN.split("\n").slice(2).join("\n")}`;
+
+  const devErrors = (body: string) => checkDevSync(withUnreleased(body), MAIN, "1.7.0");
+
+  it("catches a duplicated subsection", () => {
+    const errors = devErrors("### Added\n- One.\n\n### Added\n- Two.\n");
+    expect(errors.join(" ")).toMatch(/duplicate "### Added"/);
+  });
+
+  it("catches subsections in the wrong order", () => {
+    const errors = devErrors("### Fixed\n- A bug.\n\n### Added\n- A feature.\n");
+    expect(errors.join(" ")).toMatch(/"### Added" is out of order/);
+  });
+
+  it("catches an invented subsection name", () => {
+    const errors = devErrors("### Improvements\n- Something.\n");
+    expect(errors.join(" ")).toMatch(/unknown subsection/);
+  });
+
+  it("accepts the documented order, and gaps in it", () => {
+    expect(devErrors("### Added\n- A.\n\n### Fixed\n- B.\n\n### Schema\n- C.\n")).toEqual([]);
+    expect(devErrors("### Security\n- Only one.\n")).toEqual([]);
+  });
+
+  it("exempts released history, which is immutable and predates the convention", () => {
+    // 1.18.0 really does have two `### Fixed` blocks. Validating the whole file
+    // would make the check unfixable without editing frozen history.
+    const legacy = `# Changelog
+
+## 1.7.0 (2026-07-01)
+
+### Fixed
+- One.
+
+### Added
+- Two.
+
+### Fixed
+- Three.
+`;
+    expect(checkDevSync(legacy, legacy, "1.7.0")).toEqual([]);
+  });
+
+  it("checks the release-prep section once Unreleased has been renamed", () => {
+    const prepped = `# Changelog
+
+## 1.8.0 (2026-07-02)
+
+### Fixed
+- A bug.
+
+### Added
+- A feature.
+
+${MAIN.split("\n").slice(2).join("\n")}`;
+    expect(checkDevSync(prepped, MAIN, "1.8.0").join(" ")).toMatch(/out of order/);
+    expect(checkReleaseReady(prepped, "1.8.0").join(" ")).toMatch(/out of order/);
+  });
+
+  it("ignores subsection-lookalikes inside fenced code", () => {
+    const errors = devErrors("### Added\n- A.\n\n```md\n### Added\n### Nonsense\n```\n");
+    expect(errors).toEqual([]);
+  });
+
+  it("is a no-op when there is no such section", () => {
+    expect(validateSubsections(toLines(MAIN), -1, "nothing")).toEqual([]);
   });
 });

@@ -4,6 +4,7 @@ import { readFile } from "fs/promises";
 import path from "path";
 import nodemailer from "nodemailer";
 import { isPrivateUrl } from "./url-guard";
+import { getSiteUrl } from "./identity";
 
 export interface CrosspostImage {
   url: string; // full URL or local path
@@ -327,7 +328,7 @@ export async function crosspostToDayOne(
     });
 
     // Build email body: markdown content + link footer
-    const siteHost = new URL(process.env.SITE_URL || "http://localhost:3000").hostname;
+    const siteHost = new URL(getSiteUrl()).hostname;
     const body = `${content}\n\n---\n[View on ${siteHost}](${url})`;
 
     // Build attachments from local image paths
@@ -364,7 +365,7 @@ export async function crosspostToDayOne(
  * and ship it to Bluesky as a "photo".
  */
 function urlToLocalPath(url: string): string | null {
-  const siteUrl = process.env.SITE_URL || "http://localhost:3000";
+  const siteUrl = getSiteUrl();
   let relativePath: string | null = null;
   if (url.startsWith(siteUrl + "/uploads/")) {
     relativePath = url.slice(siteUrl.length);

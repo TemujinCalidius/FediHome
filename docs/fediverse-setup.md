@@ -23,6 +23,101 @@ This is set by two environment variables in `.env.local`:
 
 Together, these form `@sam@samcorner.com`. This is what people type into Mastodon's search bar to find and follow you.
 
+## Moving Here From Another Account
+
+Coming to FediHome from Mastodon (or anywhere else that speaks ActivityPub)?
+You can bring your **followers** with you.
+
+The network verifies a move from both ends, so the order matters:
+
+1. **On FediHome**, go to **Admin → Site settings → Moving here from another
+   account** and add your old profile address (e.g.
+   `https://mastodon.social/users/you`). This publishes it as an `alsoKnownAs`
+   alias on your actor — it's how the other server confirms the two accounts are
+   really the same person.
+2. **On the old account**, start the move (on Mastodon: **Preferences → Account →
+   Moving to a different account**) and give it your FediHome address.
+3. Their server sends a `Move` to everyone following you. Each of those servers
+   fetches *your FediHome actor*, checks that the alias from step 1 names the old
+   account, and only then re-points the follow.
+
+**Keep the old account online.** The verification in step 3 fetches both ends, so
+if the old server is gone the move can't be checked and nothing happens. Give it
+weeks, not hours.
+
+**Only followers move.** Your posts, the list of people *you* follow, and any
+blocks or mutes stay behind — export and re-import those separately. Mastodon
+also enforces a 30-day cooldown between moves, and a move can't be undone.
+
+## Changing Your Domain
+
+**Choose your domain before you federate, and treat it as permanent.**
+
+In ActivityPub there is no rename. Your identity is your **actor id** — a URL
+built from `SITE_URL`, like `https://samcorner.com/ap/actor`. Every remote server
+that has ever seen you stores *that URL*, along with the public key it fetched
+from it. Change the domain and, as far as the network is concerned, the old
+account simply stopped existing and an unrelated new one appeared. Your followers
+stay attached to an address that no longer answers.
+
+### How the network handles a move
+
+Mastodon (and micro.blog, and others) solve this with a two-sided handshake:
+
+1. On the **new** account you add an **alias** — `alsoKnownAs` — pointing at the
+   old actor URL.
+2. From the **old** account you publish a **`Move`** activity and set `movedTo`
+   on the old actor.
+3. Each remote server that receives the `Move` **fetches the old actor to verify
+   it, then fetches the new one and checks that its `alsoKnownAs` names the old
+   address.** Only if both agree does it move the follow across.
+
+Step 3 is the part that catches people out: **the old domain has to still be
+serving** while followers migrate. A `Move` published from a domain you no longer
+control cannot be verified, so nothing moves. Lose the domain first and your
+followers are simply gone — you keep the list of accounts *you* follow, because
+that lives in your own database, but the people following *you* cannot be
+brought across by any later action.
+
+Even done correctly, migration is best-effort: servers that are down during the
+move, or that don't implement `Move`, will keep pointing at the old address.
+
+### What this means for FediHome today
+
+FediHome implements the **arriving** half — you can publish an `alsoKnownAs`
+alias (see [Moving Here From Another Account](#moving-here-from-another-account)),
+so someone can move *to* a FediHome from elsewhere and bring their followers.
+
+FediHome also **follows accounts that move away**: if someone you follow migrates
+to another server, their `Move` is verified and your follow is re-pointed
+automatically, and you get a notification saying so.
+
+The **leaving** half — setting `movedTo` and publishing a `Move` to your own
+followers — is **not implemented yet** (tracked in #347). So today there's still
+no supported way to carry your own followers to a new domain, which makes the
+advice above a hard rule rather than a recommendation.
+
+If you must move, the shape that works with the grain of the protocol is:
+
+1. Stand up a **new instance on the new domain**, running alongside the old one.
+2. Migrate your content to it (a database restore keeps your posts and your
+   following list).
+3. Publish the move from the old instance, and **leave the old server running**
+   for a good while — weeks, not hours — so every remote server gets a chance to
+   verify and follow the redirect.
+4. Only then decommission the old domain.
+
+Note that **post URLs are stored absolutely**: a post published at
+`https://old.example/post/hello` keeps that URL in the database. A restore onto a
+new domain carries those old URLs with it, so links and federated copies of older
+posts still point at the old host. That is another reason to keep the old domain
+alive rather than cutting it over.
+
+And it's why setting up against `localhost` or a private address matters: the
+setup wizard makes you confirm it explicitly, because an identity nobody can
+reach gets written into your actor *and* into every post you publish before you
+move.
+
 ## DNS Requirements
 
 For federation to work, your domain must:

@@ -3,6 +3,7 @@ import { prisma } from "./db";
 import { buildPostObject } from "./ap-post";
 import { deliverToFollowers } from "./http-signatures";
 import { crosspostToBluesky, crosspostToThreads } from "./crosspost";
+import { getSiteUrl } from "./identity";
 
 const DEBUG = process.env.FEDIHOME_DEBUG === "true";
 
@@ -27,7 +28,7 @@ const RETRY_GRACE_MS = 10 * 60_000;
  * compose path already persisted blueskyUri; the scheduler path didn't).
  */
 export async function publishPost(post: Post): Promise<void> {
-  const siteUrl = process.env.SITE_URL || "http://localhost:3000";
+  const siteUrl = getSiteUrl();
 
   // Federate the post via ActivityPub.
   const activity = {

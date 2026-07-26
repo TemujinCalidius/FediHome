@@ -7,6 +7,9 @@ import { verifyAdmin } from "@/lib/auth";
 import { applySiteConfig } from "@/lib/site-settings";
 import { verifySetupToken } from "@/lib/setup-token";
 import { validateImagePath } from "@/lib/media";
+import { getConfiguredSiteUrl } from "@/lib/identity";
+// Shared with the boot guard and the wizard UI, so all three enforce one rule set (#357).
+import { isLocalOrPrivateHost } from "@/lib/public-host";
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
@@ -69,7 +72,7 @@ function validateField(name: string, value: unknown): string {
  * real host, no credentials, no path/query/fragment. Returns the normalized
  * origin (trailing slash dropped) plus the host used for `FEDI_DOMAIN`.
  */
-function validateSiteUrl(raw: unknown): { siteUrl: string; host: string } {
+function validateSiteUrl(raw: unknown, allowLocal = false): { siteUrl: string; host: string } {
   const value = validateField("siteUrl", raw).trim();
   if (!value) throw new SetupValidationError("siteUrl is required");
   let u: URL;
@@ -85,6 +88,13 @@ function validateSiteUrl(raw: unknown): { siteUrl: string; host: string } {
   if (u.username || u.password) throw new SetupValidationError("siteUrl must not contain credentials");
   if ((u.pathname && u.pathname !== "/") || u.search || u.hash) {
     throw new SetupValidationError("siteUrl must be a bare origin — no path, query or fragment");
+  }
+  if (!allowLocal && isLocalOrPrivateHost(u.hostname)) {
+    throw new SetupValidationError(
+      `"${u.host}" can't be reached from the Fediverse, so this address would become an identity nobody can follow — ` +
+        "and it gets written into every post you publish before you move. Use your real public domain, " +
+        "or confirm you're only testing locally to continue anyway.",
+    );
   }
   return { siteUrl: u.origin, host: u.host };
 }
@@ -159,7 +169,8 @@ export async function POST(request: Request) {
     // Prefer the value the wizard submitted (correct protocol AND port), then any
     // configured SITE_URL, then the request origin.
     const { siteUrl, host: fediDomain } = validateSiteUrl(
-      body.siteUrl || process.env.SITE_URL || new URL(request.url).origin
+      body.siteUrl || getConfiguredSiteUrl() || new URL(request.url).origin,
+      body.allowLocalIdentity === true,
     );
 
     // Build .env.local content. All field values were validated above to

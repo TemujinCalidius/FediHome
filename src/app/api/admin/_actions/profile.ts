@@ -4,10 +4,9 @@ import { deliverToFollowers } from "@/lib/http-signatures";
 import { getActorProfile } from "@/lib/federation";
 import { getRuntimeProfile, invalidateProfileCache } from "@/lib/site-profile";
 import { isThemeId } from "@/lib/themes";
-import { siteConfig } from "@/../site.config";
 import type { AdminBody } from "./types";
+import { getSiteUrl } from "@/lib/identity";
 
-const siteUrl = siteConfig.url;
 
 const MAX_TEXT = 500;
 // Same characters the setup wizard forbids in .env values — even though these
@@ -32,7 +31,7 @@ function textField(name: string, value: unknown): string {
 function imagePath(name: string, value: unknown): string {
   if (typeof value !== "string") throw new Error(`${name} must be a string`);
   let path = value.trim();
-  if (path.startsWith(siteUrl)) path = path.slice(siteUrl.length); // strip our own origin
+  if (path.startsWith(getSiteUrl())) path = path.slice(getSiteUrl().length); // strip our own origin
   if (!IMAGE_PATH_RE.test(path) || path.includes("..")) {
     throw new Error(`${name} must be an uploaded image path (/uploads/… or /images/…)`);
   }
@@ -112,9 +111,9 @@ export async function updateProfile(body: AdminBody): Promise<NextResponse> {
     const actor = await getActorProfile();
     void deliverToFollowers({
       "@context": "https://www.w3.org/ns/activitystreams",
-      id: `${siteUrl}/ap/actor#update-${Date.now()}`,
+      id: `${getSiteUrl()}/ap/actor#update-${Date.now()}`,
       type: "Update",
-      actor: `${siteUrl}/ap/actor`,
+      actor: `${getSiteUrl()}/ap/actor`,
       to: ["https://www.w3.org/ns/activitystreams#Public"],
       object: actor,
     }).catch((err) => console.error("Failed to federate profile update:", err));
@@ -130,8 +129,8 @@ export async function updateProfile(body: AdminBody): Promise<NextResponse> {
       summary: profile.actorSummary,
       accentColor: profile.accentColor,
       themeAccents: profile.themeAccents,
-      avatar: `${siteUrl}${profile.avatarPath}`,
-      banner: `${siteUrl}${profile.bannerPath}`,
+      avatar: `${getSiteUrl()}${profile.avatarPath}`,
+      banner: `${getSiteUrl()}${profile.bannerPath}`,
     },
   });
 }
