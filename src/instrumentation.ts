@@ -28,6 +28,12 @@ export async function register() {
     // Diagnostic, not a gate — fire-and-forget so it can never delay or fail a
     // boot. Catches the silent case where ADMIN_SECRET changed and every stored
     // credential became unreadable (#359).
+    // Consume ADMIN_PASSWORD once, if provisioning supplied one (#356). Awaited
+    // so a scripted install can log in on its very first request rather than
+    // racing the boot.
+    const { consumeInitialPassword } = await import("@/lib/password");
+    await consumeInitialPassword();
+
     const { checkStoredCredentials } = await import("@/lib/secret-health");
     void checkStoredCredentials();
 

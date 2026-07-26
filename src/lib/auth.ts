@@ -22,9 +22,13 @@ export function safeCompare(a: string, b: string): boolean {
  * INVARIANT: never pass a human-chosen/low-entropy secret to this. The owner's
  * `ADMIN_SECRET` is never hashed (it's compared with timingSafeEqual, and is
  * itself a 64–128-hex random value); admin session ids are random + HMAC-bound.
- * If a memorable password is ever introduced, hash it with scrypt/argon2, not
- * this. (CodeQL js/insufficient-password-hash flags the sha256 call — a false
- * positive under this invariant; alert #30 dismissed accordingly.)
+ *
+ * A memorable password now EXISTS as of #356 — and it deliberately does not come
+ * anywhere near this function. It is scrypt-hashed in `lib/password.ts`, exactly
+ * as the earlier version of this comment instructed. So the invariant is intact
+ * and CodeQL alert #30 stays a false positive; the condition it anticipated
+ * arrived and was handled, rather than quietly violated. Anyone adding a new
+ * credential path: if a human chooses it, it belongs in `password.ts`, not here.
  */
 export function hashToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
