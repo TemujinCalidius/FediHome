@@ -68,6 +68,56 @@ export default function SiteSettingsClient({
   const [aliasText, setAliasText] = useState(aliases.join("\n"));
   const [aliasSaved, setAliasSaved] = useState<string[]>(aliases);
   const [aliasBusy, setAliasBusy] = useState(false);
+  // Admin password (#356) — its own route; the hash never round-trips through
+  // the plaintext site-config save.
+  const [pwHas, setPwHas] = useState<boolean | null>(null);
+  const [pwCurrent, setPwCurrent] = useState("");
+  const [pwNext, setPwNext] = useState("");
+  const [pwConfirm, setPwConfirm] = useState("");
+  const [pwBusy, setPwBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/admin/password")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (!cancelled && d) setPwHas(!!d.hasPassword); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  async function savePassword(): Promise<void> {
+    if (pwNext !== pwConfirm) {
+      setResult({ ok: false, msg: "Those two passwords don't match." });
+      return;
+    }
+    setPwBusy(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/admin/password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentPassword: pwCurrent, newPassword: pwNext }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setResult({ ok: false, msg: data?.error || "Couldn't change the password." });
+        return;
+      }
+      setPwHas(true);
+      setPwCurrent(""); setPwNext(""); setPwConfirm("");
+      const n = data?.otherSessionsRevoked ?? 0;
+      setResult({
+        ok: true,
+        msg: n > 0
+          ? `Password updated. ${n} other session${n === 1 ? "" : "s"} signed out.`
+          : "Password updated.",
+      });
+    } catch {
+      setResult({ ok: false, msg: "Couldn't reach the server — nothing was changed." });
+    } finally {
+      setPwBusy(false);
+    }
+  }
 
   async function saveAliases(): Promise<void> {
     setAliasBusy(true);
@@ -860,6 +910,49 @@ export default function SiteSettingsClient({
         </>)}
 
         {section("Security", <>
+          <div className="rounded-lg border border-surface-700 p-3 flex flex-col gap-2">
+            <p className="text-xs font-semibold text-content m-0">
+              {pwHas === false ? "Choose a password" : "Change your password"}
+            </p>
+            {pwHas === false && (
+              <p className="text-xs text-amber-400/90 m-0">
+                You&apos;re still signing in with <code>ADMIN_SECRET</code> — a 64-character
+                key that was never meant to be typed. Pick a real password; your saved
+                connections are unaffected.
+              </p>
+            )}
+            <p className="text-xs text-gray-600 m-0">
+              Separate from <code>ADMIN_SECRET</code>, so changing it is safe: your saved
+              Bluesky, Threads, analytics and notification credentials keep working.
+              Other signed-in devices are signed out.
+            </p>
+            <input
+              type="password" autoComplete="current-password"
+              placeholder={pwHas === false ? "Current ADMIN_SECRET" : "Current password"}
+              value={pwCurrent} onChange={(e) => setPwCurrent(e.target.value)}
+              className="bg-surface-800 border border-surface-700 rounded-md px-2 py-1.5 text-sm text-white"
+            />
+            <input
+              type="password" autoComplete="new-password" placeholder="New password (min 12 characters)"
+              value={pwNext} onChange={(e) => setPwNext(e.target.value)}
+              className="bg-surface-800 border border-surface-700 rounded-md px-2 py-1.5 text-sm text-white"
+            />
+            <input
+              type="password" autoComplete="new-password" placeholder="Confirm new password"
+              value={pwConfirm} onChange={(e) => setPwConfirm(e.target.value)}
+              className="bg-surface-800 border border-surface-700 rounded-md px-2 py-1.5 text-sm text-white"
+            />
+            <div>
+              <button
+                type="button" onClick={savePassword}
+                disabled={pwBusy || !pwCurrent || pwNext.length < 12 || !pwConfirm}
+                className="btn-primary text-xs disabled:opacity-50"
+              >
+                {pwBusy ? "Saving…" : pwHas === false ? "Set password" : "Change password"}
+              </button>
+            </div>
+          </div>
+
           <p className="text-xs text-gray-600 m-0">
             Session and token lifetimes, in days. Changes apply to <strong>newly-created</strong> sessions and
             tokens only — existing ones keep their original expiry.

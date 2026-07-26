@@ -112,6 +112,28 @@ Some settings are stored in the database (`SiteSettings` table) and managed thro
 
 Changes made in the admin panel are saved to the database and take effect immediately without restarting the server.
 
+## Your Admin Password
+
+Your password and `ADMIN_SECRET` are **two different things**, and it matters:
+
+| | What it is | Can you change it? |
+|---|---|---|
+| **Password** | What you type to sign in. Stored hashed (scrypt) in the database. | **Yes, freely** — in **Admin → Site settings → Security** |
+| **`ADMIN_SECRET`** | The key that signs your session and encrypts saved credentials. Never typed. | It shouldn't need to — and changing it makes saved credentials unreadable |
+
+Changing your password is safe: your Bluesky app password, Threads token,
+analytics key and push-notification key all keep working, because none of them
+are encrypted with your password. Other signed-in devices are signed out, which
+is what you want if you're changing it because a device went missing.
+
+**Upgrading an existing install?** Nothing breaks. Sign in with `ADMIN_SECRET`
+exactly as before, and you'll be prompted to choose a real password. After that
+the secret goes back to being key material you never type.
+
+**Scripted or hosted installs** can set `ADMIN_PASSWORD` in the environment — it's
+consumed once on first boot and then ignored, so you can remove it afterwards.
+Minimum 12 characters.
+
 ## Blocking People and Servers
 
 Everything here is **local and private**. Nothing is sent to the person or server

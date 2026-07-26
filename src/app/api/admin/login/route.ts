@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { safeCompare, createAdminSession } from "@/lib/auth";
+import { getPasswordHash, verifyPassword } from "@/lib/password";
 import { rateLimitKey } from "@/lib/client-ip";
 
 const MAX_ATTEMPTS = 5;
@@ -34,9 +35,30 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { password } = await req.json();
+  let password: unknown;
+  try {
+    ({ password } = await req.json());
+  } catch {
+    return NextResponse.json({ error: "invalid" }, { status: 400 });
+  }
+  if (typeof password !== "string") {
+    return NextResponse.json({ error: "invalid" }, { status: 401 });
+  }
 
-  if (!safeCompare(password, process.env.ADMIN_SECRET || "")) {
+  // A stored password wins when one exists. Otherwise fall back to comparing
+  // ADMIN_SECRET, which is how every install worked before #356 and how they
+  // keep working after upgrading without the operator doing anything.
+  //
+  // The fallback is what makes the migration seamless: log in with the secret
+  // exactly as before, then set a real password from the admin panel. Once set,
+  // the secret is no longer a password at all — it goes back to being purely the
+  // key material it was always meant to be, and can stay untouched forever.
+  const storedHash = await getPasswordHash();
+  const ok = storedHash
+    ? await verifyPassword(password, storedHash)
+    : !!process.env.ADMIN_SECRET && safeCompare(password, process.env.ADMIN_SECRET);
+
+  if (!ok) {
     if (!attempts || now >= attempts.resetAt) {
       evictIfNeeded(now);
       loginAttempts.set(key, { count: 1, resetAt: now + WINDOW_MS });
@@ -54,7 +76,9 @@ export async function POST(req: NextRequest) {
     req.headers.get("user-agent")
   );
 
-  const response = NextResponse.json({ success: true });
+  // Surface the migration state so the UI can prompt for a real password once,
+  // rather than leaving the owner logging in with a 64-char hex string forever.
+  const response = NextResponse.json({ success: true, needsPassword: !storedHash });
   response.cookies.set("sl_admin", cookieValue, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
