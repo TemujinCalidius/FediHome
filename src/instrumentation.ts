@@ -17,6 +17,14 @@ export async function register() {
     const { loadIdentity } = await import("@/lib/identity-store");
     await loadIdentity();
 
+    // Guards run AFTER the overlay loads, or a perfectly good DB-configured
+    // identity would be judged on the environment alone (#357, #362). The first
+    // one THROWS on purpose — a production instance with an unreachable address
+    // must not start, because what it publishes can't be taken back.
+    const { assertUsableIdentity, markSetupCompleteIfConfigured } = await import("@/lib/boot-checks");
+    assertUsableIdentity();
+    await markSetupCompleteIfConfigured();
+
     const { startScheduler } = await import("@/lib/scheduler");
     startScheduler();
   }

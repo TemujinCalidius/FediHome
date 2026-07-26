@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect } from "react";
+import { isLocalOrPrivateHost } from "@/lib/public-host";
 import Link from "next/link";
 import { THEMES } from "@/lib/themes";
 
@@ -173,22 +174,13 @@ export default function SetupWizard() {
     }
   })();
   /**
-   * Is this an address the Fediverse can't reach? Mirrors isLocalOrPrivateHost in
-   * /api/setup — the server enforces it, this only surfaces it.
+   * Is this an address the Fediverse can't reach? Uses the SAME rule set the
+   * server enforces and the boot guard refuses on (#357) — this only surfaces
+   * it early. Three copies of these rules used to drift independently.
    */
   const siteUrlUnreachable = (() => {
     if (!siteUrl || !siteUrlHost) return false;
-    const h = new URL(siteUrl).hostname.toLowerCase();
-    return (
-      h === "localhost" ||
-      h.endsWith(".localhost") ||
-      h === "::1" ||
-      /^127\./.test(h) ||
-      /^(10\.|192\.168\.)/.test(h) ||
-      /^172\.(1[6-9]|2\d|3[01])\./.test(h) ||
-      /^169\.254\./.test(h) ||
-      /^(fc|fd)[0-9a-f]{2}:/.test(h)
-    );
+    return isLocalOrPrivateHost(new URL(siteUrl).hostname);
   })();
 
   /** Inline warnings for origins that usually aren't the real public one. */

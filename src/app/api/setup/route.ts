@@ -8,6 +8,8 @@ import { applySiteConfig } from "@/lib/site-settings";
 import { verifySetupToken } from "@/lib/setup-token";
 import { validateImagePath } from "@/lib/media";
 import { getConfiguredSiteUrl } from "@/lib/identity";
+// Shared with the boot guard and the wizard UI, so all three enforce one rule set (#357).
+import { isLocalOrPrivateHost } from "@/lib/public-host";
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
@@ -60,24 +62,6 @@ function validateField(name: string, value: unknown): string {
     throw new SetupValidationError(`${name} contains forbidden characters`);
   }
   return value;
-}
-
-/**
- * Hosts that can't be reached from the Fediverse. Setting up against one bakes
- * an unreachable identity into the actor id — and, because `Post.apId` stores
- * absolute URLs, into every post published before the move. It's a legitimate
- * thing to do while testing; it just has to be a decision rather than an
- * accident, so the wizard requires an explicit acknowledgement (#326).
- */
-function isLocalOrPrivateHost(hostname: string): boolean {
-  const h = hostname.toLowerCase().replace(/^\[|\]$/g, "");
-  if (h === "localhost" || h.endsWith(".localhost") || h === "::1") return true;
-  if (/^127\./.test(h)) return true;
-  if (/^(10\.|192\.168\.)/.test(h)) return true;
-  if (/^172\.(1[6-9]|2\d|3[01])\./.test(h)) return true;
-  if (/^169\.254\./.test(h)) return true; // link-local
-  if (/^(fc|fd)[0-9a-f]{2}:/.test(h)) return true; // IPv6 unique-local
-  return false;
 }
 
 /**
