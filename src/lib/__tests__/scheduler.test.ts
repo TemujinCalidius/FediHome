@@ -201,3 +201,38 @@ describe("in-app scheduler (#183/#59)", () => {
     expect(publishDueScheduledPosts).toHaveBeenCalledTimes(3);
   });
 });
+
+/**
+ * Scheduler liveness (#358).
+ *
+ * The state lives on globalThis, not in a module-level variable — verified in a
+ * container that instrumentation.ts (dynamic import) and the health route
+ * (static import) resolve to SEPARATE module instances, so a plain `let` is
+ * written by one copy and read as undefined by the other.
+ */
+describe("scheduler liveness is readable across module instances", () => {
+  const g = globalThis as typeof globalThis & {
+    __fedihomeSchedulerLastTickAt?: number;
+    __fedihomeSchedulerStarted?: boolean;
+  };
+
+  it("reports null before any tick has completed", async () => {
+    delete g.__fedihomeSchedulerLastTickAt;
+    const { schedulerLastTickAgoMs } = await import("@/lib/scheduler");
+    expect(schedulerLastTickAgoMs()).toBeNull();
+  });
+
+  it("reports elapsed time once a tick has stamped globalThis", async () => {
+    g.__fedihomeSchedulerLastTickAt = Date.now() - 5_000;
+    const { schedulerLastTickAgoMs } = await import("@/lib/scheduler");
+    const ago = schedulerLastTickAgoMs();
+    expect(ago).not.toBeNull();
+    expect(ago!).toBeGreaterThanOrEqual(4_500);
+  });
+
+  it("reads the started flag from globalThis too", async () => {
+    const { schedulerStarted } = await import("@/lib/scheduler");
+    g.__fedihomeSchedulerStarted = true;
+    expect(schedulerStarted()).toBe(true);
+  });
+});

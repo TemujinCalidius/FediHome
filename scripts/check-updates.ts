@@ -7,6 +7,7 @@
  * Run on cron:   0 9 * * 1 cd /path/to/project && npm run check-updates
  */
 import { execSync } from "node:child_process";
+import { buildSha } from "../src/lib/build-info";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { PrismaClient } from "../src/generated/prisma/client";
@@ -232,15 +233,20 @@ const FEDIHOME_BRANCH = process.env.FEDIHOME_BRANCH || "main";
 // item with the latest commit subjects so the admin can see what's new at a
 // glance and run `npm run update` to apply it.
 async function checkFediHomeSelf() {
-  let localSha: string | null = null;
-  try {
-    localSha = execSync("git rev-parse HEAD", { encoding: "utf-8" }).trim();
-  } catch {
-    // Not a git checkout (e.g. installed from a tarball). Skip — we can't
-    // tell what version they're on.
-    return 0;
+  // A git checkout is the precise signal, but it's absent in every container
+  // (.dockerignore excludes .git) and in tarball installs — which used to mean
+  // this silently returned 0 and those users simply never heard about a new
+  // release. Fall back to the SHA baked in at image build time (#358), and
+  // failing that, compare the release TAG instead of the commit (#361).
+  let localSha: string | null = buildSha();
+  if (!localSha) {
+    try {
+      localSha = execSync("git rev-parse HEAD", { encoding: "utf-8" }).trim() || null;
+    } catch {
+      localSha = null;
+    }
   }
-  if (!localSha) return 0;
+  if (!localSha) return await checkFediHomeByReleaseTag();
 
   try {
     const res = await fetch(
@@ -371,3 +377,62 @@ main().catch(async (err) => {
   await prisma.$disconnect();
   process.exit(1);
 });
+
+/**
+ * Version-based update check, for installs with no commit SHA available at all.
+ *
+ * Less precise than the commit comparison — it only notices tagged releases, not
+ * every commit on `main` — but "less precise" beats the previous behaviour of
+ * saying nothing whatsoever. Records that it used the coarser method so the
+ * result isn't mistaken for a commit-accurate one.
+ */
+async function checkFediHomeByReleaseTag(): Promise<number> {
+  try {
+    const res = await fetch(`https://api.github.com/repos/${FEDIHOME_REPO}/releases/latest`, {
+      headers: { Accept: "application/vnd.github+json", "User-Agent": "fedihome-update-check" },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return 0;
+    const rel = (await res.json()) as { tag_name?: string; html_url?: string; body?: string };
+    const latest = (rel.tag_name || "").replace(/^v/, "");
+    if (!latest) return 0;
+
+    const current = readInstalledFediHomeVersion();
+    if (latest === current) return 0;
+    if (!isNewer(latest, current)) return 0;
+
+    await prisma.maintenanceItem.upsert({
+      where: {
+        kind_packageName_latest: { kind: "update", packageName: "fedihome", latest },
+      },
+      update: {},
+      create: {
+        kind: "update",
+        packageName: "fedihome",
+        current,
+        latest,
+        severity: "info",
+        title: `FediHome ${latest} is available`,
+        description:
+          `You're running ${current}. This check compared release versions rather than ` +
+          `commits, because this install has no commit SHA available (a container built ` +
+          `without a build SHA, or a tarball install), so it only notices tagged releases.`,
+        url: rel.html_url || `https://github.com/${FEDIHOME_REPO}/releases/latest`,
+      },
+    });
+    return 1;
+  } catch {
+    return 0;
+  }
+}
+
+/** Naive semver-ish comparison — enough for our own x.y.z tags. */
+function isNewer(a: string, b: string): boolean {
+  const pa = a.split(".").map((n) => parseInt(n, 10) || 0);
+  const pb = b.split(".").map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < 3; i++) {
+    if ((pa[i] || 0) > (pb[i] || 0)) return true;
+    if ((pa[i] || 0) < (pb[i] || 0)) return false;
+  }
+  return false;
+}

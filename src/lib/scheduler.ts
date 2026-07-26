@@ -40,10 +40,39 @@ import { pruneStaleFediPosts } from "./fedi-retention";
 
 const globalScheduler = globalThis as typeof globalThis & {
   __fedihomeSchedulerStarted?: boolean;
+  __fedihomeSchedulerLastTickAt?: number;
 };
 
 const MASTER_TICK_MS = 15_000;
 const lastRun = { publish: 0, bluesky: 0, delivery: 0, crosspost: 0, retention: 0 };
+
+/**
+ * When the master loop last completed a pass (#358).
+ *
+ * The scheduler runs IN-PROCESS, so it can wedge while HTTP keeps answering
+ * 200 — an instance that looks perfectly healthy while silently no longer
+ * publishing scheduled posts. Exposing this lets /api/health say so.
+ *
+ * Stored on globalThis, NOT in a module-level variable. instrumentation.ts
+ * reaches this module through a dynamic import while the health route imports
+ * it statically, and those resolve to SEPARATE module instances — a plain
+ * `let` is written by the scheduler's copy and read as undefined by the route's.
+ * Verified in a container: `schedulerStarted()` (already on globalThis) crossed
+ * the boundary correctly while a module-level tick stamp stayed null forever.
+ * The existing `__fedihomeSchedulerStarted` flag is here for the same reason.
+ */
+export function schedulerLastTickAgoMs(): number | null {
+  const at = globalScheduler.__fedihomeSchedulerLastTickAt;
+  return typeof at === "number" ? Date.now() - at : null;
+}
+
+/** Whether this process started the scheduler at all. */
+export function schedulerStarted(): boolean {
+  return !!globalScheduler.__fedihomeSchedulerStarted;
+}
+
+/** How often the loop is expected to run — so a consumer can judge staleness. */
+export const SCHEDULER_TICK_MS = MASTER_TICK_MS;
 
 function log(msg: string) {
   console.log(`[${new Date().toISOString()}] scheduler: ${msg}`);
@@ -143,6 +172,9 @@ async function masterTick(): Promise<void> {
     lastRun.retention = now;
     await runRetentionSweepTick();
   }
+  // Stamped only on a COMPLETED pass, so a loop that hangs mid-tick shows as
+  // stale rather than fresh.
+  globalScheduler.__fedihomeSchedulerLastTickAt = Date.now();
 }
 
 function scheduleNext(): void {

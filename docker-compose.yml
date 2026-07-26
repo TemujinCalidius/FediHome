@@ -2,7 +2,13 @@ version: '3.8'
 
 services:
   app:
-    build: .
+    build:
+      context: .
+      args:
+        # Bake the commit into the image so /api/health can report which build
+        # is running (#358). `docker compose build` picks this up from the
+        # environment: FEDIHOME_BUILD_SHA=$(git rev-parse HEAD) docker compose build
+        FEDIHOME_BUILD_SHA: ${FEDIHOME_BUILD_SHA:-}
     ports:
       # Host port is configurable (FEDIHOME_PORT); the container always listens on 3000.
       - "${FEDIHOME_PORT:-3000}:3000"
