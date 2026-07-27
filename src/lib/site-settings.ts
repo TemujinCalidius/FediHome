@@ -72,6 +72,7 @@ export const SITE_CONFIG_FIELDS: Record<string, FieldType> = {
   "categories.audio": "text",
   "analytics.siteId": "text",
   "analytics.embedId": "text",
+  "storage.uploadsDir": "text", // absolute path; "" = <cwd>/public/uploads (#363)
 };
 
 export const SITE_CONFIG_KEYS = Object.keys(SITE_CONFIG_FIELDS);
@@ -105,6 +106,8 @@ export interface RuntimeSiteConfig {
   categories: { photos: string[]; videos: string[]; audio: string[] };
   // Tinylytics public embed ids (#59). API key stays env-only.
   analytics: { siteId: string; embedId: string };
+  /** Where uploaded media is written (#363). "" = the built-in public/uploads. */
+  storage: { uploadsDir: string };
 }
 
 /** The env/default view — exactly what `siteConfig` (env-driven) exposes today. */
@@ -139,6 +142,7 @@ export function siteConfigDefaults(): RuntimeSiteConfig {
       audio: resolveCategoryList(parseCategoryList(siteConfig.categories.audio), "audio"),
     },
     analytics: { ...siteConfig.analytics },
+    storage: { uploadsDir: process.env.FEDIHOME_UPLOADS_DIR?.trim() || "" },
   };
 }
 
@@ -244,6 +248,7 @@ export async function getRuntimeSiteConfig(): Promise<RuntimeSiteConfig> {
         siteId: textOverride(o["analytics.siteId"], base.analytics.siteId),
         embedId: textOverride(o["analytics.embedId"], base.analytics.embedId),
       },
+      storage: { uploadsDir: textOverride(o["storage.uploadsDir"], base.storage.uploadsDir) },
     };
   } catch {
     return base; // DB down/mid-migration — env defaults, don't cache the failure
@@ -279,6 +284,14 @@ export function validateSiteConfigValue(key: string, value: string): string | nu
   if (key === "layout.footer") return value === "" || isFooterVariant(value) ? value : null; // "" inherits the theme
   if (key === "layout.shell") return value === "" || isShellVariant(value) ? value : null; // "" inherits the theme
   if (key === "sidebar.side") return value === "" || isSidebarSide(value) ? value : null; // "" = right
+  if (key === "storage.uploadsDir") {
+    // "" reverts to the built-in location. Anything else must be absolute — a
+    // relative path would silently move with the working directory. Existence
+    // and writability are PROBED by the admin route before saving; they can't be
+    // checked here because this function is synchronous and also runs in tests.
+    if (value.trim() === "") return "";
+    return value.startsWith("/") && !value.includes("\0") ? value.trim() : null;
+  }
   if (key === "sidebar.blocks") {
     // "" = built-in order. Else an ordered CSV of KNOWN blocks — reject unknown
     // names rather than silently dropping them, so a typo surfaces at save time

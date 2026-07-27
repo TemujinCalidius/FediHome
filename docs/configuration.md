@@ -134,6 +134,33 @@ the secret goes back to being key material you never type.
 consumed once on first boot and then ignored, so you can remove it afterwards.
 Minimum 12 characters.
 
+## Where Your Media Lives
+
+By default, uploads go to `public/uploads` inside the install. That's fine until
+your system disk isn't the big one — a VPS with a modest root volume and a large
+attached disk, or a NAS mount.
+
+Set a different directory in **Admin → Site settings → Storage**, or with
+`FEDIHOME_UPLOADS_DIR` if you're scripting a deploy. A value saved in the admin
+panel wins over the environment variable.
+
+Two things worth knowing:
+
+- **Nothing is moved.** New uploads go to the new directory; anything already on
+  disk keeps being served from the old one. Nothing breaks, nothing 404s, and
+  you can relocate the old files whenever you like — or not at all. (The database
+  stores web paths like `/uploads/2026/01/photo.webp`, never disk paths, so there
+  is no data migration either way.)
+- **The directory must already exist and be writable.** FediHome checks both
+  before saving and tells you which one failed rather than accepting a path that
+  would break your next upload.
+
+**In Docker**, point the bind mount at the same path *and* set
+`FEDIHOME_UPLOADS_DIR` — the container starts as root only long enough to fix
+ownership of that directory before dropping to the unprivileged `node` user, and
+it can't read the admin-panel setting that early. Without it, a fresh mount is
+owned by root and every upload fails.
+
 ## Blocking People and Servers
 
 Everything here is **local and private**. Nothing is sent to the person or server
