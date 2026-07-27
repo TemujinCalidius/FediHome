@@ -107,6 +107,7 @@ export default async function TimelinePage() {
       domain: f.domain,
       displayName: f.displayName,
       avatarUrl: f.avatarUrl,
+      accepted: f.accepted,
       createdAt: f.createdAt,
     })),
     ...bskyFollowing.map((b) => ({

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **You can see which follows haven't gone through yet** (#348) — following someone wrote the row and called it done, so an account that approves followers by hand, or one whose server flatly refused you, looked exactly like a real follow: their posts never arrived and nothing said why. FediHome now listens for the answer. Unconfirmed follows are marked **pending** in your Following list, and if someone declines you're told, with the follow removed. Existing follows are unaffected — they're treated as accepted, which they are.
+
+
 ## 1.20.0 (2026-07-26)
 
 ### Added

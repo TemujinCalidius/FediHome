@@ -111,6 +111,8 @@ type FollowingItem =
       domain: string;
       displayName: string | null;
       avatarUrl: string | null;
+      /** False until their server sends an Accept (#348). */
+      accepted: boolean;
       createdAt: string;
     }
   | {
@@ -2524,6 +2526,14 @@ export default function TimelineClient({
                           </p>
                           {f.source === "bsky" && (
                             <span className="text-[10px] uppercase tracking-wide text-blue-400 border border-blue-800/60 px-1.5 py-0.5 rounded">bsky</span>
+                          )}
+                          {f.source === "fedi" && !f.accepted && (
+                            <span
+                              title="Their server hasn't confirmed the follow yet. Accounts that approve followers by hand can sit here a while."
+                              className="text-[10px] uppercase tracking-wide text-amber-400 border border-amber-800/60 px-1.5 py-0.5 rounded"
+                            >
+                              pending
+                            </span>
                           )}
                         </div>
                         <a

@@ -60,6 +60,7 @@ export async function GET(req: NextRequest) {
       domain: f.domain,
       displayName: f.displayName,
       avatarUrl: f.avatarUrl,
+      accepted: f.accepted,
       createdAt: f.createdAt,
     })),
     ...bskyFollowing.map((b) => ({
