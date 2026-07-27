@@ -24,6 +24,11 @@ const KEYS = {
   bskyPassword: "integration.bluesky.password", // encrypted
   threadsUserId: "integration.threads.userId",
   threadsToken: "integration.threads.accessToken", // encrypted
+  smtpHost: "integration.smtp.host",
+  smtpPort: "integration.smtp.port",
+  smtpUser: "integration.smtp.user",
+  smtpPass: "integration.smtp.password", // encrypted
+  dayOneEmail: "integration.dayone.email",
 } as const;
 
 async function readRows(keys: string[]): Promise<Record<string, string>> {
@@ -160,14 +165,99 @@ export async function testThreadsToken(
   }
 }
 
+/* -------------------------- DayOne journal / SMTP -------------------------- */
+
+/**
+ * Journalling by email (#326). The last credentials still read straight out of
+ * `process.env` — moving them here means an SMTP password can be changed without
+ * a redeploy, and gets it encrypted at rest like everything else.
+ *
+ * As with Bluesky and Threads: env stays as a fallback so existing installs are
+ * untouched, a saved value wins, and the password never leaves this module.
+ */
+export interface DayOneCredentials {
+  dayOneEmail: string;
+  host: string;
+  port: number;
+  user: string;
+  pass: string;
+}
+
+const DEFAULT_SMTP_PORT = 587;
+
+function parsePort(v: string | undefined, fallback: number): number {
+  const n = Number.parseInt((v ?? "").trim(), 10);
+  return Number.isInteger(n) && n > 0 && n <= 65535 ? n : fallback;
+}
+
+export async function getDayOneCredentials(): Promise<DayOneCredentials | null> {
+  const o = await readRows([KEYS.smtpHost, KEYS.smtpPort, KEYS.smtpUser, KEYS.smtpPass, KEYS.dayOneEmail]);
+  if (o[KEYS.dayOneEmail] && o[KEYS.smtpHost] && o[KEYS.smtpUser] && o[KEYS.smtpPass]) {
+    const pass = decryptSecret(o[KEYS.smtpPass]);
+    if (pass) {
+      return {
+        dayOneEmail: o[KEYS.dayOneEmail],
+        host: o[KEYS.smtpHost],
+        port: parsePort(o[KEYS.smtpPort], DEFAULT_SMTP_PORT),
+        user: o[KEYS.smtpUser],
+        pass,
+      };
+    }
+    // Undecryptable — ADMIN_SECRET changed. secret-health raises an alert
+    // naming this credential; fall through to env rather than half-configuring.
+  }
+
+  const { DAYONE_EMAIL, SMTP_HOST, SMTP_USER, SMTP_PASS, SMTP_PORT } = process.env;
+  if (!DAYONE_EMAIL || !SMTP_HOST || !SMTP_USER || !SMTP_PASS) return null;
+  return {
+    dayOneEmail: DAYONE_EMAIL,
+    host: SMTP_HOST,
+    port: parsePort(SMTP_PORT, DEFAULT_SMTP_PORT),
+    user: SMTP_USER,
+    pass: SMTP_PASS,
+  };
+}
+
+export async function setDayOneCredentials(input: {
+  dayOneEmail: string;
+  host: string;
+  port: number;
+  user: string;
+  pass: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const enc = encryptSecret(input.pass);
+  if (!enc) return { ok: false, error: "Encryption unavailable — ADMIN_SECRET is not set." };
+  await put(KEYS.dayOneEmail, input.dayOneEmail.trim());
+  await put(KEYS.smtpHost, input.host.trim());
+  await put(KEYS.smtpPort, String(parsePort(String(input.port), DEFAULT_SMTP_PORT)));
+  await put(KEYS.smtpUser, input.user.trim());
+  await put(KEYS.smtpPass, enc);
+  return { ok: true };
+}
+
+export async function clearDayOneCredentials(): Promise<void> {
+  await drop([KEYS.dayOneEmail, KEYS.smtpHost, KEYS.smtpPort, KEYS.smtpUser, KEYS.smtpPass]);
+}
+
 /* ---------------------- Status (never returns secrets) ---------------------- */
 export interface IntegrationStatus {
   bluesky: { configured: boolean; handle: string | null; source: "db" | "env" | null };
   threads: { configured: boolean; userId: string | null; source: "db" | "env" | null };
+  dayOne: {
+    configured: boolean;
+    dayOneEmail: string | null;
+    host: string | null;
+    port: number | null;
+    user: string | null;
+    source: "db" | "env" | null;
+  };
 }
 
 export async function getIntegrationStatus(): Promise<IntegrationStatus> {
-  const o = await readRows([KEYS.bskyHandle, KEYS.bskyPassword, KEYS.threadsUserId, KEYS.threadsToken]);
+  const o = await readRows([
+    KEYS.bskyHandle, KEYS.bskyPassword, KEYS.threadsUserId, KEYS.threadsToken,
+    KEYS.smtpHost, KEYS.smtpPort, KEYS.smtpUser, KEYS.smtpPass, KEYS.dayOneEmail,
+  ]);
   const bskyDb = !!(o[KEYS.bskyHandle] && o[KEYS.bskyPassword]);
   const bskyEnv = !!(process.env.BLUESKY_HANDLE && process.env.BLUESKY_APP_PASSWORD);
   const threadsDb = !!(o[KEYS.threadsUserId] && o[KEYS.threadsToken]);
@@ -188,5 +278,20 @@ export async function getIntegrationStatus(): Promise<IntegrationStatus> {
       userId: o[KEYS.threadsUserId] ?? process.env.THREADS_USER_ID ?? null,
       source: threadsDb ? "db" : threadsEnv ? "env" : null,
     },
+    dayOne: (() => {
+      const db = !!(o[KEYS.dayOneEmail] && o[KEYS.smtpHost] && o[KEYS.smtpUser] && o[KEYS.smtpPass]);
+      const env = !!(
+        process.env.DAYONE_EMAIL && process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS
+      );
+      const port = o[KEYS.smtpPort] ?? process.env.SMTP_PORT;
+      return {
+        configured: db || env,
+        dayOneEmail: o[KEYS.dayOneEmail] ?? process.env.DAYONE_EMAIL ?? null,
+        host: o[KEYS.smtpHost] ?? process.env.SMTP_HOST ?? null,
+        port: db || env ? parsePort(port, DEFAULT_SMTP_PORT) : null,
+        user: o[KEYS.smtpUser] ?? process.env.SMTP_USER ?? null,
+        source: db ? "db" : env ? "env" : null,
+      };
+    })(),
   };
 }

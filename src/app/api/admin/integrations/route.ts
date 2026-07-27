@@ -8,6 +8,8 @@ import {
   setThreadsCredentials,
   clearThreadsCredentials,
   testThreadsToken,
+  setDayOneCredentials,
+  clearDayOneCredentials,
 } from "@/lib/integrations";
 import { secretBoxAvailable } from "@/lib/secret-box";
 
@@ -54,13 +56,14 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const action = body?.action;
   const provider = body?.provider;
-  if (provider !== "bluesky" && provider !== "threads") {
+  if (provider !== "bluesky" && provider !== "threads" && provider !== "dayone") {
     return NextResponse.json({ error: "unknown provider" }, { status: 400 });
   }
 
   // Disconnect — clear the DB override (reverts to the env var if set).
   if (action === "disconnect") {
     if (provider === "bluesky") await clearBlueskyCredentials();
+    else if (provider === "dayone") await clearDayOneCredentials();
     else await clearThreadsCredentials();
     return NextResponse.json({ success: true, status: await getIntegrationStatus() });
   }
@@ -84,6 +87,32 @@ export async function POST(req: NextRequest) {
       );
     }
     const r = await setBlueskyCredentials(handle, password);
+    if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
+    return NextResponse.json({ success: true, status: await getIntegrationStatus() });
+  }
+
+  if (provider === "dayone") {
+    // No "test" action: unlike Bluesky and Threads there is no cheap way to
+    // verify an SMTP credential without actually sending mail to the owner's
+    // journal, which would put a stray entry in it every time they saved.
+    const dayOneEmail = clean(body?.dayOneEmail, 320);
+    const host = clean(body?.host, 253);
+    const user = clean(body?.user, 320);
+    const pass = clean(body?.pass, 400);
+    const port = Number.parseInt(String(body?.port ?? "587"), 10);
+    if (!dayOneEmail || !host || !user || !pass) {
+      return NextResponse.json(
+        { error: "Journal address, SMTP host, username and password are all required." },
+        { status: 400 },
+      );
+    }
+    if (!dayOneEmail.includes("@")) {
+      return NextResponse.json({ error: "That journal address doesn't look like an email address." }, { status: 400 });
+    }
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      return NextResponse.json({ error: "That isn't a valid port number." }, { status: 400 });
+    }
+    const r = await setDayOneCredentials({ dayOneEmail, host, port, user, pass });
     if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
     return NextResponse.json({ success: true, status: await getIntegrationStatus() });
   }

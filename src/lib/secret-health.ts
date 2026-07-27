@@ -26,6 +26,7 @@ const ENCRYPTED_CREDENTIALS: { key: string; label: string }[] = [
   { key: "integration.bluesky.password", label: "Bluesky app password" },
   { key: "integration.threads.accessToken", label: "Threads access token" },
   { key: "integration.tinylytics.apiKey", label: "Tinylytics API key" },
+  { key: "integration.smtp.password", label: "Journal email (SMTP) password" },
 ];
 
 const ALERT = {

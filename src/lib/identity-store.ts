@@ -17,11 +17,16 @@ import { applyIdentityOverrides, clearIdentityOverrides, getIdentity } from "./i
  * cannot refresh itself anyway. Anything that writes these rows must call
  * `refreshIdentity()`.
  *
- * **Read-only for now.** No UI writes `identity.*`, so every instance still
- * resolves from the environment. The write path, the admin UI, and the
- * change-domain migration are later phases — and the migration is the hard part:
- * ActivityPub has no rename, so moving domains means `alsoKnownAs` + a `Move`
- * activity served from the OLD instance while it is still reachable.
+ * **Writable only before an instance has published (#326).** `setIdentity()`
+ * exists now, but it refuses once anything durable carries the current identity.
+ * That guard is not conservatism — `Post`/`Photo`/`Video`/`Audio`/`DirectMessage`
+ * `.apId` are `@unique` ABSOLUTE URLs built from `SITE_URL`, and remote servers
+ * keep the first actor id they ever saw. Rewriting them is not a migration we
+ * can do safely, because the copies that matter aren't ours.
+ *
+ * Changing domains after that point needs the real ActivityPub answer —
+ * `alsoKnownAs` plus a `Move` served from the OLD instance while it is still
+ * reachable (#347) — not a settings field.
  */
 
 const KEY_PREFIX = "identity.";
@@ -154,4 +159,84 @@ export async function setAlsoKnownAs(raw: string): Promise<string[]> {
  */
 export async function refreshIdentity(): Promise<void> {
   await loadIdentity();
+}
+
+/* -------------------------- Writing identity (#326) ------------------------- */
+
+/**
+ * Anything that would be stranded by a change of identity.
+ *
+ * Deliberately NOT `looksEstablished()` (federation.ts), which asks a softer
+ * question for a different purpose. The honest test here is "has anything
+ * durable been stamped with the current identity?", because those stamps are
+ * `@unique` absolute URLs that a rename would orphan — and because a remote
+ * server that has seen our actor id keeps it forever.
+ *
+ * The keypair is deliberately absent from this list: `ActorKeys` stores no URL
+ * and `keyId` is derived at use time, so it re-anchors to a new identity by
+ * itself.
+ */
+export async function identityIsLocked(): Promise<{ locked: boolean; reason?: string }> {
+  try {
+    const [posts, photos, videos, audio, dms, outgoing, followers] = await Promise.all([
+      prisma.post.count({ where: { apId: { not: null } } }),
+      prisma.photo.count({ where: { apId: { not: null } } }),
+      prisma.video.count({ where: { apId: { not: null } } }),
+      prisma.audio.count({ where: { apId: { not: null } } }),
+      prisma.directMessage.count({ where: { isOutgoing: true } }),
+      prisma.fediPost.count({ where: { isOutgoing: true } }),
+      prisma.fediFollower.count(),
+    ]);
+
+    const published = posts + photos + videos + audio + outgoing + dms;
+    if (published > 0) {
+      return {
+        locked: true,
+        reason:
+          `This instance has already published ${published} item${published === 1 ? "" : "s"} under its current address. ` +
+          "Every one of them carries that address inside it, and other servers keep the first one they saw — so changing it " +
+          "now would orphan them rather than move them. Moving to a new domain needs an account migration (#347), not a setting.",
+      };
+    }
+    if (followers > 0) {
+      return {
+        locked: true,
+        reason:
+          `${followers} account${followers === 1 ? " follows" : "s follow"} you at the current address. ` +
+          "Changing it would silently break those follows, with nothing on their side to explain why your posts stopped.",
+      };
+    }
+    return { locked: false };
+  } catch {
+    // Can't prove it's safe, so don't allow it.
+    return { locked: true, reason: "Couldn't check whether this instance has published yet — try again in a moment." };
+  }
+}
+
+export type IdentityPatch = Partial<Record<IdentityField, string>>;
+
+/**
+ * Write the `identity.*` overrides.
+ *
+ * Callers MUST check `identityIsLocked()` first; this function does not, so the
+ * setup path can use it before anything exists to check. An empty string clears
+ * a field back to the environment value.
+ *
+ * The caller is also responsible for `refreshIdentity()` — and for telling the
+ * owner that a restart is the only way to be sure, since the overrides are
+ * process-local (see below).
+ */
+export async function setIdentity(patch: IdentityPatch): Promise<void> {
+  for (const field of FIELDS) {
+    const raw = patch[field];
+    if (raw === undefined) continue;
+    const key = `${KEY_PREFIX}${field}`;
+    if (raw.trim() === "") {
+      await prisma.siteSetting.deleteMany({ where: { key } });
+      continue;
+    }
+    const value = clean(raw);
+    if (value === undefined) throw new Error(`Invalid value for ${field}`);
+    await prisma.siteSetting.upsert({ where: { key }, update: { value }, create: { key, value } });
+  }
 }

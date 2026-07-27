@@ -80,7 +80,10 @@ describe("findUndecryptableCredentials", () => {
     expect(await findUndecryptableCredentials()).toEqual([]);
   });
 
-  it("only inspects the four credential keys", async () => {
+  it("inspects exactly the encrypted credentials, and nothing else", async () => {
+    // If a new secret-box credential is added without appearing here, losing
+    // ADMIN_SECRET would silently break it with no alert — which is the whole
+    // failure #359 exists to make visible.
     await findUndecryptableCredentials();
     const where = findMany.mock.calls[0][0].where;
     expect(where.key.in).toEqual([
@@ -88,6 +91,7 @@ describe("findUndecryptableCredentials", () => {
       "integration.bluesky.password",
       "integration.threads.accessToken",
       "integration.tinylytics.apiKey",
+      "integration.smtp.password",
     ]);
   });
 });
