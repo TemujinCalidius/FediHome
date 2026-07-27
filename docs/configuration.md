@@ -134,6 +134,32 @@ the secret goes back to being key material you never type.
 consumed once on first boot and then ignored, so you can remove it afterwards.
 Minimum 12 characters.
 
+## Your Fediverse Address
+
+`SITE_URL`, `FEDI_HANDLE` and `FEDI_DOMAIN` decide who you are on the fediverse.
+They can now be set from **Admin → Site settings → Identity** — but only while
+the instance is genuinely new.
+
+**Once you have published anything, or anyone follows you, it's fixed**, and
+FediHome will refuse to change it. That isn't caution:
+
+- Every post, photo, video and audio item stores its own **absolute** address
+  inside it. Change the domain and those addresses point nowhere.
+- Every server that has ever seen your account **keeps the first address it
+  saw**. Those copies aren't ours to rewrite.
+
+Moving to a new domain after that point needs a real account migration — an
+alias on the new account plus a `Move` published from the old one *while it is
+still serving*. That's tracked separately; see **Changing Your Domain** in
+`docs/fediverse-setup.md`.
+
+Changes take effect on **restart**. Identity is read once at boot on purpose,
+and if you run multiple workers only the one that handled the save picks it up
+until you restart.
+
+`ADMIN_SECRET` stays in the environment and cannot move. It's read at the edge,
+before any database is available, to decide whether setup has been completed.
+
 ## Where Your Media Lives
 
 By default, uploads go to `public/uploads` inside the install. That's fine until

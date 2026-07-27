@@ -74,6 +74,49 @@ export default function SiteSettingsClient({
   // Admin password (#356) — its own route; the hash never round-trips through
   // the plaintext site-config save.
   const [pwHas, setPwHas] = useState<boolean | null>(null);
+  // Federation identity (#326) — its own route, and refused outright once the
+  // instance has published anything.
+  const [ident, setIdent] = useState<{
+    siteUrl: string; fediHandle: string; fediDomain: string; fediAddress: string;
+    locked: boolean; lockedReason: string | null;
+  } | null>(null);
+  const [identBusy, setIdentBusy] = useState(false);
+  const [identDone, setIdentDone] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/admin/identity")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (!cancelled && d) setIdent(d); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  async function saveIdentity(): Promise<void> {
+    if (!ident) return;
+    setIdentBusy(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/admin/identity", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          siteUrl: ident.siteUrl, fediHandle: ident.fediHandle, fediDomain: ident.fediDomain,
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setResult({ ok: false, msg: data?.error || "Couldn't change your address." });
+        return;
+      }
+      setIdent((c) => (c ? { ...c, ...data } : c));
+      setIdentDone(true);
+    } catch {
+      setResult({ ok: false, msg: "Couldn't reach the server — nothing was changed." });
+    } finally {
+      setIdentBusy(false);
+    }
+  }
   const [pwCurrent, setPwCurrent] = useState("");
   const [pwNext, setPwNext] = useState("");
   const [pwConfirm, setPwConfirm] = useState("");
@@ -537,7 +580,46 @@ export default function SiteSettingsClient({
         {section("Identity", <>
           {text("Site name", cfg.name, (v) => set({ name: v }))}
           {text("Description", cfg.description, (v) => set({ description: v }))}
-          <p className="text-xs text-gray-600 m-0">Your Fediverse handle and domain are set at install and can&apos;t change here — they&apos;re part of your federated identity.</p>
+          {ident && (
+            <div className="rounded-lg border border-surface-700 p-3 flex flex-col gap-2">
+              <p className="text-xs font-semibold text-content m-0">Your Fediverse address</p>
+              <p className="text-xs text-gray-600 m-0">
+                Currently <code>{ident.fediAddress}</code>, served from <code>{ident.siteUrl}</code>.
+              </p>
+
+              {ident.locked ? (
+                <p className="text-xs text-amber-400/90 m-0">
+                  <strong>This can&apos;t be changed now.</strong> {ident.lockedReason}
+                </p>
+              ) : (
+                <>
+                  <p className="text-xs text-gray-600 m-0">
+                    You haven&apos;t published anything yet, so this is still safe to set. After you do,
+                    it&apos;s fixed: every post carries this address inside it, and other servers keep
+                    the first one they ever saw.
+                  </p>
+                  {text("Site URL", ident.siteUrl, (v) => setIdent((c) => (c ? { ...c, siteUrl: v } : c)), "https://yourdomain.com")}
+                  {text("Handle", ident.fediHandle, (v) => setIdent((c) => (c ? { ...c, fediHandle: v } : c)), "me")}
+                  {text("Domain", ident.fediDomain, (v) => setIdent((c) => (c ? { ...c, fediDomain: v } : c)), "yourdomain.com")}
+                  <div>
+                    <button
+                      type="button"
+                      onClick={saveIdentity}
+                      disabled={identBusy}
+                      className="btn-primary text-xs disabled:opacity-50"
+                    >
+                      {identBusy ? "Saving…" : "Set my address"}
+                    </button>
+                  </div>
+                  {identDone && (
+                    <p className="text-xs text-amber-400/90 m-0">
+                      Saved — <strong>restart FediHome</strong> to be sure every worker picks it up.
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+          )}
         </>)}
 
         {section("Your profile", <>

@@ -6,6 +6,7 @@ import nodemailer from "nodemailer";
 import { isPrivateUrl } from "./url-guard";
 import { getSiteUrl } from "./identity";
 import { resolveUploadPath } from "./uploads-dir";
+import { getDayOneCredentials } from "./integrations";
 
 export interface CrosspostImage {
   url: string; // full URL or local path
@@ -310,15 +311,13 @@ export async function crosspostToDayOne(
   title?: string,
   images?: { path: string | null; filename: string }[]
 ): Promise<{ success: boolean; error?: string }> {
-  const dayOneEmail = process.env.DAYONE_EMAIL;
-  const smtpHost = process.env.SMTP_HOST;
-  const smtpPort = parseInt(process.env.SMTP_PORT || "587", 10);
-  const smtpUser = process.env.SMTP_USER;
-  const smtpPass = process.env.SMTP_PASS;
-
-  if (!dayOneEmail || !smtpHost || !smtpUser || !smtpPass) {
+  // DB first, env as the fallback (#326) — so the SMTP password can be changed
+  // from the admin panel, and is encrypted at rest like every other credential.
+  const creds = await getDayOneCredentials();
+  if (!creds) {
     return { success: false, error: "DayOne/SMTP not configured" };
   }
+  const { dayOneEmail, host: smtpHost, port: smtpPort, user: smtpUser, pass: smtpPass } = creds;
 
   try {
     const transporter = nodemailer.createTransport({

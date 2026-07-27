@@ -12,7 +12,7 @@ import type { IntegrationStatus } from "@/lib/integrations";
  * connection before storing.
  */
 
-type Provider = "bluesky" | "threads";
+type Provider = "bluesky" | "threads" | "dayone";
 
 export default function IntegrationsClient({
   initialStatus,
@@ -29,6 +29,12 @@ export default function IntegrationsClient({
   const [bskyPassword, setBskyPassword] = useState("");
   const [threadsUserId, setThreadsUserId] = useState(initialStatus.threads.userId ?? "");
   const [threadsToken, setThreadsToken] = useState("");
+  // Journal by email (#326) — the last credential that needed file access.
+  const [dayOneEmail, setDayOneEmail] = useState(initialStatus.dayOne.dayOneEmail ?? "");
+  const [smtpHost, setSmtpHost] = useState(initialStatus.dayOne.host ?? "");
+  const [smtpPort, setSmtpPort] = useState(String(initialStatus.dayOne.port ?? 587));
+  const [smtpUser, setSmtpUser] = useState(initialStatus.dayOne.user ?? "");
+  const [smtpPass, setSmtpPass] = useState("");
 
   async function call(payload: Record<string, unknown>): Promise<{ ok: boolean; data: Record<string, unknown> }> {
     const res = await fetch("/api/admin/integrations", {
@@ -39,12 +45,15 @@ export default function IntegrationsClient({
     return { ok: res.ok, data: await res.json().catch(() => ({})) };
   }
 
-  const payloadFor = (provider: Provider, action: string) =>
-    provider === "bluesky"
-      ? { action, provider, handle: bskyHandle, password: bskyPassword }
-      : { action, provider, userId: threadsUserId, accessToken: threadsToken };
+  const payloadFor = (provider: Provider, action: string) => {
+    if (provider === "bluesky") return { action, provider, handle: bskyHandle, password: bskyPassword };
+    if (provider === "dayone") {
+      return { action, provider, dayOneEmail, host: smtpHost, port: Number(smtpPort), user: smtpUser, pass: smtpPass };
+    }
+    return { action, provider, userId: threadsUserId, accessToken: threadsToken };
+  };
 
-  const label = (p: Provider) => (p === "bluesky" ? "Bluesky" : "Threads");
+  const label = (p: Provider) => (p === "bluesky" ? "Bluesky" : p === "dayone" ? "Journal email" : "Threads");
 
   async function run(provider: Provider, action: "save" | "test" | "disconnect") {
     setBusy(`${provider}:${action}`);
@@ -63,10 +72,17 @@ export default function IntegrationsClient({
       }
       setStatus(data.status as IntegrationStatus);
       if (provider === "bluesky") setBskyPassword("");
+      else if (provider === "dayone") setSmtpPass("");
       else setThreadsToken("");
       if (action === "disconnect") {
-        if (provider === "bluesky") setBskyHandle((data.status as IntegrationStatus).bluesky.handle ?? "");
-        else setThreadsUserId((data.status as IntegrationStatus).threads.userId ?? "");
+        const st = data.status as IntegrationStatus;
+        if (provider === "bluesky") setBskyHandle(st.bluesky.handle ?? "");
+        else if (provider === "dayone") {
+          setDayOneEmail(st.dayOne.dayOneEmail ?? "");
+          setSmtpHost(st.dayOne.host ?? "");
+          setSmtpPort(String(st.dayOne.port ?? 587));
+          setSmtpUser(st.dayOne.user ?? "");
+        } else setThreadsUserId(st.threads.userId ?? "");
       }
       setResult({ ok: true, msg: action === "disconnect" ? `${label(provider)} disconnected.` : `${label(provider)} connected.` });
     } catch {
@@ -165,6 +181,38 @@ export default function IntegrationsClient({
               </button>
               {status.threads.source === "db" && (
                 <button onClick={() => run("threads", "disconnect")} disabled={!!busy}
+                  className="text-xs text-gray-400 hover:text-red-400 underline disabled:opacity-40">Disconnect</button>
+              )}
+            </div>
+          </div>
+        </section>
+
+        {/* ── Journal by email (DayOne) ── */}
+        <section className="py-4 border-b border-surface-800 last:border-b-0">
+          <h2 className="text-sm font-semibold text-white mb-1">Journal by email</h2>
+          <p className="text-xs mb-3">
+            {statusLine(status.dayOne.configured, status.dayOne.source, status.dayOne.dayOneEmail)}
+          </p>
+          <div className="flex flex-col gap-3">
+            {field("Journal address", dayOneEmail, setDayOneEmail, { placeholder: "yourjournal@dayone.me" })}
+            {field("SMTP host", smtpHost, setSmtpHost, { placeholder: "smtp.example.com" })}
+            {field("SMTP port", smtpPort, setSmtpPort, { placeholder: "587" })}
+            {field("SMTP username", smtpUser, setSmtpUser, { placeholder: "you@example.com" })}
+            {field("SMTP password", smtpPass, setSmtpPass, {
+              type: "password",
+              placeholder: status.dayOne.configured ? "•••• saved — type to replace" : "",
+            })}
+            <p className="text-xs text-gray-600 m-0">
+              Posts are emailed to your journal&apos;s import address when you publish. There&apos;s no Test
+              button here on purpose — the only way to check an SMTP credential is to send a message,
+              which would leave a stray entry in your journal every time you saved.
+            </p>
+            <div className="flex items-center gap-3 pt-1">
+              <button onClick={() => run("dayone", "save")} disabled={!!busy || !encryptionAvailable} className="btn-primary text-xs disabled:opacity-50">
+                {busy === "dayone:save" ? "Saving…" : "Save"}
+              </button>
+              {status.dayOne.source === "db" && (
+                <button onClick={() => run("dayone", "disconnect")} disabled={!!busy}
                   className="text-xs text-gray-400 hover:text-red-400 underline disabled:opacity-40">Disconnect</button>
               )}
             </div>
