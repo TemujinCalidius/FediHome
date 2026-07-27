@@ -256,6 +256,11 @@ model FediFollowing {
   domain    String
   displayName String?
   avatarUrl String?
+  /// Did their server actually agree? We write the row when the Follow is SENT,
+  /// so without this a manually-approved account — or one that rejected us —
+  /// looks identical to a real follow (#348). Defaults true so existing rows,
+  /// which predate any tracking, read as accepted.
+  accepted  Boolean  @default(true)
   createdAt DateTime @default(now())
 }
 

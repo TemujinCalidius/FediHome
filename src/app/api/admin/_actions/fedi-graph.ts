@@ -137,7 +137,9 @@ export async function follow(body: AdminBody): Promise<NextResponse> {
       throw new Error("blocked: actor outbox resolves to private host");
     }
 
-    // Store following record
+    // Store following record. `accepted: false` until their server says otherwise
+    // (#348) — the row exists from the moment we send the Follow, which is not
+    // the same thing as them having agreed to it.
     await prisma.fediFollowing.upsert({
       where: { actorUri: actorLink.href },
       create: {
@@ -147,6 +149,7 @@ export async function follow(body: AdminBody): Promise<NextResponse> {
         domain,
         displayName: actor.name || null,
         avatarUrl: actor.icon?.url || null,
+        accepted: false,
       },
       update: {
         displayName: actor.name || null,
