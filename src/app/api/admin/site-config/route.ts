@@ -8,6 +8,7 @@ import {
   SITE_CONFIG_KEYS,
 } from "@/lib/site-settings";
 import { resolveTinylyticsEmbed } from "@/lib/tinylytics";
+import { checkUploadsDir, invalidateUploadsDirCache, legacyUploadsDir } from "@/lib/uploads-dir";
 
 /** Whether the current analytics config actually resolves a collecting embed (#288). */
 async function analyticsStatus(analytics: { siteId: string; embedId: string }) {
@@ -49,10 +50,23 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json().catch(() => ({}));
+
+  // The uploads directory is the one setting that can be syntactically valid and
+  // still unusable — a path that doesn't exist, or one a Docker bind mount owns
+  // as root while the app runs as `node` (#363). Probe it before saving, so the
+  // owner gets the reason now rather than discovering it on their next upload.
+  const uploadsDir = body?.settings?.["storage.uploadsDir"];
+  if (typeof uploadsDir === "string" && uploadsDir.trim() !== "") {
+    const check = await checkUploadsDir(uploadsDir);
+    if (!check.ok) return NextResponse.json({ error: check.error }, { status: 400 });
+    body.settings["storage.uploadsDir"] = check.path;
+  }
+
   const result = await applySiteConfig(body?.settings);
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: 400 });
   }
+  invalidateUploadsDirCache();
   const effective = await getRuntimeSiteConfig();
   return NextResponse.json({
     success: true,

@@ -5,6 +5,7 @@ import path from "path";
 import { parseBuffer as parseAudioMetadata } from "music-metadata";
 import { saveUploadedImage, IMAGE_TYPES } from "@/lib/media";
 import { getSiteUrl } from "@/lib/identity";
+import { ensureUploadDir } from "@/lib/uploads-dir";
 
 // Audio cap (per-file)
 const MAX_AUDIO_SIZE = 100 * 1024 * 1024; // 100 MB
@@ -73,8 +74,7 @@ async function handleAudioUpload(file: File): Promise<NextResponse> {
   const now = new Date();
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, "0");
-  const audioDir = path.join(process.cwd(), "public", "uploads", "audio", String(year), month);
-  await mkdir(audioDir, { recursive: true });
+  const audioDir = await ensureUploadDir("audio", String(year), month);
 
   const timestamp = Date.now().toString(36);
   const filename = `${timestamp}.mp3`;

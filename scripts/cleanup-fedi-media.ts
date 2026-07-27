@@ -12,6 +12,7 @@ import { PrismaClient } from "../src/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { unlink } from "fs/promises";
 import path from "path";
+import { resolveUploadPath } from "../src/lib/uploads-dir";
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
@@ -42,14 +43,18 @@ async function main() {
   for (const post of oldPosts) {
     const filesToDelete: string[] = [];
 
-    // Collect local fedi media paths
+    // Collect local fedi media paths. resolveUploadPath honours a relocated
+    // uploads directory and applies the containment check this script never had
+    // (#363); it also falls back to the legacy root for older media.
     for (const url of post.mediaUrls) {
       if (url.startsWith("/uploads/fedi/")) {
-        filesToDelete.push(path.join(process.cwd(), "public", url));
+        const abs = await resolveUploadPath(url);
+        if (abs) filesToDelete.push(abs);
       }
     }
     if (post.embedImage?.startsWith("/uploads/fedi/")) {
-      filesToDelete.push(path.join(process.cwd(), "public", post.embedImage));
+      const abs = await resolveUploadPath(post.embedImage);
+      if (abs) filesToDelete.push(abs);
     }
 
     // Delete files

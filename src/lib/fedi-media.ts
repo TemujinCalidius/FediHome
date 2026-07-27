@@ -2,6 +2,7 @@ import { writeFile, mkdir, readdir, stat, unlink } from "fs/promises";
 import path from "path";
 import sharp from "sharp";
 import { isPrivateUrl, assertPublicHost } from "./url-guard";
+import { ensureUploadDir, uploadsDir, resolveUploadPath } from "./uploads-dir";
 
 export { isPrivateUrl, assertPublicHost };
 
@@ -147,8 +148,7 @@ export async function proxyImage(remoteUrl: string): Promise<string | null> {
   const now = new Date();
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, "0");
-  const uploadDir = path.join(process.cwd(), "public", "uploads", "fedi", String(year), month);
-  await mkdir(uploadDir, { recursive: true });
+  const uploadDir = await ensureUploadDir("fedi", String(year), month);
 
   const filename = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}.${ext}`;
   const filePath = path.join(uploadDir, filename);
@@ -186,8 +186,7 @@ export async function proxyVideo(remoteUrl: string): Promise<string | null> {
   const now = new Date();
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, "0");
-  const uploadDir = path.join(process.cwd(), "public", "uploads", "fedi", String(year), month);
-  await mkdir(uploadDir, { recursive: true });
+  const uploadDir = await ensureUploadDir("fedi", String(year), month);
 
   const filename = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}.${ext}`;
   const filePath = path.join(uploadDir, filename);
@@ -220,7 +219,7 @@ async function getAllFiles(dir: string): Promise<{ path: string; mtimeMs: number
 }
 
 export async function trimFediStorage(): Promise<{ deleted: number; freedBytes: number }> {
-  const baseDir = path.join(process.cwd(), "public", "uploads", "fedi");
+  const baseDir = path.join(await uploadsDir(), "fedi");
   const files = await getAllFiles(baseDir);
 
   const totalSize = files.reduce((sum, f) => sum + f.size, 0);
@@ -257,13 +256,14 @@ export async function trimFediStorage(): Promise<{ deleted: number; freedBytes: 
  * actually removed.
  */
 export async function removeFediMediaFiles(urls: string[]): Promise<number> {
-  const baseDir = path.join(process.cwd(), "public", "uploads", "fedi");
   let removed = 0;
   for (const url of urls) {
     if (typeof url !== "string" || !url.startsWith("/uploads/fedi/")) continue;
-    const abs = path.join(process.cwd(), "public", url);
-    const rel = path.relative(baseDir, abs);
-    if (rel.startsWith("..") || path.isAbsolute(rel)) continue; // escaped the tree
+    // resolveUploadPath does the containment check against BOTH roots, so a
+    // poisoned "/uploads/fedi/../.." value still can't escape, and media written
+    // before the directory moved is still cleaned up.
+    const abs = await resolveUploadPath(url);
+    if (!abs) continue;
     try {
       await unlink(abs);
       removed++;

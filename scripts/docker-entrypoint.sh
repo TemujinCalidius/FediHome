@@ -17,16 +17,28 @@
 # POSIX sh — the runtime image is alpine and has no bash.
 set -e
 
-UPLOADS="/app/public/uploads"
+# The built-in location, plus a relocated one if FEDIHOME_UPLOADS_DIR is set
+# (#363). A directory mounted outside /app/public is owned by whoever the host
+# says, so without chowning it too the app would start fine and then fail every
+# single upload. The database setting can't be read from here — no Prisma, no
+# DATABASE_URL guarantee at this point — so a path configured in the admin panel
+# needs the env var set as well if it's a fresh mount. That's called out in
+# docs/deployment.md.
+UPLOAD_DIRS="/app/public/uploads"
+if [ -n "$FEDIHOME_UPLOADS_DIR" ] && [ "$FEDIHOME_UPLOADS_DIR" != "/app/public/uploads" ]; then
+  UPLOAD_DIRS="$UPLOAD_DIRS $FEDIHOME_UPLOADS_DIR"
+fi
 
 if [ "$(id -u)" = "0" ]; then
-  # Only touch it when it isn't already right: a large uploads directory on a
-  # slow volume shouldn't be walked on every single boot.
-  if [ -d "$UPLOADS" ] && [ "$(stat -c %u "$UPLOADS" 2>/dev/null)" != "1000" ]; then
-    echo "  Adjusting ownership of $UPLOADS so the unprivileged app user can write to it…"
-    chown -R node:node "$UPLOADS" 2>/dev/null || \
-      echo "  ⚠️  Could not change ownership of $UPLOADS — uploads may fail to save. On the host: chown -R 1000:1000 ./public/uploads"
-  fi
+  for UPLOADS in $UPLOAD_DIRS; do
+    # Only touch it when it isn't already right: a large uploads directory on a
+    # slow volume shouldn't be walked on every single boot.
+    if [ -d "$UPLOADS" ] && [ "$(stat -c %u "$UPLOADS" 2>/dev/null)" != "1000" ]; then
+      echo "  Adjusting ownership of $UPLOADS so the unprivileged app user can write to it…"
+      chown -R node:node "$UPLOADS" 2>/dev/null || \
+        echo "  ⚠️  Could not change ownership of $UPLOADS — uploads may fail to save. On the host: chown -R 1000:1000 <that directory>"
+    fi
+  done
   exec su-exec node "$@"
 fi
 

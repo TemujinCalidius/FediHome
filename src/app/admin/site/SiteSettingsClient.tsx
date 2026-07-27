@@ -30,6 +30,7 @@ export default function SiteSettingsClient({
   pushKey,
   aliases,
   encryptionAvailable,
+  uploadsDefault,
   profile,
   profileDefaults,
 }: {
@@ -42,6 +43,8 @@ export default function SiteSettingsClient({
   pushKey: { configured: boolean; source: "db" | "env" | null; subject: string };
   aliases: string[];
   encryptionAvailable: boolean;
+  /** The built-in uploads path, shown as the placeholder when nothing is set. */
+  uploadsDefault: string;
   profile: {
     authorName: string; authorTagline: string; authorBio: string;
     actorSummary: string; avatarPath: string; bannerPath: string;
@@ -393,6 +396,7 @@ export default function SiteSettingsClient({
       "layout.shell": cfg.layout.shell,
       "sidebar.side": cfg.sidebar.side,
       "sidebar.blocks": sidebarText,
+      "storage.uploadsDir": cfg.storage.uploadsDir,
       "security.adminSessionTtlDays": String(cfg.security.adminSessionTtlDays),
       "security.appTokenTtlDays": String(cfg.security.appTokenTtlDays),
       "contact.email": cfg.contact.email,
@@ -428,7 +432,8 @@ export default function SiteSettingsClient({
         "footer.badgeAlt", "footer.fundingUrl", "footer.fundingLabel",
         "download.macos.enabled", "download.macos.releaseUrl", "download.macos.appStoreUrl",
         "theme.id", "layout.feed", "layout.header", "layout.footer", "layout.shell",
-        "sidebar.side", "sidebar.blocks", "security.adminSessionTtlDays", "security.appTokenTtlDays", "contact.email",
+        "sidebar.side", "sidebar.blocks", "storage.uploadsDir",
+        "security.adminSessionTtlDays", "security.appTokenTtlDays", "contact.email",
         "podcast.title", "podcast.author", "podcast.description", "podcast.email", "podcast.image",
         "categories.photos", "categories.videos", "categories.audio",
         "analytics.siteId", "analytics.embedId",
@@ -448,6 +453,7 @@ export default function SiteSettingsClient({
   const setLayout = (patch: Partial<RuntimeSiteConfig["layout"]>) => setCfg((c) => ({ ...c, layout: { ...c.layout, ...patch } }));
   const setSidebar = (patch: Partial<RuntimeSiteConfig["sidebar"]>) => setCfg((c) => ({ ...c, sidebar: { ...c.sidebar, ...patch } }));
   const setSecurity = (patch: Partial<RuntimeSiteConfig["security"]>) => setCfg((c) => ({ ...c, security: { ...c.security, ...patch } }));
+  const setStorage = (patch: Partial<RuntimeSiteConfig["storage"]>) => setCfg((c) => ({ ...c, storage: { ...c.storage, ...patch } }));
   const setContact = (patch: Partial<RuntimeSiteConfig["contact"]>) => setCfg((c) => ({ ...c, contact: { ...c.contact, ...patch } }));
   const setPodcast = (patch: Partial<RuntimeSiteConfig["podcast"]>) => setCfg((c) => ({ ...c, podcast: { ...c.podcast, ...patch } }));
   const setAnalytics = (patch: Partial<RuntimeSiteConfig["analytics"]>) => setCfg((c) => ({ ...c, analytics: { ...c.analytics, ...patch } }));
@@ -907,6 +913,39 @@ export default function SiteSettingsClient({
               {aliasBusy ? "Saving…" : "Save aliases"}
             </button>
           </div>
+        </>)}
+
+        {section("Storage", <>
+          <p className="text-xs text-gray-600 m-0">
+            Where uploaded photos, audio and cached remote media are written on disk.
+            Leave blank to keep them in <code>public/uploads</code> inside the install.
+          </p>
+          <label className="flex flex-col gap-1 text-xs text-gray-400">
+            <span>Uploads directory</span>
+            <input
+              type="text"
+              value={cfg.storage.uploadsDir}
+              placeholder={uploadsDefault}
+              onChange={(e) => setStorage({ uploadsDir: e.target.value })}
+              className="bg-surface-800 border border-surface-700 rounded-md px-2 py-1.5 text-sm text-white font-mono"
+            />
+            <span className="text-gray-600">
+              An absolute path on a bigger disk or a mounted volume. It must already exist
+              and be writable by FediHome — we check both before saving, and tell you which
+              one failed.
+            </span>
+          </label>
+          <p className="text-xs text-amber-400/90 m-0">
+            <strong>Media already on disk is not moved.</strong> New uploads go to the new
+            location; everything uploaded before it keeps being served from the old one, so
+            nothing breaks and nothing is at risk. Move the old files across whenever suits
+            you — or leave them where they are.
+          </p>
+          <p className="text-xs text-gray-600 m-0">
+            Running in Docker? Point the bind mount at the same path, or the directory will
+            be owned by root and the app (running as <code>node</code>) won&apos;t be able to
+            write to it.
+          </p>
         </>)}
 
         {section("Security", <>

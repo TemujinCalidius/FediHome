@@ -1,6 +1,7 @@
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import sharp from "sharp";
+import { ensureUploadDir } from "./uploads-dir";
 
 /**
  * Shared image handling (#59) — the optimise / EXIF-strip / write pipeline used
@@ -24,8 +25,7 @@ export async function saveUploadedImage(
   const now = new Date();
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, "0");
-  const uploadDir = path.join(process.cwd(), "public", "uploads", String(year), month);
-  await mkdir(uploadDir, { recursive: true });
+  const uploadDir = await ensureUploadDir(String(year), month);
 
   const timestamp = Date.now().toString(36);
   let buffer: Buffer = Buffer.from(await file.arrayBuffer());

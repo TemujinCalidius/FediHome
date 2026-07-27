@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- **Put your media on a different disk** (#363) — uploads were hardcoded to `public/uploads` inside the install, so moving them to a bigger volume meant a symlink, and a folder of your own photos and audio sat inside the source checkout where a clean re-clone could lose it. **Admin → Site settings → Storage** now takes any absolute path; FediHome checks it exists and that it can actually write there before saving, and tells you which of the two failed. Changing it never moves a file: new uploads go to the new place and everything already on disk keeps being served from the old one, so you can relocate at your own pace or not at all.
 - **You can see which follows haven't gone through yet** (#348) — following someone wrote the row and called it done, so an account that approves followers by hand, or one whose server flatly refused you, looked exactly like a real follow: their posts never arrived and nothing said why. FediHome now listens for the answer. Unconfirmed follows are marked **pending** in your Following list, and if someone declines you're told, with the follow removed. Existing follows are unaffected — they're treated as accepted, which they are.
 
 ### Fixed

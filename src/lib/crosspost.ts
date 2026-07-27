@@ -5,6 +5,7 @@ import path from "path";
 import nodemailer from "nodemailer";
 import { isPrivateUrl } from "./url-guard";
 import { getSiteUrl } from "./identity";
+import { resolveUploadPath } from "./uploads-dir";
 
 export interface CrosspostImage {
   url: string; // full URL or local path
@@ -164,7 +165,7 @@ async function buildBlueskyEmbed(
       let contentType: string;
 
       // Try reading from local disk first (avoids race condition with file serving)
-      const localPath = urlToLocalPath(img.url);
+      const localPath = await urlToLocalPath(img.url);
       if (localPath) {
         const fileBuffer = await readFile(localPath);
         buffer = new Uint8Array(fileBuffer);
@@ -364,7 +365,7 @@ export async function crosspostToDayOne(
  * URL like `${SITE_URL}/uploads/../../etc/passwd` would otherwise read /etc/passwd
  * and ship it to Bluesky as a "photo".
  */
-function urlToLocalPath(url: string): string | null {
+async function urlToLocalPath(url: string): Promise<string | null> {
   const siteUrl = getSiteUrl();
   let relativePath: string | null = null;
   if (url.startsWith(siteUrl + "/uploads/")) {
@@ -374,10 +375,7 @@ function urlToLocalPath(url: string): string | null {
   }
   if (!relativePath) return null;
 
-  const uploadsRoot = path.resolve(process.cwd(), "public", "uploads");
-  const resolved = path.resolve(process.cwd(), "public", "." + relativePath);
-  if (resolved !== uploadsRoot && !resolved.startsWith(uploadsRoot + path.sep)) {
-    return null;
-  }
-  return resolved;
+  // Containment is enforced inside resolveUploadPath, against both the
+  // configured root and the legacy one (audit finding M2, #363).
+  return resolveUploadPath(relativePath);
 }

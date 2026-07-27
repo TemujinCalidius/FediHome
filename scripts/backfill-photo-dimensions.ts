@@ -11,16 +11,23 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import sharp from "sharp";
 import { join } from "node:path";
 import { existsSync } from "node:fs";
+import { resolveUploadPath } from "../src/lib/uploads-dir";
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
 });
 
-function localPathFor(imagePath: string): string | null {
+async function localPathFor(imagePath: string): Promise<string | null> {
   // Strip query string (e.g. ?w=300) — file on disk has none
   const cleaned = imagePath.split("?")[0];
   // Strip protocol/host if present — locally-served images on this host
   const pathOnly = cleaned.replace(/^https?:\/\/[^/]+/, "");
+  // Uploads may live outside the checkout (#363); everything else still
+  // resolves against the project root.
+  if (pathOnly.startsWith("/uploads/")) {
+    const abs = await resolveUploadPath(pathOnly);
+    if (abs && existsSync(abs)) return abs;
+  }
   const cwd = process.cwd();
   const candidates = [
     join(cwd, "public", pathOnly),
@@ -46,7 +53,7 @@ async function main() {
   let failed = 0;
 
   for (const p of photos) {
-    const local = localPathFor(p.imagePath);
+    const local = await localPathFor(p.imagePath);
     if (!local) {
       console.log(`  skip ${p.slug}: cannot resolve local path for ${p.imagePath}`);
       failed++;
