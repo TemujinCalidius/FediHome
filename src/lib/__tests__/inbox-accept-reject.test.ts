@@ -161,8 +161,8 @@ describe("Reject", () => {
   it("deletes an ACCEPTED follow too — Reject also revokes", async () => {
     // Mastodon sends Reject when someone removes an existing follower.
     await POST(req(wrapped("Reject")));
-    const where = vi.mocked(prisma.fediFollowing.deleteMany).mock.calls[0][0].where;
-    expect(where).not.toHaveProperty("accepted");
+    const arg = vi.mocked(prisma.fediFollowing.deleteMany).mock.calls[0][0];
+    expect(arg?.where).not.toHaveProperty("accepted");
   });
 
   it("stays silent when we never followed them", async () => {
