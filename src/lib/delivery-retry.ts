@@ -27,6 +27,8 @@ export interface RetrySummary {
   claimed: number;
   delivered: number;
   gaveUp: number;
+  /** Dropped because we now refuse to contact the recipient at all (#379). */
+  discarded: number;
   pruned: number;
 }
 
@@ -40,6 +42,7 @@ export async function retryFailedDeliveries(now: Date = new Date()): Promise<Ret
   let claimed = 0;
   let delivered = 0;
   let gaveUp = 0;
+  let discarded = 0;
 
   for (const row of due) {
     // Claim: push nextRetryAt out; only the run that matches the current value wins.
@@ -71,6 +74,25 @@ export async function retryFailedDeliveries(now: Date = new Date()): Promise<Ret
 
     const attempts = row.attempts + 1;
     const lastError = (res.error || `status ${res.status}`).slice(0, 300);
+
+    if (res.blockedBy) {
+      // Our own policy stopped this, not the remote — a row queued before you
+      // blocked them would otherwise keep re-delivering with backoff for ~31h.
+      // Delete outright rather than marking it failed: a `failedAt` row sits in
+      // the observability window implying the other server misbehaved.
+      await prisma.failedDelivery.deleteMany({ where: { id: row.id } });
+      discarded++;
+      continue;
+    }
+
+    if (res.permanent) {
+      // A definitive refusal (410 Gone, 403, 404 …). Re-sending gets the same
+      // answer, so become terminal now instead of in 31 hours.
+      await prisma.failedDelivery.updateMany({ where: { id: row.id }, data: { attempts, failedAt: now, lastError } });
+      gaveUp++;
+      continue;
+    }
+
     if (attempts >= MAX_ATTEMPTS) {
       await prisma.failedDelivery.updateMany({ where: { id: row.id }, data: { attempts, failedAt: now, lastError } });
       gaveUp++;
@@ -92,5 +114,5 @@ export async function retryFailedDeliveries(now: Date = new Date()): Promise<Ret
     .then((r) => r.count)
     .catch(() => 0);
 
-  return { claimed, delivered, gaveUp, pruned };
+  return { claimed, delivered, gaveUp, discarded, pruned };
 }

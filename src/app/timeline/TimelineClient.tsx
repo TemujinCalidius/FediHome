@@ -1813,6 +1813,7 @@ export default function TimelineClient({
   const [replyTo, setReplyTo] = useState<{ apId: string; inbox: string } | null>(null);
   const [replyContent, setReplyContent] = useState("");
   const [followHandle, setFollowHandle] = useState("");
+  const [followError, setFollowError] = useState<string | null>(null);
   const [threadPosts, setThreadPosts] = useState<FediPostItem[] | null>(null);
   const [threadLoading, setThreadLoading] = useState(false);
 
@@ -2477,11 +2478,20 @@ export default function TimelineClient({
                   const payload = isFedi
                     ? { action: "follow", handle: raw }
                     : { action: "bsky_follow", handleOrDid: raw };
-                  await fetch("/api/admin", {
+                  setFollowError(null);
+                  // This used to fire and reload unconditionally, so every
+                  // refusal was invisible — including "you've blocked this
+                  // account", which has been returned since blocking shipped.
+                  const res = await fetch("/api/admin", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify(payload),
-                  });
+                  }).catch(() => null);
+                  if (!res || !res.ok) {
+                    const data = await res?.json().catch(() => null);
+                    setFollowError(data?.error || "That didn't work. Check the handle and try again.");
+                    return;
+                  }
                   setFollowHandle("");
                   window.location.reload();
                 }}
@@ -2490,6 +2500,9 @@ export default function TimelineClient({
                 Follow
               </button>
             </div>
+            {followError && (
+              <p className="text-xs text-amber-400 mt-2">{followError}</p>
+            )}
           </div>
 
           {/* Following list */}

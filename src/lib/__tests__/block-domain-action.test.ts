@@ -25,6 +25,7 @@ vi.mock("@/lib/db", () => ({
     fediInteraction: { findMany: vi.fn(), deleteMany: vi.fn() },
     fediFollower: { deleteMany: vi.fn(), findUnique: vi.fn() },
     fediFollowing: { deleteMany: vi.fn(), findUnique: vi.fn() },
+    failedDelivery: { findMany: vi.fn(), deleteMany: vi.fn() },
     post: { updateMany: vi.fn() },
     photo: { updateMany: vi.fn() },
   },
@@ -136,3 +137,37 @@ describe("unblockDomain", () => {
     expect((await unblockDomain({} as never)).status).toBe(400);
   });
 });
+
+describe("queued retries aimed at the blocked instance are dropped (#379)", () => {
+  beforeEach(() => {
+    vi.mocked(prisma.failedDelivery.deleteMany).mockResolvedValue({ count: 1 } as never);
+  });
+
+  it("drops pending rows on the domain and its subdomains, and nothing else", async () => {
+    // block()/blockDomain() delete the relationship rows, which stops future
+    // fan-out — but a row queued BEFORE the block survived, and the sweep kept
+    // re-delivering it with backoff to the blocked inbox for ~31 hours.
+    vi.mocked(prisma.failedDelivery.findMany).mockResolvedValue([
+      { id: "r1", inbox: "https://spam.example/inbox" },
+      { id: "r2", inbox: "https://a.spam.example/inbox" },
+      { id: "r3", inbox: "https://good.example/inbox" },
+    ] as never);
+
+    await blockDomain({ domain: "spam.example" } as never);
+
+    // Only pending rows are considered — a terminal one is already inert.
+    expect(vi.mocked(prisma.failedDelivery.findMany).mock.calls[0][0]).toMatchObject({
+      where: { failedAt: null },
+    });
+    expect(prisma.failedDelivery.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ["r1", "r2"] } } });
+  });
+
+  it("touches nothing when no queued row points at the domain", async () => {
+    vi.mocked(prisma.failedDelivery.findMany).mockResolvedValue([
+      { id: "r3", inbox: "https://good.example/inbox" },
+    ] as never);
+    await blockDomain({ domain: "spam.example" } as never);
+    expect(prisma.failedDelivery.deleteMany).not.toHaveBeenCalled();
+  });
+});
+

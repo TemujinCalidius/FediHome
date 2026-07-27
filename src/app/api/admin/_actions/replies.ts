@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { deliverActivity, deliverToFollowers } from "@/lib/http-signatures";
 import { siteConfig } from "@/../site.config";
-import { parseMentions, linkMentions, buildApMentionTags, collectMentionInboxes } from "@/lib/mentions";
+import { parseMentions, linkMentions, buildApMentionTags, collectMentionTargets } from "@/lib/mentions";
 import { resolveActorInbox, originalApId } from "@/lib/fedi-resolve";
 import type { AdminBody } from "./types";
 import { getSiteUrl } from "@/lib/identity";
@@ -92,14 +92,14 @@ export async function reply(body: AdminBody): Promise<NextResponse> {
   const directInbox =
     (replyActorUri ? await resolveActorInbox(replyActorUri) : null) || targetInbox;
   if (directInbox) {
-    await deliverActivity(directInbox, activity).catch(() => {});
+    await deliverActivity(directInbox, activity, { actorUri: replyActorUri || null }).catch(() => {});
   }
   await deliverToFollowers(activity).catch(() => {});
   // Direct-deliver to mentioned actors' inboxes
-  for (const inbox of collectMentionInboxes(replyMentions)) {
-    if (inbox === directInbox) continue;
-    deliverActivity(inbox, activity).catch((err) =>
-      console.error(`Failed to deliver mention to ${inbox}:`, err)
+  for (const t of collectMentionTargets(replyMentions)) {
+    if (t.inbox === directInbox) continue;
+    deliverActivity(t.inbox, activity, { actorUri: t.actorUri }).catch((err) =>
+      console.error(`Failed to deliver mention to ${t.inbox}:`, err)
     );
   }
 
@@ -218,9 +218,9 @@ export async function editReply(body: AdminBody): Promise<NextResponse> {
   deliverToFollowers(updateActivity).catch((err) =>
     console.error("Failed to federate reply update:", err)
   );
-  for (const inbox of collectMentionInboxes(editMentions)) {
-    deliverActivity(inbox, updateActivity).catch((err) =>
-      console.error(`Failed to deliver edit to mentioned ${inbox}:`, err)
+  for (const t of collectMentionTargets(editMentions)) {
+    deliverActivity(t.inbox, updateActivity, { actorUri: t.actorUri }).catch((err) =>
+      console.error(`Failed to deliver edit to mentioned ${t.inbox}:`, err)
     );
   }
 

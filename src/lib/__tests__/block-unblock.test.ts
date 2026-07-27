@@ -6,11 +6,13 @@ vi.mock("@/lib/fedi-resolve", () => ({ resolveActorInbox: resolveInbox }));
 vi.mock("@/lib/url-guard", () => ({ assertPublicHost: vi.fn(async () => true), isPrivateUrl: vi.fn(() => false) }));
 vi.mock("@/lib/db", () => ({
   prisma: {
-    fediFollowing: { findUnique: vi.fn(), delete: vi.fn(), upsert: vi.fn() },
-    fediFollower: { findUnique: vi.fn(), delete: vi.fn() },
+    fediFollowing: { findUnique: vi.fn(), delete: vi.fn(), upsert: vi.fn(), count: vi.fn() },
+    fediFollower: { findUnique: vi.fn(), delete: vi.fn(), count: vi.fn() },
     fediPost: { findFirst: vi.fn(), deleteMany: vi.fn() },
     fediInteraction: { deleteMany: vi.fn(), findMany: vi.fn() },
     blockedActor: { upsert: vi.fn(), findUnique: vi.fn(), deleteMany: vi.fn() },
+    blockedDomain: { findFirst: vi.fn() },
+    failedDelivery: { findMany: vi.fn(), deleteMany: vi.fn() },
     post: { updateMany: vi.fn() },
     photo: { updateMany: vi.fn() },
   },
@@ -36,6 +38,9 @@ beforeEach(() => {
   vi.mocked(prisma.blockedActor.upsert).mockResolvedValue({} as never);
   vi.mocked(prisma.blockedActor.deleteMany).mockResolvedValue({ count: 1 } as never);
   vi.mocked(prisma.blockedActor.findUnique).mockResolvedValue(null as never);
+  vi.mocked(prisma.blockedDomain.findFirst).mockResolvedValue(null as never);
+  vi.mocked(prisma.failedDelivery.findMany).mockResolvedValue([] as never);
+  vi.mocked(prisma.failedDelivery.deleteMany).mockResolvedValue({ count: 0 } as never);
   vi.mocked(prisma.fediFollowing.upsert).mockResolvedValue({} as never);
 });
 
@@ -210,3 +215,70 @@ describe("follow() refuses a blocked account", () => {
     expect(res.status).toBe(200);
   });
 });
+
+describe("follow() refuses a blocked DOMAIN, with zero network contact (#379)", () => {
+  beforeEach(() => {
+    vi.mocked(prisma.blockedDomain.findFirst).mockImplementation((async (a: { where: { domain: { in: string[] } } }) =>
+      a.where.domain.in.includes("spam.example") ? { id: "d1" } : null) as never);
+    global.fetch = vi.fn() as unknown as typeof fetch;
+  });
+
+  it("409s on a HANDLE at a blocked instance without WebFingering it", async () => {
+    // The handle path had no early check at all: with the instance domain-blocked
+    // you could still follow anyone there by typing their handle, and we would
+    // WebFinger them, fetch their profile, backfill ten posts, and deliver a
+    // signed Follow. The point of the block is to make no contact whatsoever.
+    const res = await follow({ handle: "@mallory@spam.example" } as never);
+    expect(res.status).toBe(409);
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(prisma.fediFollowing.upsert).not.toHaveBeenCalled();
+  });
+
+  it("409s on a direct actor URI at a blocked instance, before DNS resolution", async () => {
+    const res = await follow({ actorUri: "https://spam.example/users/mallory" } as never);
+    expect(res.status).toBe(409);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it("covers subdomains of a blocked instance", async () => {
+    expect((await follow({ handle: "@x@a.spam.example" } as never)).status).toBe(409);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it("fails CLOSED with a 503 when the block list is unreadable", async () => {
+    // Proceeding would mean contacting a host we may well have blocked.
+    vi.mocked(prisma.blockedDomain.findFirst).mockRejectedValue(new Error("db down") as never);
+    const res = await follow({ actorUri: "https://good.example/users/ada" } as never);
+    expect(res.status).toBe(503);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("block() purges queued retries only when the inbox isn't shared (#379)", () => {
+  beforeEach(() => {
+    vi.mocked(prisma.fediFollowing.findUnique).mockResolvedValue(
+      { actorUri: ACTOR, inbox: "https://mastodon.example/users/mallory/inbox" } as never,
+    );
+    vi.mocked(prisma.fediFollowing.delete).mockResolvedValue({} as never);
+    vi.mocked(prisma.failedDelivery.deleteMany).mockResolvedValue({ count: 1 } as never);
+  });
+
+  it("purges when no one else is behind that inbox", async () => {
+    vi.mocked(prisma.fediFollower.count).mockResolvedValue(0 as never);
+    vi.mocked(prisma.fediFollowing.count).mockResolvedValue(0 as never);
+    await block({ actorUri: ACTOR } as never);
+    expect(prisma.failedDelivery.deleteMany).toHaveBeenCalledWith({
+      where: { inbox: "https://mastodon.example/users/mallory/inbox" },
+    });
+  });
+
+  it("leaves the queue alone when the inbox is SHARED", async () => {
+    // Deleting by inbox alone would cancel queued posts to every unrelated
+    // account behind, say, https://mastodon.social/inbox.
+    vi.mocked(prisma.fediFollower.count).mockResolvedValue(3 as never);
+    vi.mocked(prisma.fediFollowing.count).mockResolvedValue(0 as never);
+    await block({ actorUri: ACTOR } as never);
+    expect(prisma.failedDelivery.deleteMany).not.toHaveBeenCalled();
+  });
+});
+

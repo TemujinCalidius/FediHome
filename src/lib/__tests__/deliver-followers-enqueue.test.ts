@@ -7,6 +7,9 @@ vi.mock("@/lib/db", () => ({
     fediFollower: { findMany: vi.fn() },
     actorKeys: { findUnique: vi.fn() },
     failedDelivery: { upsert: vi.fn() },
+    // deliverToFollowers now consults the block lists before fan-out (#379).
+    blockedActor: { findUnique: vi.fn(), findMany: vi.fn() },
+    blockedDomain: { findFirst: vi.fn(), findMany: vi.fn() },
   },
 }));
 
@@ -26,6 +29,10 @@ beforeEach(() => {
   vi.clearAllMocks();
   process.env.SITE_URL = "https://me";
   vi.mocked(prisma.actorKeys.findUnique).mockResolvedValue({ id: "main", publicKey, privateKey } as never);
+  vi.mocked(prisma.blockedActor.findMany).mockResolvedValue([] as never);
+  vi.mocked(prisma.blockedDomain.findMany).mockResolvedValue([] as never);
+  vi.mocked(prisma.blockedActor.findUnique).mockResolvedValue(null as never);
+  vi.mocked(prisma.blockedDomain.findFirst).mockResolvedValue(null as never);
   vi.mocked(prisma.failedDelivery.upsert).mockResolvedValue({} as never);
 });
 
