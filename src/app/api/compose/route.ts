@@ -4,7 +4,7 @@ import { authenticateApiRequest, verifyOrigin } from "@/lib/auth";
 import { deliverActivity, deliverToFollowers } from "@/lib/http-signatures";
 import { crosspostToBluesky, crosspostReplyToBluesky, crosspostToThreads, crosspostToDayOne } from "@/lib/crosspost";
 import { sanitizeHtml } from "@/lib/sanitize";
-import { parseMentions, linkMentions, buildApMentionTags, collectMentionInboxes } from "@/lib/mentions";
+import { parseMentions, linkMentions, buildApMentionTags, collectMentionTargets } from "@/lib/mentions";
 import { imageAttachment } from "@/lib/ap-post";
 import { buildMediaUpdate } from "@/lib/post-media";
 import { enqueueFailedCrosspost } from "@/lib/crosspost-retry";
@@ -451,7 +451,7 @@ async function composeHandler(req: NextRequest) {
   ];
 
   // Extend CC list + direct-deliver inboxes for any mentioned fedi actors
-  const mentionInboxes = collectMentionInboxes(mentions);
+  const mentionTargets = collectMentionTargets(mentions);
   const mentionActorUris = mentions.fedi
     .filter((m) => !!m.actorUri)
     .map((m) => m.actorUri!);
@@ -487,9 +487,9 @@ async function composeHandler(req: NextRequest) {
   );
 
   // Direct-deliver to mentioned actors' inboxes so they get the notification
-  for (const inbox of mentionInboxes) {
-    deliverActivity(inbox, activity).catch((err) =>
-      console.error(`Failed to deliver mention to ${inbox}:`, err)
+  for (const t of mentionTargets) {
+    deliverActivity(t.inbox, activity, { actorUri: t.actorUri }).catch((err) =>
+      console.error(`Failed to deliver mention to ${t.inbox}:`, err)
     );
   }
 
@@ -717,7 +717,7 @@ async function updatePostHandler(postId: string, input: EditInput) {
     })),
     ...buildApMentionTags(mentions),
   ];
-  const mentionInboxes = collectMentionInboxes(mentions);
+  const mentionTargets = collectMentionTargets(mentions);
   const mentionActorUris = mentions.fedi
     .filter((m) => !!m.actorUri)
     .map((m) => m.actorUri!);
@@ -757,9 +757,9 @@ async function updatePostHandler(postId: string, input: EditInput) {
     deliverToFollowers(activity).catch((err) =>
       console.error("Failed to federate post update:", err)
     );
-    for (const inbox of mentionInboxes) {
-      deliverActivity(inbox, activity).catch((err) =>
-        console.error(`Failed to deliver update to mentioned ${inbox}:`, err)
+    for (const t of mentionTargets) {
+      deliverActivity(t.inbox, activity, { actorUri: t.actorUri }).catch((err) =>
+        console.error(`Failed to deliver update to mentioned ${t.inbox}:`, err)
       );
     }
   }

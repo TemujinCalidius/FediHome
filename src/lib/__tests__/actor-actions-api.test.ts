@@ -29,6 +29,8 @@ vi.mock("@/lib/db", () => ({
     fediFollowing: { findUnique: vi.fn(), upsert: vi.fn(), delete: vi.fn() },
     fediFollower: { findUnique: vi.fn() },
     blockedActor: { findUnique: vi.fn() },
+    // follow() now checks the DOMAIN block list before any network call (#379).
+    blockedDomain: { findFirst: vi.fn() },
     fediPost: { upsert: vi.fn(), findFirst: vi.fn() },
   },
 }));
@@ -53,6 +55,7 @@ beforeEach(() => {
   deliverActivity.mockResolvedValue({ ok: true, status: 202 });
   vi.mocked(prisma.fediFollowing.findUnique).mockResolvedValue(null as never);
   vi.mocked(prisma.blockedActor.findUnique).mockResolvedValue(null as never);
+  vi.mocked(prisma.blockedDomain.findFirst).mockResolvedValue(null as never);
   vi.mocked(prisma.fediFollowing.upsert).mockResolvedValue({} as never);
 });
 

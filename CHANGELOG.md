@@ -5,6 +5,9 @@
 ### Added
 - **You can see which follows haven't gone through yet** (#348) — following someone wrote the row and called it done, so an account that approves followers by hand, or one whose server flatly refused you, looked exactly like a real follow: their posts never arrived and nothing said why. FediHome now listens for the answer. Unconfirmed follows are marked **pending** in your Following list, and if someone declines you're told, with the follow removed. Existing follows are unaffected — they're treated as accepted, which they are.
 
+### Fixed
+- **Blocking someone now stops us talking to them, too** (#379) — a block only ever worked one way: it silenced what they sent you, but every outbound path still reached out. You could send a direct message to someone you'd blocked, and with a whole server blocked you could still follow anyone there by typing their handle — which quietly fetched their profile and imported ten of their posts. Likes, boosts, replies and mentions all went out unchecked, and anything already queued kept retrying to a blocked inbox for the next day and a half. All of it now stops before any contact is made, which is the point: FediHome deliberately never tells anyone they've been blocked, and that promise only holds if we also stop initiating. **This also closes a bypass that affected blocking in both directions** — a server running on a non-standard port was never actually covered by a domain block.
+
 
 ## 1.20.0 (2026-07-26)
 

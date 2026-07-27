@@ -303,6 +303,17 @@ async function handleMove(originActorUri: string, activity: Record<string, unkno
   const existing = await prisma.fediFollowing.findUnique({ where: { actorUri: originActorUri } });
   if (!existing) return;
 
+  // The :74 gate vetted the ORIGIN, not the destination — so without this a
+  // friendly server could hand our follow to an instance we've blocked, and
+  // fetchActorForMove would contact it to do so (#379). Check before any network
+  // call, and return before touching the rows: deliberately leave the origin
+  // follow in place, since losing a relationship because a third party sent a
+  // Move we refuse to honour would be the worse outcome.
+  if (await isBlockedSender(target)) {
+    console.warn(`AP inbox: refusing Move to a blocked destination ${encodeURIComponent(target)}`);
+    return;
+  }
+
   const targetActor = await fetchActorForMove(target);
   if (!targetActor?.inbox) return;
 

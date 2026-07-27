@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { normalizeDomain } from "@/lib/blocks";
+import { normalizeDomain, uriHostname, domainChain, isBlockedDomainHost } from "@/lib/blocks";
 import { prisma } from "@/lib/db";
 import { deliverActivity } from "@/lib/http-signatures";
 import { processAttachments, fetchLinkEmbed } from "@/lib/fedi-media";
@@ -32,7 +32,9 @@ export async function follow(body: AdminBody): Promise<NextResponse> {
     if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
       return NextResponse.json({ error: "Invalid actor URI" }, { status: 400 });
     }
-    domain = parsed.host;
+    // hostname, not host: a port here would be stored in FediFollowing.domain and
+    // then never match a port-less BlockedDomain row (#379).
+    domain = parsed.hostname;
     // Provisional; the actor's own preferredUsername wins once fetched.
     username = parsed.pathname.split("/").filter(Boolean).pop() || "";
   } else {
@@ -55,6 +57,30 @@ export async function follow(body: AdminBody): Promise<NextResponse> {
   // It also matters for scopes: `follow` needs only `interact`, while `unblock`
   // needs `manage`, so without this an interact-scoped token could undo the
   // visible effect of a block it has no authority to lift.
+  //
+  // The DOMAIN gate runs first, and before any network call at all — ahead of
+  // WebFinger and ahead of assertPublicHost's DNS resolution — so a blocked
+  // instance never even learns we looked (#379). It also covers the @handle path,
+  // which previously had no early check whatsoever: with an instance domain-
+  // blocked you could still follow anyone there by typing their handle, and we
+  // would WebFinger them, fetch their profile, backfill ten posts and deliver a
+  // signed Follow.
+  const typedHost = directActorUri ? normalizeDomain(directActorUri) : normalizeDomain(domain);
+  try {
+    if (typedHost && (await isBlockedDomainHost(typedHost))) {
+      return NextResponse.json(
+        { error: "You've blocked that server. Unblock the domain first if you want to follow them." },
+        { status: 409 },
+      );
+    }
+  } catch {
+    // Fail closed: proceeding would contact a host we may well have blocked.
+    return NextResponse.json(
+      { error: "Couldn't check the block list just now — try again in a moment." },
+      { status: 503 },
+    );
+  }
+
   if (directActorUri) {
     const blocked = await prisma.blockedActor.findUnique({
       where: { actorUri: directActorUri },
@@ -117,6 +143,19 @@ export async function follow(body: AdminBody): Promise<NextResponse> {
     if (blockedActor) {
       return NextResponse.json(
         { error: "You've blocked this account. Unblock them first if you want to follow them." },
+        { status: 409 },
+      );
+    }
+
+    // ...and the domain again, because WebFinger can legitimately resolve a
+    // handle to an actor on a DIFFERENT host than the one typed. This costs one
+    // round-trip we can't avoid, but it still fires before the profile fetch,
+    // before the row is written, and before the outbox backfill — so nothing is
+    // imported and no phantom following row is left behind.
+    const resolvedHost = uriHostname(actorLink.href);
+    if (resolvedHost && (await isBlockedDomainHost(resolvedHost))) {
+      return NextResponse.json(
+        { error: "You've blocked that server. Unblock the domain first if you want to follow them." },
         { status: 409 },
       );
     }
@@ -211,13 +250,17 @@ export async function follow(body: AdminBody): Promise<NextResponse> {
     }
 
     // Send signed Follow activity
-    await deliverActivity(actor.inbox, {
-      "@context": "https://www.w3.org/ns/activitystreams",
-      id: `${getSiteUrl()}/ap/follow/${Date.now()}`,
-      type: "Follow",
-      actor: `${getSiteUrl()}/ap/actor`,
-      object: actorLink.href,
-    });
+    await deliverActivity(
+      actor.inbox,
+      {
+        "@context": "https://www.w3.org/ns/activitystreams",
+        id: `${getSiteUrl()}/ap/follow/${Date.now()}`,
+        type: "Follow",
+        actor: `${getSiteUrl()}/ap/actor`,
+        object: actorLink.href,
+      },
+      { actorUri: actorLink.href },
+    );
 
     return NextResponse.json({ success: true });
   } catch (err) {
@@ -237,17 +280,21 @@ export async function unfollow(body: AdminBody): Promise<NextResponse> {
   if (record) {
     // Send signed Undo Follow
     try {
-      await deliverActivity(record.inbox, {
-        "@context": "https://www.w3.org/ns/activitystreams",
-        id: `${getSiteUrl()}/ap/undo/${Date.now()}`,
-        type: "Undo",
-        actor: `${getSiteUrl()}/ap/actor`,
-        object: {
-          type: "Follow",
+      await deliverActivity(
+        record.inbox,
+        {
+          "@context": "https://www.w3.org/ns/activitystreams",
+          id: `${getSiteUrl()}/ap/undo/${Date.now()}`,
+          type: "Undo",
           actor: `${getSiteUrl()}/ap/actor`,
-          object: record.actorUri,
+          object: {
+            type: "Follow",
+            actor: `${getSiteUrl()}/ap/actor`,
+            object: record.actorUri,
+          },
         },
-      });
+        { actorUri: record.actorUri },
+      );
     } catch {
       // Continue even if undo delivery fails
     }
@@ -266,23 +313,54 @@ export async function unfollowByUri(body: AdminBody): Promise<NextResponse> {
   const record = await prisma.fediFollowing.findUnique({ where: { actorUri: unfollowUri } });
   if (record) {
     try {
-      await deliverActivity(record.inbox, {
-        "@context": "https://www.w3.org/ns/activitystreams",
-        id: `${getSiteUrl()}/ap/undo/${Date.now()}`,
-        type: "Undo",
-        actor: `${getSiteUrl()}/ap/actor`,
-        object: {
-          type: "Follow",
+      await deliverActivity(
+        record.inbox,
+        {
+          "@context": "https://www.w3.org/ns/activitystreams",
+          id: `${getSiteUrl()}/ap/undo/${Date.now()}`,
+          type: "Undo",
           actor: `${getSiteUrl()}/ap/actor`,
-          object: unfollowUri,
+          object: {
+            type: "Follow",
+            actor: `${getSiteUrl()}/ap/actor`,
+            object: unfollowUri,
+          },
         },
-      });
+        { actorUri: unfollowUri },
+      );
     } catch {
       // Continue
     }
     await prisma.fediFollowing.delete({ where: { actorUri: unfollowUri } });
   }
   return NextResponse.json({ success: true });
+}
+
+/**
+ * Drop queued retries aimed at an inbox we've just blocked (#379).
+ *
+ * `block()`/`blockDomain()` delete the relationship rows, which stops future
+ * fan-out — but a `FailedDelivery` row queued BEFORE the block survives, and the
+ * retry sweep keeps re-delivering it with backoff for ~31 hours afterwards.
+ *
+ * Only when the inbox is provably not shared. Deleting by inbox alone would
+ * cancel queued posts to every unrelated account behind, say,
+ * `https://mastodon.social/inbox`. Call this AFTER the follower/following rows
+ * are gone, so the blocked actor's own rows don't count against the check.
+ */
+async function purgeQueuedDeliveriesForInbox(inbox: string | null | undefined): Promise<void> {
+  if (!inbox) return;
+  try {
+    const [followers, following] = await Promise.all([
+      prisma.fediFollower.count({ where: { OR: [{ inbox }, { sharedInbox: inbox }] } }),
+      prisma.fediFollowing.count({ where: { inbox } }),
+    ]);
+    if (followers + following > 0) return; // shared — leave the queue alone
+    await prisma.failedDelivery.deleteMany({ where: { inbox } });
+  } catch {
+    // The retry sweep now refuses blocked recipients anyway, so a failure here
+    // costs a little wasted work, never a delivery.
+  }
 }
 
 export async function block(body: AdminBody): Promise<NextResponse> {
@@ -298,17 +376,31 @@ export async function block(body: AdminBody): Promise<NextResponse> {
   });
   if (followRecord) {
     try {
-      await deliverActivity(followRecord.inbox, {
-        "@context": "https://www.w3.org/ns/activitystreams",
-        id: `${getSiteUrl()}/ap/undo/${Date.now()}`,
-        type: "Undo",
-        actor: `${getSiteUrl()}/ap/actor`,
-        object: {
-          type: "Follow",
+      await deliverActivity(
+        followRecord.inbox,
+        {
+          "@context": "https://www.w3.org/ns/activitystreams",
+          id: `${getSiteUrl()}/ap/undo/${Date.now()}`,
+          type: "Undo",
           actor: `${getSiteUrl()}/ap/actor`,
-          object: actorUri,
+          object: {
+            type: "Follow",
+            actor: `${getSiteUrl()}/ap/actor`,
+            object: actorUri,
+          },
         },
-      });
+        {
+          actorUri,
+          // The ONE intentional last contact, and the only bypass in the tree.
+          // This is precisely the Undo that stops their server sending to us;
+          // gating it would strand a live follow we can never cancel. The
+          // ordering doesn't save us — this runs before the BlockedActor row is
+          // written, but it is still reachable while blocked in two ways:
+          // re-blocking someone already blocked, and blocking an account whose
+          // host is already domain-blocked.
+          bypassBlocks: true,
+        },
+      );
     } catch {
       // Continue even if delivery fails
     }
@@ -382,6 +474,8 @@ export async function block(body: AdminBody): Promise<NextResponse> {
       update: {},
     })
     .catch(() => {});
+
+  await purgeQueuedDeliveriesForInbox(follower?.inbox ?? followRecord?.inbox ?? null);
 
   return NextResponse.json({ success: true });
 }
@@ -472,6 +566,28 @@ export async function blockDomain(body: AdminBody): Promise<NextResponse> {
   await prisma.fediFollowing.deleteMany({
     where: { OR: [{ domain }, { domain: { endsWith: suffix } }] },
   });
+
+  // Drop queued retries pointed at the blocked instance (#379). FailedDelivery
+  // has no host column and `endsWith` on a URL would match paths as well as
+  // hosts, so filter in JS using the same domainChain the inbox uses. The set is
+  // bounded: every row resolves within ~31h plus a 3-day grace.
+  try {
+    const pending = await prisma.failedDelivery.findMany({
+      where: { failedAt: null },
+      select: { id: true, inbox: true },
+    });
+    const doomed = pending
+      .filter((r) => {
+        const host = uriHostname(r.inbox);
+        return !!host && domainChain(host).includes(domain);
+      })
+      .map((r) => r.id);
+    if (doomed.length > 0) {
+      await prisma.failedDelivery.deleteMany({ where: { id: { in: doomed } } });
+    }
+  } catch {
+    // Best-effort; the sweep refuses blocked recipients regardless.
+  }
 
   return NextResponse.json({ success: true, domain });
 }

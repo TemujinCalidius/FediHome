@@ -16,7 +16,7 @@ vi.mock("@/lib/db", () => ({
   prisma: { blockedActor: { findUnique }, blockedDomain: { findFirst } },
 }));
 
-import { isBlockedSender, normalizeDomain, domainChain, actorHost } from "@/lib/blocks";
+import { isBlockedSender, normalizeDomain, domainChain, actorHost, uriHostname } from "@/lib/blocks";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -105,5 +105,21 @@ describe("actorHost", () => {
 
   it("returns null for junk", () => {
     expect(actorHost("nonsense")).toBeNull();
+  });
+});
+
+describe("ports do not defeat a domain block (#379)", () => {
+  it("strips the port when deriving the host", () => {
+    // Regression: uriHostname used .host, so "spam.example:8443" was tested
+    // against port-less BlockedDomain rows and never matched. An actor served on
+    // a non-default port was not domain-blocked at all — inbound OR outbound.
+    expect(uriHostname("https://spam.example:8443/users/x")).toBe("spam.example");
+  });
+
+  it("blocks an inbound activity from an actor on a non-default port", async () => {
+    findUnique.mockResolvedValue(null);
+    findFirst.mockImplementation(async (a: { where: { domain: { in: string[] } } }) =>
+      a.where.domain.in.includes("spam.example") ? { id: "d1" } : null);
+    expect(await isBlockedSender("https://spam.example:8443/users/x")).toBe(true);
   });
 });

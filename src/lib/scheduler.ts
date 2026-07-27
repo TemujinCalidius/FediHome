@@ -115,7 +115,9 @@ export async function runDeliveryRetryTick(): Promise<void> {
   try {
     const r = await retryFailedDeliveries();
     if (r.claimed > 0 || r.pruned > 0) {
-      log(`delivery-retry: ${r.delivered} delivered, ${r.gaveUp} gave up, ${r.claimed} tried, ${r.pruned} pruned`);
+      log(
+        `delivery-retry: ${r.delivered} delivered, ${r.gaveUp} gave up, ${r.discarded} discarded (blocked), ${r.claimed} tried, ${r.pruned} pruned`,
+      );
     }
   } catch (err) {
     console.error("scheduler: delivery-retry failed:", err);

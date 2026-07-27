@@ -160,6 +160,20 @@ export function buildApMentionTags(
  * Collect inbox URLs from fediverse mentions for AP delivery.
  * De-duplicates.
  */
+export function collectMentionTargets(
+  mentions: ParsedMentions,
+): { inbox: string; actorUri: string | null }[] {
+  const seen = new Set<string>();
+  const out: { inbox: string; actorUri: string | null }[] = [];
+  for (const m of mentions.fedi) {
+    if (m.inbox && !seen.has(m.inbox)) {
+      seen.add(m.inbox);
+      out.push({ inbox: m.inbox, actorUri: m.actorUri ?? null });
+    }
+  }
+  return out;
+}
+
 export function collectMentionInboxes(mentions: ParsedMentions): string[] {
   const seen = new Set<string>();
   const out: string[] = [];

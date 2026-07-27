@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { prisma } from "./db";
+import { blockedRecipient, partitionBlockedRecipients } from "./blocks";
 import { assertPublicHost } from "./url-guard";
 import { getIdentity } from "./identity";
 
@@ -116,17 +117,62 @@ export interface DeliveryResult {
   ok: boolean;
   status: number;
   error?: string;
+  /** Retrying cannot help. Callers MUST discard rather than enqueue (#379). */
+  permanent?: boolean;
+  /** Set when OUR policy stopped it, not the remote. `status` is 0. */
+  blockedBy?: "actor" | "domain";
+}
+
+/**
+ * Statuses where the remote has given a definitive answer. Re-sending the same
+ * activity to the same inbox will get the same answer, so a 6-attempt / ~31h
+ * ladder just burns requests at a server that has already told us no.
+ *
+ * 5xx, 429, 408 and 0 (network) are deliberately absent — those are exactly the
+ * transient failures the retry queue exists for.
+ */
+const PERMANENT_STATUSES = new Set([400, 401, 403, 404, 405, 410, 422]);
+
+export interface DeliveryTarget {
+  /**
+   * The recipient's actor URI, when the caller knows it. REQUIRED for
+   * actor-level block enforcement: an inbox may be shared by every account on
+   * an instance, so it cannot identify one of them. See `blocks.ts`.
+   */
+  actorUri?: string | null;
+  /**
+   * Deliver even to a blocked recipient. Exactly ONE production caller —
+   * `block()`'s farewell `Undo(Follow)`. Grep for it; one hit is expected.
+   */
+  bypassBlocks?: boolean;
 }
 
 /**
  * Deliver an ActivityPub activity to an inbox with proper HTTP signatures.
  * Returns the result so callers (e.g. DM send) can surface delivery status
  * to the user instead of silently failing.
+ *
+ * Refuses blocked recipients **before** signing or connecting, so a block means
+ * zero network contact rather than a request the remote can observe (#379).
  */
 export async function deliverActivity(
   inbox: string,
-  activity: Record<string, unknown>
+  activity: Record<string, unknown>,
+  target: DeliveryTarget = {}
 ): Promise<DeliveryResult> {
+  if (!target.bypassBlocks) {
+    const verdict = await blockedRecipient({ inbox, actorUri: target.actorUri });
+    if (verdict.blocked) {
+      return {
+        ok: false,
+        status: 0,
+        error: `blocked: ${verdict.reason}`,
+        permanent: verdict.permanent,
+        ...(verdict.reason === "unavailable" ? {} : { blockedBy: verdict.reason }),
+      };
+    }
+  }
+
   const body = JSON.stringify(activity);
 
   try {
@@ -137,7 +183,12 @@ export async function deliverActivity(
     const errText = await res.text().catch(() => "");
     const trimmed = errText.slice(0, 200);
     console.error(`Delivery to ${inbox} failed: ${res.status} ${trimmed}`);
-    return { ok: false, status: res.status, error: `${res.status}: ${trimmed}` };
+    return {
+      ok: false,
+      status: res.status,
+      error: `${res.status}: ${trimmed}`,
+      permanent: PERMANENT_STATUSES.has(res.status),
+    };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("Delivery to %s error:", inbox, err);
@@ -158,11 +209,16 @@ const FIRST_RETRY_DELAY_MS = 2 * 60_000;
 export async function enqueueFailedDeliveries(
   activityId: string,
   activityJson: string,
-  failures: { inbox: string; error: string }[]
+  failures: { inbox: string; error: string; permanent?: boolean }[]
 ): Promise<void> {
+  // Filtered HERE rather than at each call site, so a future caller can't forget
+  // and quietly queue 31 hours of retries against a recipient we refuse to talk
+  // to, or a server that has already answered definitively (#379).
+  const retryable = failures.filter((f) => !f.permanent);
+  if (retryable.length === 0) return;
   const nextRetryAt = new Date(Date.now() + FIRST_RETRY_DELAY_MS);
   await Promise.all(
-    failures.map((f) =>
+    retryable.map((f) =>
       prisma.failedDelivery
         .upsert({
           where: { activityId_inbox: { activityId, inbox: f.inbox } },
@@ -186,27 +242,50 @@ export async function deliverToFollowers(
 ): Promise<void> {
   const followers = await prisma.fediFollower.findMany({
     where: { accepted: true },
-    select: { inbox: true, sharedInbox: true },
+    select: { inbox: true, sharedInbox: true, actorUri: true },
   });
 
-  // Deduplicate by shared inbox where available
-  const inboxes = new Set<string>();
-  for (const f of followers) {
-    inboxes.add(f.sharedInbox || f.inbox);
+  // Drop blocked followers before fan-out (#379). Their rows normally disappear
+  // when you block them, but not always: `blockDomain()` matched on the stored
+  // `domain` column, which used to keep a port, so a follower on a non-default
+  // port survived the purge and kept receiving every post.
+  const { allowed, unavailable } = await partitionBlockedRecipients(followers);
+  if (unavailable) {
+    // Fail closed, but transiently — nothing is delivered and nothing is queued,
+    // so the next post goes out normally once the database recovers. Silently
+    // broadcasting to a blocked instance would not be recoverable.
+    console.error("Delivery to followers skipped: block list unreadable");
+    return;
+  }
+
+  // Deduplicate by shared inbox where available. An actor URI is only carried
+  // through for a private inbox — a shared one serves many accounts, so pinning
+  // it to whichever follower we saw first would be wrong.
+  const byInbox = new Map<string, string | null>();
+  for (const f of allowed) {
+    const inbox = f.sharedInbox || f.inbox;
+    if (byInbox.has(inbox)) byInbox.set(inbox, null);
+    else byInbox.set(inbox, f.sharedInbox ? null : f.actorUri);
   }
 
   // Deliver in parallel (but limit concurrency)
-  const inboxList = Array.from(inboxes);
-  const results = await Promise.allSettled(inboxList.map((inbox) => deliverActivity(inbox, activity)));
+  const inboxList = Array.from(byInbox.keys());
+  const results = await Promise.allSettled(
+    inboxList.map((inbox) => deliverActivity(inbox, activity, { actorUri: byInbox.get(inbox) })),
+  );
 
   // Enqueue failures for retry. deliverActivity resolves (never rejects) with
   // { ok:false } on failure; handle a rejection defensively too.
   const activityId = typeof activity.id === "string" ? activity.id : null;
   if (activityId) {
-    const failures: { inbox: string; error: string }[] = [];
+    const failures: { inbox: string; error: string; permanent?: boolean }[] = [];
     results.forEach((r, i) => {
       if (r.status === "fulfilled" && !r.value.ok) {
-        failures.push({ inbox: inboxList[i], error: r.value.error || `status ${r.value.status}` });
+        failures.push({
+          inbox: inboxList[i],
+          error: r.value.error || `status ${r.value.status}`,
+          permanent: r.value.permanent,
+        });
       } else if (r.status === "rejected") {
         failures.push({ inbox: inboxList[i], error: String(r.reason) });
       }

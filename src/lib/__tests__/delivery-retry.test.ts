@@ -117,3 +117,42 @@ describe("retryFailedDeliveries (#207)", () => {
     expect(where).not.toHaveProperty("createdAt");
   });
 });
+
+describe("permanent failures don't ride the 31-hour ladder (#379)", () => {
+  const row = { id: "r1", inbox: "https://spam.example/inbox", activityId: "a1", activity: "{}", attempts: 1, nextRetryAt: new Date(0) };
+
+  beforeEach(() => {
+    vi.mocked(prisma.failedDelivery.findMany).mockResolvedValue([row] as never);
+    vi.mocked(prisma.failedDelivery.updateMany).mockResolvedValue({ count: 1 } as never);
+    vi.mocked(prisma.failedDelivery.deleteMany).mockResolvedValue({ count: 1 } as never);
+  });
+
+  it("DELETES a row we now refuse to deliver, rather than marking it failed", async () => {
+    // A failedAt row would sit in the observability window implying the remote
+    // server misbehaved, when in fact this was our own block.
+    vi.mocked(deliverActivity).mockResolvedValue({ ok: false, status: 0, error: "blocked: domain", permanent: true, blockedBy: "domain" } as never);
+    const r = await retryFailedDeliveries(new Date());
+    expect(r.discarded).toBe(1);
+    expect(r.gaveUp).toBe(0);
+    expect(prisma.failedDelivery.deleteMany).toHaveBeenCalledWith({ where: { id: "r1" } });
+  });
+
+  it("gives up immediately on a definitive remote refusal", async () => {
+    vi.mocked(deliverActivity).mockResolvedValue({ ok: false, status: 410, error: "410: gone", permanent: true } as never);
+    const r = await retryFailedDeliveries(new Date());
+    expect(r.gaveUp).toBe(1);
+    const call = vi.mocked(prisma.failedDelivery.updateMany).mock.calls.at(-1)?.[0] as { data: { failedAt?: Date } };
+    expect(call.data.failedAt).toBeInstanceOf(Date);
+  });
+
+  it("still backs off a 500 exactly as before", async () => {
+    // The whole retry queue exists for transient failures; this must not regress.
+    vi.mocked(deliverActivity).mockResolvedValue({ ok: false, status: 500, error: "500: oops" } as never);
+    const r = await retryFailedDeliveries(new Date());
+    expect(r.gaveUp).toBe(0);
+    expect(r.discarded).toBe(0);
+    const call = vi.mocked(prisma.failedDelivery.updateMany).mock.calls.at(-1)?.[0] as { data: { nextRetryAt?: Date } };
+    expect(call.data.nextRetryAt).toBeInstanceOf(Date);
+  });
+});
+
