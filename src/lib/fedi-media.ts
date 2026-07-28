@@ -192,11 +192,16 @@ export async function proxyVideo(remoteUrl: string): Promise<string | null> {
   const filePath = path.join(uploadDir, filename);
   await writeFile(filePath, buffer);
 
-  trimFediStorage().catch(() => {});
+  // Trimming used to happen here, fire-and-forget after every cached video —
+  // which meant an instance that only ever cached IMAGES never trimmed at all,
+  // and the budget below was fiction. The scheduler's storage scan does it now,
+  // on a walk it is already performing to measure usage (#385).
 
   return `/uploads/fedi/${year}/${month}/${filename}`;
 }
 
+// 2GB of other people's media. Hardcoded for now (#364 tracks making it
+// configurable); the admin panel at least shows what it's actually using.
 const STORAGE_LIMIT_BYTES = 2 * 1024 * 1024 * 1024; // 2GB
 
 async function getAllFiles(dir: string): Promise<{ path: string; mtimeMs: number; size: number }[]> {

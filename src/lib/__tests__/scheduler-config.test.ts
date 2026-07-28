@@ -29,6 +29,7 @@ describe("getSchedulerConfig", () => {
       blueskySync: { enabled: false, intervalSec: 900 },
       deliveryRetry: { enabled: true, intervalSec: 60 },
       crosspostRetry: { enabled: true, intervalSec: 60 },
+      storageScan: { enabled: true, intervalSec: 3600 },
       retentionSweep: { enabled: false, intervalSec: 86_400, retentionDays: 90 },
     });
   });

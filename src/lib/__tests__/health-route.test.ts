@@ -8,6 +8,12 @@ const { schedulerLastTickAgoMs, schedulerStarted } = vi.hoisted(() => ({
   schedulerLastTickAgoMs: vi.fn(),
   schedulerStarted: vi.fn(),
 }));
+const { volumeSpace } = vi.hoisted(() => ({ volumeSpace: vi.fn() }));
+vi.mock("@/lib/storage-usage", async (orig) => ({
+  // Real classifySpace — the thresholds are what the assertions below are about.
+  ...(await orig<Record<string, unknown>>()),
+  volumeSpace,
+}));
 vi.mock("@/lib/scheduler", () => ({
   schedulerLastTickAgoMs,
   schedulerStarted,
@@ -23,6 +29,7 @@ describe("GET /api/health", () => {
     // Default: scheduler running and freshly ticked.
     schedulerStarted.mockReturnValue(true);
     schedulerLastTickAgoMs.mockReturnValue(1_000);
+    volumeSpace.mockResolvedValue({ availableBytes: 50 * 1024 ** 3, totalBytes: 100 * 1024 ** 3 });
   });
 
   it("returns 200 + db:ok + a version when the DB round-trips", async () => {
@@ -90,3 +97,32 @@ describe("GET /api/health — build identity and scheduler liveness (#358)", () 
     expect((await res.json()).scheduler).toEqual({ running: false, lastTickSecondsAgo: null });
   });
 });
+
+describe("storage (#385)", () => {
+  it("reports a status, never a byte count — this endpoint is public", async () => {
+    const body = await (await GET()).json();
+    expect(body.storage).toBe("ok");
+    // How big the disk is and how full it is are nobody else's business, for the
+    // same reason `db` reports "ok" rather than a connection string.
+    expect(JSON.stringify(body)).not.toMatch(/availableBytes|volumeBytes|uploadsDir/);
+  });
+
+  it("reports a full disk WITHOUT marking the instance unhealthy", async () => {
+    // The Docker healthcheck restarts a degraded container, and restarting does
+    // not free space — it would crash-loop. Report it; let a monitor decide.
+    volumeSpace.mockResolvedValue({ availableBytes: 10 * 1024 ** 2, totalBytes: 100 * 1024 ** 3 });
+    const res = await GET();
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.storage).toBe("critical");
+    expect(body.status).toBe("ok");
+  });
+
+  it("says unknown rather than guessing when free space can't be read", async () => {
+    volumeSpace.mockResolvedValue(null);
+    const body = await (await GET()).json();
+    expect(body.storage).toBe("unknown");
+    expect(body.status).toBe("ok");
+  });
+});
+

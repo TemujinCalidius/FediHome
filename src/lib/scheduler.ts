@@ -44,7 +44,7 @@ const globalScheduler = globalThis as typeof globalThis & {
 };
 
 const MASTER_TICK_MS = 15_000;
-const lastRun = { publish: 0, bluesky: 0, delivery: 0, crosspost: 0, retention: 0 };
+const lastRun = { publish: 0, bluesky: 0, delivery: 0, crosspost: 0, storage: 0, retention: 0 };
 
 /**
  * When the master loop last completed a pass (#358).
@@ -124,6 +124,39 @@ export async function runDeliveryRetryTick(): Promise<void> {
   }
 }
 
+/**
+ * Measure uploads usage, then trim the remote-media cache in the same pass (#385).
+ *
+ * One walk, two purposes. The measurement is what `/api/health` and the admin
+ * panel report without stat-ing thousands of files per request — and the trim
+ * used to be triggered from exactly one place, fire-and-forget after a *video*
+ * was cached, so an instance that only ever cached images never trimmed at all
+ * and the 2GB budget was fiction.
+ */
+export async function runStorageScanTick(): Promise<void> {
+  if (!(await getEffectiveSchedulerConfig()).storageScan.enabled) return;
+  try {
+    const { measureStorageUsage } = await import("./storage-usage");
+    const { trimFediStorage } = await import("./fedi-media");
+
+    const trimmed = await trimFediStorage();
+    // Measure AFTER trimming, so the reported figure is what's actually on disk.
+    const usage = await measureStorageUsage();
+
+    if (trimmed.deleted > 0) {
+      log(`storage: trimmed ${trimmed.deleted} cached file(s), freed ${Math.round(trimmed.freedBytes / 1024 / 1024)}MB`);
+    }
+    if (process.env.FEDIHOME_DEBUG === "true") {
+      log(
+        `storage: ${Math.round(usage.totalBytes / 1024 / 1024)}MB total, ` +
+          `${Math.round(usage.fediCacheBytes / 1024 / 1024)}MB cached remote media`,
+      );
+    }
+  } catch (err) {
+    console.error("scheduler: storage scan failed:", err);
+  }
+}
+
 export async function runCrosspostRetryTick(): Promise<void> {
   if (!(await getEffectiveSchedulerConfig()).crosspostRetry.enabled) return;
   try {
@@ -169,6 +202,10 @@ async function masterTick(): Promise<void> {
   if (cfg.crosspostRetry.enabled && now - lastRun.crosspost >= cfg.crosspostRetry.intervalSec * 1000) {
     lastRun.crosspost = now;
     await runCrosspostRetryTick();
+  }
+  if (cfg.storageScan.enabled && now - lastRun.storage >= cfg.storageScan.intervalSec * 1000) {
+    lastRun.storage = now;
+    await runStorageScanTick();
   }
   if (cfg.retentionSweep.enabled && now - lastRun.retention >= cfg.retentionSweep.intervalSec * 1000) {
     lastRun.retention = now;
@@ -216,6 +253,9 @@ export function startScheduler(): boolean {
   lastRun.bluesky = Date.now();
   lastRun.delivery = Date.now();
   lastRun.crosspost = Date.now();
+  // 0, like publish: the admin panel and /api/health would otherwise report
+  // "not measured yet" for a full interval after every restart.
+  lastRun.storage = 0;
   lastRun.retention = Date.now();
 
   const boot = masterTick().catch((err) => console.error("scheduler: tick failed:", err));

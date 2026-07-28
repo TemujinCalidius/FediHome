@@ -26,6 +26,8 @@ export default function SettingsClient({
   const [deliveryInterval, setDeliveryInterval] = useState(String(effective.deliveryRetry.intervalSec));
   const [crosspostEnabled, setCrosspostEnabled] = useState(effective.crosspostRetry.enabled);
   const [crosspostInterval, setCrosspostInterval] = useState(String(effective.crosspostRetry.intervalSec));
+  const [storageEnabled, setStorageEnabled] = useState(effective.storageScan.enabled);
+  const [storageInterval, setStorageInterval] = useState(String(effective.storageScan.intervalSec));
   const [retentionEnabled, setRetentionEnabled] = useState(effective.retentionSweep.enabled);
   const [retentionInterval, setRetentionInterval] = useState(String(effective.retentionSweep.intervalSec));
   const [retentionDays, setRetentionDays] = useState(String(effective.retentionSweep.retentionDays));
@@ -56,6 +58,8 @@ export default function SettingsClient({
       setDeliveryInterval(String(eff.deliveryRetry.intervalSec));
       setCrosspostEnabled(eff.crosspostRetry.enabled);
       setCrosspostInterval(String(eff.crosspostRetry.intervalSec));
+      setStorageEnabled(data.effective.storageScan.enabled);
+      setStorageInterval(String(data.effective.storageScan.intervalSec));
       setRetentionEnabled(eff.retentionSweep.enabled);
       setRetentionInterval(String(eff.retentionSweep.intervalSec));
       setRetentionDays(String(eff.retentionSweep.retentionDays));
@@ -80,6 +84,8 @@ export default function SettingsClient({
         "scheduler.delivery.intervalSec": deliveryInterval,
         "scheduler.crosspost.enabled": crosspostEnabled ? "true" : "false",
         "scheduler.crosspost.intervalSec": crosspostInterval,
+        "scheduler.storage.enabled": storageEnabled ? "true" : "false",
+        "scheduler.storage.intervalSec": storageInterval,
         "scheduler.retention.enabled": retentionEnabled ? "true" : "false",
         "scheduler.retention.intervalSec": retentionInterval,
         "scheduler.retention.days": retentionDays,
@@ -100,6 +106,8 @@ export default function SettingsClient({
         "scheduler.delivery.intervalSec": null,
         "scheduler.crosspost.enabled": null,
         "scheduler.crosspost.intervalSec": null,
+        "scheduler.storage.enabled": null,
+        "scheduler.storage.intervalSec": null,
         "scheduler.retention.enabled": null,
         "scheduler.retention.intervalSec": null,
         "scheduler.retention.days": null,
@@ -192,6 +200,15 @@ export default function SettingsClient({
           crosspostInterval,
           setCrosspostInterval,
           defaults.crosspostRetry.intervalSec,
+        )}
+        {jobRow(
+          "Disk usage scan",
+          "Measures how much space your media uses and trims the cache of other people's media when it exceeds its budget. Turning this off means the cache is never trimmed.",
+          storageEnabled,
+          setStorageEnabled,
+          storageInterval,
+          setStorageInterval,
+          defaults.storageScan.intervalSec,
         )}
 
         <div className="flex flex-wrap items-center gap-4 py-4 border-b border-surface-800 last:border-b-0">

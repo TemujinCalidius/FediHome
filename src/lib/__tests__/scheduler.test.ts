@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 const {
   getSchedulerConfig, getEffectiveSchedulerConfig,
   publishDueScheduledPosts, syncBlueskyGraph, pollBlueskyDMs, syncBlueskyNotifications, retryFailedDeliveries, retryFailedCrossposts, pruneStaleFediPosts,
+  measureStorageUsage, trimFediStorage,
 } = vi.hoisted(() => ({
   getSchedulerConfig: vi.fn(),
   getEffectiveSchedulerConfig: vi.fn(),
@@ -13,6 +14,8 @@ const {
   retryFailedDeliveries: vi.fn(),
   retryFailedCrossposts: vi.fn(),
   pruneStaleFediPosts: vi.fn(),
+  measureStorageUsage: vi.fn(),
+  trimFediStorage: vi.fn(),
 }));
 vi.mock("@/lib/scheduler-config", () => ({ getSchedulerConfig, getEffectiveSchedulerConfig }));
 vi.mock("@/lib/publish-post", () => ({ publishDueScheduledPosts }));
@@ -22,14 +25,19 @@ vi.mock("@/lib/bluesky-notifications", () => ({ syncBlueskyNotifications }));
 vi.mock("@/lib/delivery-retry", () => ({ retryFailedDeliveries }));
 vi.mock("@/lib/crosspost-retry", () => ({ retryFailedCrossposts }));
 vi.mock("@/lib/fedi-retention", () => ({ pruneStaleFediPosts }));
+// The storage scan walks the real filesystem; without this it would stall the
+// tick under fake timers and the jobs after it would never dispatch.
+vi.mock("@/lib/storage-usage", () => ({ measureStorageUsage }));
+vi.mock("@/lib/fedi-media", () => ({ trimFediStorage }));
 
-import { startScheduler, runPublishTick, runBlueskySyncTick, runDeliveryRetryTick, runCrosspostRetryTick, runRetentionSweepTick } from "@/lib/scheduler";
+import { startScheduler, runPublishTick, runBlueskySyncTick, runDeliveryRetryTick, runCrosspostRetryTick, runRetentionSweepTick, runStorageScanTick } from "@/lib/scheduler";
 
 const cfg = (over: Record<string, unknown> = {}) => ({
   publishScheduled: { enabled: true, intervalSec: 60 },
   blueskySync: { enabled: true, intervalSec: 900 },
   deliveryRetry: { enabled: false, intervalSec: 60 },
   crosspostRetry: { enabled: false, intervalSec: 60 },
+  storageScan: { enabled: false, intervalSec: 3600 },
   retentionSweep: { enabled: false, intervalSec: 86_400, retentionDays: 90 },
   ...over,
 });
@@ -236,3 +244,49 @@ describe("scheduler liveness is readable across module instances", () => {
     expect(schedulerStarted()).toBe(true);
   });
 });
+
+describe("storage scan (#385)", () => {
+  it("trims the remote-media cache and records usage on its cadence", async () => {
+    // The trim used to fire only after a cached VIDEO, so an image-only instance
+    // never trimmed and the 2GB budget was fiction. One walk now does both.
+    trimFediStorage.mockResolvedValue({ deleted: 0, freedBytes: 0 });
+    measureStorageUsage.mockResolvedValue({ totalBytes: 0, fediCacheBytes: 0, ownBytes: 0, measuredAt: "" });
+    getEffectiveSchedulerConfig.mockResolvedValue(cfg({ storageScan: { enabled: true, intervalSec: 3600 } }));
+
+    await runStorageScanTick();
+
+    expect(trimFediStorage).toHaveBeenCalled();
+    expect(measureStorageUsage).toHaveBeenCalled();
+  });
+
+  it("does nothing when the job is switched off", async () => {
+    getEffectiveSchedulerConfig.mockResolvedValue(cfg({ storageScan: { enabled: false, intervalSec: 3600 } }));
+    await runStorageScanTick();
+    expect(trimFediStorage).not.toHaveBeenCalled();
+  });
+
+  it("measures AFTER trimming, so the figure reflects what is actually on disk", async () => {
+    const order: string[] = [];
+    trimFediStorage.mockImplementation(async () => {
+      order.push("trim");
+      return { deleted: 1, freedBytes: 10 };
+    });
+    measureStorageUsage.mockImplementation(async () => {
+      order.push("measure");
+      return { totalBytes: 0, fediCacheBytes: 0, ownBytes: 0, measuredAt: "" };
+    });
+    getEffectiveSchedulerConfig.mockResolvedValue(cfg({ storageScan: { enabled: true, intervalSec: 3600 } }));
+
+    await runStorageScanTick();
+
+    expect(order).toEqual(["trim", "measure"]);
+  });
+
+  it("a failed scan cannot take the tick down", async () => {
+    trimFediStorage.mockRejectedValue(new Error("disk gone"));
+    getEffectiveSchedulerConfig.mockResolvedValue(cfg({ storageScan: { enabled: true, intervalSec: 3600 } }));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await expect(runStorageScanTick()).resolves.toBeUndefined();
+  });
+});
+
