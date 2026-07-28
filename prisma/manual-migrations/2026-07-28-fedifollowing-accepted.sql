@@ -1,0 +1,12 @@
+-- Outbound follow state (#348). Additive + idempotent.
+--
+-- Apply with: npx prisma db execute --file prisma/manual-migrations/2026-07-28-fedifollowing-accepted.sql
+-- Or (preferred): npx prisma db push
+--
+-- NOTE THE ABSENCE OF A BACKFILL UPDATE, deliberately. scripts/apply-migrations.sh
+-- runs every file in this directory on EVERY container start, so an
+-- `UPDATE ... WHERE "accepted" IS NULL`-style backfill would re-fire forever and
+-- silently promote genuinely-pending follows to accepted. DEFAULT true already
+-- backfills every existing row at ADD COLUMN time, once, and IF NOT EXISTS makes
+-- the whole file a no-op from the second run onward.
+ALTER TABLE "FediFollowing" ADD COLUMN IF NOT EXISTS "accepted" BOOLEAN NOT NULL DEFAULT true;

@@ -29,6 +29,8 @@ vi.mock("@/lib/db", () => ({
     fediFollowing: { findUnique: vi.fn(), upsert: vi.fn(), delete: vi.fn() },
     fediFollower: { findUnique: vi.fn() },
     blockedActor: { findUnique: vi.fn() },
+    // follow() now checks the DOMAIN block list before any network call (#379).
+    blockedDomain: { findFirst: vi.fn() },
     fediPost: { upsert: vi.fn(), findFirst: vi.fn() },
   },
 }));
@@ -53,6 +55,7 @@ beforeEach(() => {
   deliverActivity.mockResolvedValue({ ok: true, status: 202 });
   vi.mocked(prisma.fediFollowing.findUnique).mockResolvedValue(null as never);
   vi.mocked(prisma.blockedActor.findUnique).mockResolvedValue(null as never);
+  vi.mocked(prisma.blockedDomain.findFirst).mockResolvedValue(null as never);
   vi.mocked(prisma.fediFollowing.upsert).mockResolvedValue({} as never);
 });
 
@@ -170,5 +173,15 @@ describe("follow() by actor URI", () => {
     expect(res.status).toBe(200);
     const urls = vi.mocked(global.fetch).mock.calls.map((c) => String(c[0]));
     expect(urls.some((u) => u.includes("/.well-known/webfinger"))).toBe(true);
+  });
+
+  it("records the follow as PENDING, not accepted (#348)", async () => {
+    // The row is written the instant we send the Follow, which is not the same
+    // thing as their server having agreed to it. Anything else means a
+    // manually-approved account is indistinguishable from a real follow.
+    global.fetch = vi.fn(async () => new Response(JSON.stringify(actorDoc), { status: 200 })) as unknown as typeof fetch;
+    await follow({ actorUri: ACTOR } as never);
+    const create = vi.mocked(prisma.fediFollowing.upsert).mock.calls[0][0].create;
+    expect(create).toMatchObject({ accepted: false });
   });
 });

@@ -4,13 +4,14 @@ import { authenticateApiRequest, verifyOrigin } from "@/lib/auth";
 import { deliverActivity, deliverToFollowers } from "@/lib/http-signatures";
 import { crosspostToBluesky, crosspostReplyToBluesky, crosspostToThreads, crosspostToDayOne } from "@/lib/crosspost";
 import { sanitizeHtml } from "@/lib/sanitize";
-import { parseMentions, linkMentions, buildApMentionTags, collectMentionInboxes } from "@/lib/mentions";
+import { parseMentions, linkMentions, buildApMentionTags, collectMentionTargets } from "@/lib/mentions";
 import { imageAttachment } from "@/lib/ap-post";
 import { buildMediaUpdate } from "@/lib/post-media";
 import { enqueueFailedCrosspost } from "@/lib/crosspost-retry";
 import { normalizeCategory } from "@/lib/categories";
 import path from "path";
 import { getSiteUrl } from "@/lib/identity";
+import { resolveUploadPath } from "@/lib/uploads-dir";
 
 
 function slugify(text: string): string {
@@ -451,7 +452,7 @@ async function composeHandler(req: NextRequest) {
   ];
 
   // Extend CC list + direct-deliver inboxes for any mentioned fedi actors
-  const mentionInboxes = collectMentionInboxes(mentions);
+  const mentionTargets = collectMentionTargets(mentions);
   const mentionActorUris = mentions.fedi
     .filter((m) => !!m.actorUri)
     .map((m) => m.actorUri!);
@@ -487,9 +488,9 @@ async function composeHandler(req: NextRequest) {
   );
 
   // Direct-deliver to mentioned actors' inboxes so they get the notification
-  for (const inbox of mentionInboxes) {
-    deliverActivity(inbox, activity).catch((err) =>
-      console.error(`Failed to deliver mention to ${inbox}:`, err)
+  for (const t of mentionTargets) {
+    deliverActivity(t.inbox, activity, { actorUri: t.actorUri }).catch((err) =>
+      console.error(`Failed to deliver mention to ${t.inbox}:`, err)
     );
   }
 
@@ -578,13 +579,19 @@ async function composeHandler(req: NextRequest) {
   }
 
   if (!parentPost && crosspostDayOne !== false) {
-    const dayOneImages = (photos || []).map((p) => {
-      const url = p.url.startsWith("http") ? p.url : `${getSiteUrl()}${p.url}`;
-      const localPath = url.includes("/uploads/")
-        ? path.join(process.cwd(), "public", new URL(url).pathname)
-        : null;
-      return { path: localPath, filename: url.split("/").pop() || "image.jpg" };
-    }).filter((i) => i.path);
+    // resolveUploadPath applies the containment check this site never had — it
+    // only tested `url.includes("/uploads/")`, which a crafted path could satisfy
+    // while still escaping the tree (#363).
+    const dayOneImages = (
+      await Promise.all(
+        (photos || []).map(async (p) => {
+          const url = p.url.startsWith("http") ? p.url : `${getSiteUrl()}${p.url}`;
+          const pathname = new URL(url).pathname;
+          const localPath = pathname.startsWith("/uploads/") ? await resolveUploadPath(pathname) : null;
+          return { path: localPath, filename: url.split("/").pop() || "image.jpg" };
+        }),
+      )
+    ).filter((i) => i.path);
 
     crosspostToDayOne(content, postUrl, isArticle ? title!.trim() : undefined, dayOneImages)
       .then((r) => {
@@ -717,7 +724,7 @@ async function updatePostHandler(postId: string, input: EditInput) {
     })),
     ...buildApMentionTags(mentions),
   ];
-  const mentionInboxes = collectMentionInboxes(mentions);
+  const mentionTargets = collectMentionTargets(mentions);
   const mentionActorUris = mentions.fedi
     .filter((m) => !!m.actorUri)
     .map((m) => m.actorUri!);
@@ -757,9 +764,9 @@ async function updatePostHandler(postId: string, input: EditInput) {
     deliverToFollowers(activity).catch((err) =>
       console.error("Failed to federate post update:", err)
     );
-    for (const inbox of mentionInboxes) {
-      deliverActivity(inbox, activity).catch((err) =>
-        console.error(`Failed to deliver update to mentioned ${inbox}:`, err)
+    for (const t of mentionTargets) {
+      deliverActivity(t.inbox, activity, { actorUri: t.actorUri }).catch((err) =>
+        console.error(`Failed to deliver update to mentioned ${t.inbox}:`, err)
       );
     }
   }

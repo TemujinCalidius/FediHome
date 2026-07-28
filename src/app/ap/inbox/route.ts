@@ -129,7 +129,16 @@ export async function POST(req: NextRequest) {
       break;
 
     case "Accept":
-      // Our follow request was accepted
+      // Their server agreed to a Follow we sent (#348). Previously a bare break,
+      // so a manually-approved account looked identical to a real follow forever.
+      await handleAccept(actorUri, activity);
+      break;
+
+    case "Reject":
+      // They refused, or revoked an established follow. Previously fell through
+      // to `default` and was logged only under FEDIHOME_DEBUG, leaving a row for
+      // an account that had explicitly said no.
+      await handleReject(actorUri, activity);
       break;
 
     case "Move":
@@ -294,6 +303,17 @@ async function handleMove(originActorUri: string, activity: Record<string, unkno
   const existing = await prisma.fediFollowing.findUnique({ where: { actorUri: originActorUri } });
   if (!existing) return;
 
+  // The :74 gate vetted the ORIGIN, not the destination — so without this a
+  // friendly server could hand our follow to an instance we've blocked, and
+  // fetchActorForMove would contact it to do so (#379). Check before any network
+  // call, and return before touching the rows: deliberately leave the origin
+  // follow in place, since losing a relationship because a third party sent a
+  // Move we refuse to honour would be the worse outcome.
+  if (await isBlockedSender(target)) {
+    console.warn(`AP inbox: refusing Move to a blocked destination ${encodeURIComponent(target)}`);
+    return;
+  }
+
   const targetActor = await fetchActorForMove(target);
   if (!targetActor?.inbox) return;
 
@@ -357,6 +377,98 @@ async function handleMove(originActorUri: string, activity: Record<string, unkno
     type: "move",
     icon: targetActor.avatarUrl || undefined,
   }).catch(() => {});
+}
+
+/**
+ * Is `object` OUR `Follow` of `actorUri`?
+ *
+ * We cannot match on the Follow's id: `follow()` mints
+ * `${siteUrl}/ap/follow/${Date.now()}` and never persists it, so there is
+ * nothing to compare against. Match on the actor pair instead — the signature
+ * has already bound `activity.actor` by the time we get here, so the remaining
+ * job is proving the wrapped Follow is ours and is about them.
+ *
+ * Both shapes are legal and both occur in the wild: Mastodon/Akkoma/GoToSocial
+ * embed the whole Follow, others send just its id string.
+ */
+function isOurFollowOf(object: unknown, actorUri: string): boolean {
+  const us = `${getSiteUrl()}/ap/actor`;
+
+  // Bare id: nothing is recoverable but our own id namespace. `Date.now()` is
+  // guessable, but the signature already binds the sender, so the most an
+  // attacker achieves is flipping their OWN row — which their real Accept does.
+  if (typeof object === "string") return object.startsWith(`${getSiteUrl()}/ap/follow/`);
+
+  if (!object || typeof object !== "object") return false;
+  const o = object as Record<string, unknown>;
+
+  // Present-and-wrong is a refusal; absent is tolerated (not every server sends it).
+  if (typeof o.type === "string" && o.type !== "Follow") return false;
+  // The load-bearing check: an Accept carrying somebody else's Follow isn't ours.
+  if (typeof o.actor !== "string" || !sameActor(o.actor, us)) return false;
+  // Server A must not accept a Follow addressed to server B.
+  if (typeof o.object === "string" && !sameActor(o.object, actorUri)) return false;
+  if (typeof o.id === "string" && !o.id.startsWith(getSiteUrl())) return false;
+  return true;
+}
+
+/** `Accept(Follow)` — mark the follow as agreed (#348). */
+async function handleAccept(actorUri: string, activity: Record<string, unknown>) {
+  if (!isOurFollowOf(activity.object, actorUri)) return;
+
+  // updateMany, NEVER upsert: an Accept from an account we don't follow must not
+  // be able to conjure a following row. It also makes redelivery a no-op for free.
+  const { count } = await prisma.fediFollowing.updateMany({
+    where: { actorUri, accepted: false },
+    data: { accepted: true },
+  });
+  if (DEBUG && count > 0) console.log(`AP inbox: follow accepted by ${encodeURIComponent(actorUri)}`);
+}
+
+/** `Reject(Follow)` — drop the follow and tell the owner (#348). */
+async function handleReject(actorUri: string, activity: Record<string, unknown>) {
+  if (!isOurFollowOf(activity.object, actorUri)) return;
+
+  // Delete regardless of `accepted`: Mastodon also sends Reject to REVOKE an
+  // established follow when someone removes a follower, and keeping the row would
+  // leave a follow that no longer exists published in /ap/following.
+  const { count } = await prisma.fediFollowing.deleteMany({ where: { actorUri } });
+
+  // No row means we never followed them, so there is nothing to report. This is
+  // the anti-spam guard: only a follow the owner personally initiated can raise
+  // an alert, so a hostile instance cannot manufacture them.
+  if (count === 0) return;
+
+  const info = await fetchActorInfo(actorUri).catch(() => null);
+  const label = info ? actorLabel(info) : actorUri;
+
+  // No Notification model exists — computeNotifications() unions read-time
+  // sources, and MaintenanceItem is the only durable owner-facing channel for a
+  // system event. Same idiom as flagKeyRegeneration(): `update: {}` so a
+  // dismissed alert is never resurrected. The actor URI goes in `packageName` so
+  // distinct rejections stay distinct rows while repeats collapse into one.
+  await prisma.maintenanceItem
+    .upsert({
+      where: {
+        kind_packageName_latest: { kind: "federation", packageName: actorUri, latest: "follow-rejected" },
+      },
+      update: {},
+      create: {
+        kind: "federation",
+        packageName: actorUri,
+        latest: "follow-rejected",
+        severity: "info",
+        title: `${label} declined your follow request`,
+        description:
+          "Their server sent a Reject, so the follow has been removed from your Following list. " +
+          "Some accounts approve followers by hand and may have simply declined; others reject " +
+          "everything automatically. You can try following again if you think it was a mistake.",
+        url: actorUri,
+      },
+    })
+    .catch(() => {
+      /* alerting must never break inbox delivery */
+    });
 }
 
 async function handleLike(actorUri: string, activity: Record<string, unknown>) {
@@ -775,6 +887,15 @@ async function handleNote(actorUri: string, note: Record<string, unknown>) {
   const isFollowed = await prisma.fediFollowing.findUnique({
     where: { actorUri },
   });
+
+  // Their server is delivering to us, so the Follow plainly landed even if the
+  // Accept never did — plenty of implementations never send one (#348). Without
+  // this, those follows would read "pending" forever.
+  if (isFollowed && !isFollowed.accepted) {
+    await prisma.fediFollowing
+      .updateMany({ where: { actorUri, accepted: false }, data: { accepted: true } })
+      .catch(() => {});
+  }
 
   if (isFollowed) {
     // Store as FediPost for timeline (both top-level and replies from followed accounts)

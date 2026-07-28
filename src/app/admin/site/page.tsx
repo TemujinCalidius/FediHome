@@ -13,6 +13,7 @@ import { secretBoxAvailable } from "@/lib/secret-box";
 import TimelineLogin from "../../timeline/TimelineLogin";
 import SiteSettingsClient from "./SiteSettingsClient";
 import { getAlsoKnownAs } from "@/lib/identity-store";
+import { legacyUploadsDir } from "@/lib/uploads-dir";
 
 export const metadata = {
   title: "Site settings",
@@ -55,6 +56,7 @@ export default async function AdminSitePage() {
       effective={effective}
       overrides={Object.fromEntries(rows.map((r) => [r.key, r.value]))}
       accent={{ accentColor: profile.accentColor, themeAccents: profile.themeAccents }}
+      uploadsDefault={legacyUploadsDir()}
       profile={{
         authorName: profile.authorName,
         authorTagline: profile.authorTagline,

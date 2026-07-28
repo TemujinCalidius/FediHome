@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { readFile, stat, open } from "fs/promises";
 import path from "path";
+import { resolveUploadPath } from "@/lib/uploads-dir";
 
 const MIME_TYPES: Record<string, string> = {
   jpg: "image/jpeg",
@@ -31,7 +32,11 @@ export async function GET(
     return new NextResponse("Not found", { status: 404 });
   }
 
-  const fullPath = path.join(process.cwd(), "public", "uploads", filePath);
+  // resolveUploadPath checks the configured root first, then the legacy
+  // public/uploads — so media uploaded before the directory moved keeps serving
+  // without anyone having to move a file (#363).
+  const fullPath = await resolveUploadPath(filePath);
+  if (!fullPath) return new NextResponse("Not found", { status: 404 });
   const ext = filePath.split(".").pop()?.toLowerCase() || "";
   const contentType = MIME_TYPES[ext] || "application/octet-stream";
 

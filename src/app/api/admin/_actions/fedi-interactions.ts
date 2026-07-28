@@ -22,23 +22,27 @@ import { getSiteUrl } from "@/lib/identity";
 async function resolveTarget(
   postApId: string,
   clientInbox: unknown
-): Promise<{ inbox: string | null; isFollower: boolean }> {
+): Promise<{ inbox: string | null; actorUri: string | null; isFollower: boolean }> {
   const fallback = typeof clientInbox === "string" ? clientInbox : null;
   try {
     const post = await prisma.fediPost.findUnique({
       where: { apId: postApId },
       select: { actorUri: true },
     });
-    if (!post) return { inbox: fallback, isFollower: false };
+    if (!post) return { inbox: fallback, actorUri: null, isFollower: false };
     const follower = await prisma.fediFollower.findUnique({
       where: { actorUri: post.actorUri },
       select: { inbox: true, sharedInbox: true },
     });
-    if (follower) return { inbox: follower.sharedInbox || follower.inbox, isFollower: true };
+    // actorUri comes free with the row we already read — it's what lets the
+    // delivery gate apply an ACTOR block, which an inbox alone can't (#379).
+    if (follower) {
+      return { inbox: follower.sharedInbox || follower.inbox, actorUri: post.actorUri, isFollower: true };
+    }
     const inbox = await resolveActorInbox(post.actorUri);
-    return { inbox: inbox || fallback, isFollower: false };
+    return { inbox: inbox || fallback, actorUri: post.actorUri, isFollower: false };
   } catch {
-    return { inbox: fallback, isFollower: false };
+    return { inbox: fallback, actorUri: null, isFollower: false };
   }
 }
 
@@ -60,9 +64,9 @@ export async function like(body: AdminBody): Promise<NextResponse> {
 
   // A Like is delivered only to the liked post's author — not broadcast to our
   // followers (that's non-standard, and would double-send to a follower-author). (#119)
-  const { inbox: likeTarget } = await resolveTarget(postApId, likeInbox);
+  const { inbox: likeTarget, actorUri: likeActor } = await resolveTarget(postApId, likeInbox);
   if (likeTarget) {
-    await deliverActivity(likeTarget, likeActivity).catch(() => {});
+    await deliverActivity(likeTarget, likeActivity, { actorUri: likeActor }).catch(() => {});
   }
 
   // Remember we liked it so the button stays lit after a reload.
@@ -96,7 +100,7 @@ export async function boost(body: AdminBody): Promise<NextResponse> {
   await deliverToFollowers(announceActivity).catch(() => {});
   const boostAuthor = await resolveTarget(boostApId, boostInbox);
   if (boostAuthor.inbox && !boostAuthor.isFollower) {
-    await deliverActivity(boostAuthor.inbox, announceActivity).catch(() => {});
+    await deliverActivity(boostAuthor.inbox, announceActivity, { actorUri: boostAuthor.actorUri }).catch(() => {});
   }
 
   // Remember we boosted it so the button stays lit after a reload.
@@ -120,9 +124,9 @@ export async function unlike(body: AdminBody): Promise<NextResponse> {
   };
 
   // Mirror like: the Undo goes only to the author (likes aren't broadcast). (#119)
-  const { inbox: target } = await resolveTarget(postApId, likeInbox);
+  const { inbox: target, actorUri: undoActor } = await resolveTarget(postApId, likeInbox);
   if (target) {
-    await deliverActivity(target, undoActivity).catch(() => {});
+    await deliverActivity(target, undoActivity, { actorUri: undoActor }).catch(() => {});
   }
 
   await prisma.fediPost.updateMany({ where: { apId: postApId }, data: { likedByMe: false } });
@@ -149,7 +153,7 @@ export async function unboost(body: AdminBody): Promise<NextResponse> {
   await deliverToFollowers(undoActivity).catch(() => {});
   const unboostAuthor = await resolveTarget(boostApId, boostInbox);
   if (unboostAuthor.inbox && !unboostAuthor.isFollower) {
-    await deliverActivity(unboostAuthor.inbox, undoActivity).catch(() => {});
+    await deliverActivity(unboostAuthor.inbox, undoActivity, { actorUri: unboostAuthor.actorUri }).catch(() => {});
   }
 
   await prisma.fediPost.updateMany({ where: { apId: boostApId }, data: { boostedByMe: false } });

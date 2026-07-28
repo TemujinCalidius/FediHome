@@ -7,7 +7,7 @@ import type { NextRequest } from "next/server";
 const {
   authenticateApiRequest, verifyOrigin, deliverToFollowers, deliverActivity,
   crosspostToBluesky, crosspostReplyToBluesky, crosspostToThreads, crosspostToDayOne,
-  parseMentions, linkMentions, buildApMentionTags, collectMentionInboxes, imageAttachment, sanitizeHtml, buildMediaUpdate,
+  parseMentions, linkMentions, buildApMentionTags, collectMentionInboxes, collectMentionTargets, imageAttachment, sanitizeHtml, buildMediaUpdate,
   enqueueFailedCrosspost,
 } = vi.hoisted(() => ({
   authenticateApiRequest: vi.fn(),
@@ -22,6 +22,7 @@ const {
   linkMentions: vi.fn((s: string) => s),
   buildApMentionTags: vi.fn(() => []),
   collectMentionInboxes: vi.fn(() => []),
+  collectMentionTargets: vi.fn(() => []),
   imageAttachment: vi.fn(),
   sanitizeHtml: vi.fn((s: string) => s),
   buildMediaUpdate: vi.fn(() => ({})),
@@ -31,7 +32,7 @@ vi.mock("@/lib/auth", () => ({ authenticateApiRequest, verifyOrigin }));
 vi.mock("@/lib/http-signatures", () => ({ deliverToFollowers, deliverActivity }));
 vi.mock("@/lib/crosspost", () => ({ crosspostToBluesky, crosspostReplyToBluesky, crosspostToThreads, crosspostToDayOne }));
 vi.mock("@/lib/crosspost-retry", () => ({ enqueueFailedCrosspost }));
-vi.mock("@/lib/mentions", () => ({ parseMentions, linkMentions, buildApMentionTags, collectMentionInboxes }));
+vi.mock("@/lib/mentions", () => ({ parseMentions, linkMentions, buildApMentionTags, collectMentionInboxes, collectMentionTargets }));
 vi.mock("@/lib/ap-post", () => ({ imageAttachment }));
 vi.mock("@/lib/sanitize", () => ({ sanitizeHtml }));
 vi.mock("@/lib/post-media", () => ({ buildMediaUpdate }));

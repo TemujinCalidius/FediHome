@@ -89,7 +89,7 @@ async function sendFediDm(
     },
   };
 
-  const result = await deliverActivity(recipient.inbox, dmActivity);
+  const result = await deliverActivity(recipient.inbox, dmActivity, { actorUri: recipient.actorUri });
 
   const stored = await prisma.directMessage.create({
     data: {

@@ -220,6 +220,11 @@ export async function computeNotifications(): Promise<NotificationResult> {
       summary = `${m.packageName} ${m.current ?? ""} → ${m.latest ?? ""}`.trim();
     } else if (m.kind === "security") {
       summary = `${(m.severity || "moderate").toUpperCase()} advisory in ${m.packageName}`;
+    } else if (m.kind === "federation") {
+      // packageName is an actor URI here, not a package — the title carries the
+      // readable form. Without this branch the else below would render a declined
+      // follow as "<actor URI> released".
+      summary = m.title;
     } else {
       summary = `${m.packageName} ${m.latest ?? ""} released`;
     }
@@ -228,7 +233,14 @@ export async function computeNotifications(): Promise<NotificationResult> {
       id: `maintenance-${m.id}`,
       type: "update",
       source: "maintenance",
-      actor: m.kind === "security" ? "Security advisory" : m.kind === "release-note" ? "New release" : "Package update",
+      actor:
+        m.kind === "security"
+          ? "Security advisory"
+          : m.kind === "federation"
+            ? "Fediverse"
+            : m.kind === "release-note"
+              ? "New release"
+              : "Package update",
       actorUrl: null,
       avatarUrl: null,
       summary: m.title || summary,

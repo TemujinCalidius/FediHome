@@ -111,6 +111,8 @@ type FollowingItem =
       domain: string;
       displayName: string | null;
       avatarUrl: string | null;
+      /** False until their server sends an Accept (#348). */
+      accepted: boolean;
       createdAt: string;
     }
   | {
@@ -1811,6 +1813,7 @@ export default function TimelineClient({
   const [replyTo, setReplyTo] = useState<{ apId: string; inbox: string } | null>(null);
   const [replyContent, setReplyContent] = useState("");
   const [followHandle, setFollowHandle] = useState("");
+  const [followError, setFollowError] = useState<string | null>(null);
   const [threadPosts, setThreadPosts] = useState<FediPostItem[] | null>(null);
   const [threadLoading, setThreadLoading] = useState(false);
 
@@ -2475,11 +2478,20 @@ export default function TimelineClient({
                   const payload = isFedi
                     ? { action: "follow", handle: raw }
                     : { action: "bsky_follow", handleOrDid: raw };
-                  await fetch("/api/admin", {
+                  setFollowError(null);
+                  // This used to fire and reload unconditionally, so every
+                  // refusal was invisible — including "you've blocked this
+                  // account", which has been returned since blocking shipped.
+                  const res = await fetch("/api/admin", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify(payload),
-                  });
+                  }).catch(() => null);
+                  if (!res || !res.ok) {
+                    const data = await res?.json().catch(() => null);
+                    setFollowError(data?.error || "That didn't work. Check the handle and try again.");
+                    return;
+                  }
                   setFollowHandle("");
                   window.location.reload();
                 }}
@@ -2488,6 +2500,9 @@ export default function TimelineClient({
                 Follow
               </button>
             </div>
+            {followError && (
+              <p className="text-xs text-amber-400 mt-2">{followError}</p>
+            )}
           </div>
 
           {/* Following list */}
@@ -2524,6 +2539,14 @@ export default function TimelineClient({
                           </p>
                           {f.source === "bsky" && (
                             <span className="text-[10px] uppercase tracking-wide text-blue-400 border border-blue-800/60 px-1.5 py-0.5 rounded">bsky</span>
+                          )}
+                          {f.source === "fedi" && !f.accepted && (
+                            <span
+                              title="Their server hasn't confirmed the follow yet. Accounts that approve followers by hand can sit here a while."
+                              className="text-[10px] uppercase tracking-wide text-amber-400 border border-amber-800/60 px-1.5 py-0.5 rounded"
+                            >
+                              pending
+                            </span>
                           )}
                         </div>
                         <a

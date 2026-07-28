@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.21.0 (2026-07-28)
+
+### Added
+- **Set your Fediverse address from the admin panel, while your site is still new** (#326) — your address used to be fixed at install and changeable only by editing a file on the server. It's now in **Admin → Site settings → Identity** for as long as it's genuinely safe to change: the moment you publish anything, or anyone follows you, FediHome refuses. That isn't caution — every post stores its own full address inside it, and every server that has seen you keeps the first one it saw, so a later change would orphan your posts rather than move them.
+- **Change your journal email settings without touching the server** (#326) — the SMTP host, username and password behind DayOne journalling were the last credentials readable only from a file. They move into the admin panel, encrypted at rest like your Bluesky and Threads credentials, and you're told if they ever stop being readable. Existing setups keep working exactly as they are.
+- **Put your media on a different disk** (#363) — uploads were hardcoded to `public/uploads` inside the install, so moving them to a bigger volume meant a symlink, and a folder of your own photos and audio sat inside the source checkout where a clean re-clone could lose it. **Admin → Site settings → Storage** now takes any absolute path; FediHome checks it exists and that it can actually write there before saving, and tells you which of the two failed. Changing it never moves a file: new uploads go to the new place and everything already on disk keeps being served from the old one, so you can relocate at your own pace or not at all.
+- **You can see which follows haven't gone through yet** (#348) — following someone wrote the row and called it done, so an account that approves followers by hand, or one whose server flatly refused you, looked exactly like a real follow: their posts never arrived and nothing said why. FediHome now listens for the answer. Unconfirmed follows are marked **pending** in your Following list, and if someone declines you're told, with the follow removed. Existing follows are unaffected — they're treated as accepted, which they are.
+
+### Fixed
+- **Blocking someone now stops us talking to them, too** (#379) — a block only ever worked one way: it silenced what they sent you, but every outbound path still reached out. You could send a direct message to someone you'd blocked, and with a whole server blocked you could still follow anyone there by typing their handle — which quietly fetched their profile and imported ten of their posts. Likes, boosts, replies and mentions all went out unchecked, and anything already queued kept retrying to a blocked inbox for the next day and a half. All of it now stops before any contact is made, which is the point: FediHome deliberately never tells anyone they've been blocked, and that promise only holds if we also stop initiating. **This also closes a bypass that affected blocking in both directions** — a server running on a non-standard port was never actually covered by a domain block.
+
+
 ## 1.20.0 (2026-07-26)
 
 ### Added

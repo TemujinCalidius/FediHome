@@ -1,7 +1,7 @@
 import { prisma } from "./db";
 
 /**
- * Block enforcement for incoming federated activity.
+ * Block enforcement, inbound and outbound.
  *
  * **The bug this fixes.** `block()` (admin `_actions/fedi-graph.ts`) removed the
  * follow relationship and purged the actor's cached posts and interactions — but
@@ -14,16 +14,48 @@ import { prisma } from "./db";
  * tell. We follow that: enforcement happens entirely on our side, and a blocked
  * sender gets exactly the same `202 Accepted` as everyone else. Their server
  * sees a normal delivery; nothing signals the block.
+ *
+ * **Both directions, and they're not symmetric (#379).** For a long time only
+ * the inbound half existed: we stopped listening to blocked accounts but kept
+ * talking to them — outbound follows, DMs, likes, replies and queued retries all
+ * still initiated contact. `blockedRecipient()` is the outbound half, and it
+ * differs from `isBlockedSender()` in two deliberate ways:
+ *
+ *   - **It decides actor blocks only from an actor URI the caller supplies,
+ *     never from the inbox.** A shared inbox like `https://mastodon.social/inbox`
+ *     serves every account on the host; refusing it because one of them is
+ *     blocked would black-hole the whole instance. Domain blocks *are* decidable
+ *     from the inbox host, because a blocked host is blocked whoever it serves.
+ *   - **It fails CLOSED**, where the inbound path fails open. The asymmetry is
+ *     reversibility: an inbound activity wrongly stored is a row the next purge
+ *     deletes and nobody outside ever knew; an outbound one wrongly delivered is
+ *     a signed packet sitting on a blocked person's server, and there is no
+ *     unsend. Failing closed costs nothing in availability terms either — every
+ *     caller already read its recipient from the same database, so if that's
+ *     down there is nothing to deliver to. A DB error is reported as
+ *     **non-permanent** so the retry queue picks it up rather than dropping the
+ *     activity outright.
  */
 
-/** Lowercased host of an actor URI, or `null` if it isn't a usable URL. */
-export function actorHost(actorUri: string): string | null {
+/**
+ * Lowercased HOSTNAME of a URI, or `null` if it isn't a usable URL.
+ *
+ * `.hostname`, not `.host`: the port must not survive. `BlockedDomain.domain` is
+ * stored port-less (via `normalizeDomain`) and `domainChain` splits on ".", so a
+ * host of `spam.example:8443` produced the single candidate `"spam.example:8443"`
+ * — which never matches a stored row. An actor served on a non-default port was
+ * therefore not domain-blocked at all, inbound or outbound (#379).
+ */
+export function uriHostname(uri: string): string | null {
   try {
-    return new URL(actorUri).host.toLowerCase();
+    return new URL(uri).hostname.toLowerCase();
   } catch {
     return null;
   }
 }
+
+/** @deprecated Kept as the historical name for `uriHostname`. */
+export const actorHost = uriHostname;
 
 /**
  * Normalise a domain for storage and comparison: lowercased, no port, no
@@ -73,7 +105,7 @@ export function domainChain(host: string): string[] {
  */
 export async function isBlockedSender(actorUri: string): Promise<boolean> {
   try {
-    const host = actorHost(actorUri);
+    const host = uriHostname(actorUri);
     const [actor, domain] = await Promise.all([
       prisma.blockedActor.findUnique({ where: { actorUri }, select: { id: true } }),
       host
@@ -87,4 +119,109 @@ export async function isBlockedSender(actorUri: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/* ------------------------------ outbound (#379) ----------------------------- */
+
+export type RecipientBlock =
+  | { blocked: false }
+  /** Policy refusal — retrying can never help, so callers must discard. */
+  | { blocked: true; reason: "actor" | "domain"; permanent: true }
+  /** The block list was unreadable. Refuse, but let the queue try again later. */
+  | { blocked: true; reason: "unavailable"; permanent: false };
+
+const NOT_BLOCKED: RecipientBlock = { blocked: false };
+
+/** Domain-block candidates for a URI, or `[]` when it isn't parseable. */
+function hostCandidates(uri: string | null | undefined): string[] {
+  if (!uri) return [];
+  const host = uriHostname(uri);
+  return host ? domainChain(host) : [];
+}
+
+/**
+ * Should we refuse to send to this recipient?
+ *
+ * `actorUri` is optional ONLY because some senders genuinely have no single
+ * recipient — a queued `FailedDelivery` row carries just an inbox, which may be
+ * shared. Omitting it means actor-level blocks are not enforced for that call,
+ * which is correct rather than a shortcut; see the module comment.
+ */
+export async function blockedRecipient(target: {
+  inbox: string;
+  actorUri?: string | null;
+}): Promise<RecipientBlock> {
+  const { inbox, actorUri } = target;
+  // Chain BOTH hosts: an actor whose URI is on one domain can advertise an inbox
+  // on another, and blocking either should stop the delivery.
+  const domains = Array.from(new Set([...hostCandidates(inbox), ...hostCandidates(actorUri)]));
+
+  try {
+    const [actor, domain] = await Promise.all([
+      actorUri
+        ? prisma.blockedActor.findUnique({ where: { actorUri }, select: { id: true } })
+        : Promise.resolve(null),
+      domains.length
+        ? prisma.blockedDomain.findFirst({ where: { domain: { in: domains } }, select: { id: true } })
+        : Promise.resolve(null),
+    ]);
+    if (actor) return { blocked: true, reason: "actor", permanent: true };
+    if (domain) return { blocked: true, reason: "domain", permanent: true };
+    return NOT_BLOCKED;
+  } catch {
+    return { blocked: true, reason: "unavailable", permanent: false };
+  }
+}
+
+/**
+ * The batch form, for follower fan-out: two queries total rather than two per
+ * recipient. `unavailable` is all-or-nothing — if the block list can't be read
+ * we can't clear anyone.
+ */
+export async function partitionBlockedRecipients<T extends { inbox: string; actorUri?: string | null }>(
+  targets: T[],
+): Promise<{ allowed: T[]; blocked: T[]; unavailable: boolean }> {
+  if (targets.length === 0) return { allowed: [], blocked: [], unavailable: false };
+
+  const actorUris = targets.map((t) => t.actorUri).filter((u): u is string => !!u);
+  const domains = Array.from(
+    new Set(targets.flatMap((t) => [...hostCandidates(t.inbox), ...hostCandidates(t.actorUri)])),
+  );
+
+  try {
+    const [actors, blockedDomains] = await Promise.all([
+      actorUris.length
+        ? prisma.blockedActor.findMany({ where: { actorUri: { in: actorUris } }, select: { actorUri: true } })
+        : Promise.resolve([]),
+      domains.length
+        ? prisma.blockedDomain.findMany({ where: { domain: { in: domains } }, select: { domain: true } })
+        : Promise.resolve([]),
+    ]);
+    const blockedActors = new Set(actors.map((a) => a.actorUri));
+    const blockedHosts = new Set(blockedDomains.map((d) => d.domain));
+
+    const allowed: T[] = [];
+    const blocked: T[] = [];
+    for (const t of targets) {
+      const hit =
+        (t.actorUri && blockedActors.has(t.actorUri)) ||
+        [...hostCandidates(t.inbox), ...hostCandidates(t.actorUri)].some((h) => blockedHosts.has(h));
+      (hit ? blocked : allowed).push(t);
+    }
+    return { allowed, blocked, unavailable: false };
+  } catch {
+    return { allowed: [], blocked: [], unavailable: true };
+  }
+}
+
+/**
+ * Is this host domain-blocked? **Throws** on a database error, unlike everything
+ * else here — `follow()` needs to fail closed with a message the owner can act
+ * on, rather than quietly proceeding to WebFinger a blocked instance.
+ */
+export async function isBlockedDomainHost(host: string): Promise<boolean> {
+  const chain = domainChain(host);
+  if (chain.length === 0) return false;
+  const hit = await prisma.blockedDomain.findFirst({ where: { domain: { in: chain } }, select: { id: true } });
+  return !!hit;
 }
