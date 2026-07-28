@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- **A scheduled post could be marked as sent when it never was** (#384) — FediHome ships a few hand-written database updates that run before the app starts. One of them was meant to tidy up posts from before delivery tracking existed, but the condition it matched wasn't "old posts" at all — it was "any scheduled post that is being sent right now". On a container, that ran on **every restart**. So if your instance restarted in the seconds while a scheduled post was going out, that post was recorded as delivered, and the safety net that would have re-sent it was told there was nothing to do. Silently, with nothing in the interface to show it. Fixed, and posts that were affected are repaired on upgrade: they'll be sent shortly after your instance restarts. If a post was already crossposted to Bluesky or Threads, it won't be sent there twice. Two further changes make this class of mistake much harder: these files are now recorded once they've run, instead of being replayed forever, and a test refuses any future one that changes data without saying why it's safe to repeat.
+
 ## 1.21.0 (2026-07-28)
 
 ### Added

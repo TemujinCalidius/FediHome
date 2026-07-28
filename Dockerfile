@@ -71,9 +71,13 @@ ENTRYPOINT ["sh", "/app/scripts/docker-entrypoint.sh"]
 #
 # The manual migrations MUST run first (#355). They exist precisely because
 # `db push` won't add a unique constraint on its own, so skipping them is what
-# would make it fail — and one of them backfills data that `db push` cannot
-# produce at all. This path previously ran `db push` alone, so containers
+# would make it fail. This path previously ran `db push` alone, so containers
 # silently skipped every one of them.
+#
+# They are recorded in the ManualMigration table and normally apply once per
+# content version (#384) — before that ledger existed they re-ran on every start,
+# which is how a data backfill came to overwrite live delivery state. See
+# prisma/manual-migrations/README.md.
 #
 # If `db push` fails, say so plainly instead of letting `&&` short-circuit into
 # a bare crash-loop with no explanation.
