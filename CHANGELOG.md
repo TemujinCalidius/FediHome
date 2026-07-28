@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.21.0 (2026-07-28)
 
 ### Added
 - **Set your Fediverse address from the admin panel, while your site is still new** (#326) — your address used to be fixed at install and changeable only by editing a file on the server. It's now in **Admin → Site settings → Identity** for as long as it's genuinely safe to change: the moment you publish anything, or anyone follows you, FediHome refuses. That isn't caution — every post stores its own full address inside it, and every server that has seen you keeps the first one it saw, so a later change would orphan your posts rather than move them.
