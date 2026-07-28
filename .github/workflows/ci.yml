@@ -18,6 +18,25 @@ jobs:
   test:
     name: Typecheck & test
     runs-on: ubuntu-latest
+
+    # A throwaway Postgres so the manual migrations can be executed for real
+    # (#384). Every other test mocks @/lib/db, which is exactly how a
+    # non-idempotent migration shipped: the SQL that runs on every install had
+    # never been run by a test.
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: fedihome_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v4
 
@@ -44,6 +63,9 @@ jobs:
 
       - name: Test
         run: npm test
+        env:
+          # Opts the manual-migration tests in; they skip without it.
+          FEDIHOME_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/fedihome_test
 
       # A production build catches Next-specific breakage that tsc misses
       # (server/client boundaries, route config) and that `npm run update`
