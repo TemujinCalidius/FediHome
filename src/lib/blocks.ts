@@ -304,3 +304,33 @@ export async function blockedPostFilter(): Promise<Record<string, unknown>> {
   }
 }
 
+/**
+ * Is this Bluesky account blocked, by DID or by handle domain? (#393)
+ *
+ * Bluesky identities aren't URLs, so the URL-shaped helpers above don't apply:
+ * `uriHostname("did:plc:abc")` is `null`, and a handle like
+ * `alice.spam.example` has no scheme. A Bluesky block is therefore stored as
+ * the **DID** in `BlockedActor` — which is also what `FediPost.actorUri` holds
+ * for a Bluesky row, so the two match directly.
+ *
+ * The handle still carries a domain, and a domain block should cover it:
+ * blocking `spam.example` covers `alice.spam.example`, the same subdomain
+ * semantics `domainChain` gives the fediverse side.
+ *
+ * Fails **closed**, like the other ingest-side check — see `blockedActorUris`.
+ */
+export async function isBlueskyBlocked(actor: { did: string; handle?: string | null }): Promise<boolean> {
+  try {
+    const candidates = actor.handle ? domainChain(actor.handle.toLowerCase()) : [];
+    const [byDid, byDomain] = await Promise.all([
+      prisma.blockedActor.findUnique({ where: { actorUri: actor.did }, select: { id: true } }),
+      candidates.length
+        ? prisma.blockedDomain.findFirst({ where: { domain: { in: candidates } }, select: { id: true } })
+        : Promise.resolve(null),
+    ]);
+    return !!byDid || !!byDomain;
+  } catch {
+    return true;
+  }
+}
+

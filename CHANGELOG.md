@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Added
+- **Posts from the people you follow on Bluesky now show up** (#393) — following someone on Bluesky imported their name and their avatar and then nothing else: their posts never arrived, because nothing had ever asked for them. FediHome now pulls your Bluesky Following feed on the same schedule as the rest of the Bluesky sync, and those posts sit in your timeline alongside federated ones. Replies and reposts land as replies and boosts, so the toggles you already have work on them. Images are cached locally rather than hot-linked, blocked accounts are skipped — including when someone you follow reposts them — and your own posts are left out so they don't appear twice. **Liking, boosting and replying to a Bluesky post from here is not built yet**; there's a link out to Bluesky in the meantime.
+
+### Changed
+- Dependency refresh: `postcss` 8.5.24.
+
 ### Fixed
 - **A queued post could still reach someone you'd just blocked** (#397) — when a follower's server is down, the post waits in a retry queue. Those queued items recorded only where they were going, not who they were for, so on retry FediHome could tell whether you'd blocked the whole *server* but not whether you'd blocked the *person*. Blocking normally clears the queue immediately; if that clean-up failed at the wrong moment, the post kept being re-sent to them for the next day and a half. The queue now remembers the recipient, so the retry makes the same decision the first attempt would have.
 - **Opening a thread could bring back someone you'd blocked** (#396) — blocking removes that person's posts from your instance, but viewing a conversation they'd replied in fetched the whole thread from the other server and wrote their posts straight back. If the post it re-imported was the start of the thread, it reappeared in your main feed and stayed there. Your instance was also making signed requests to servers you'd blocked in order to do it. Both are now checked before anything is fetched or stored, and blocked accounts are additionally filtered out of the feed on the way to the screen — so a block holds even if some future path forgets to ask.

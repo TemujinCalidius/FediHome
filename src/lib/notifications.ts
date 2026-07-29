@@ -128,6 +128,9 @@ export async function computeNotifications(): Promise<NotificationResult> {
     }
   }
   for (const r of ourReplies) {
+    // Bluesky rows have no apId (#393); FediInteraction targets are AP ids, so
+    // a row without one can never be the target of one.
+    if (!r.apId) continue;
     const snippet = htmlToText(r.content, 50);
     apIdToUrl.set(r.apId, { url: "/timeline", name: snippet });
     ourApIds.push(r.apId);

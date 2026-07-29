@@ -102,9 +102,16 @@ export async function runBlueskySyncTick(): Promise<void> {
   if (!(await getEffectiveSchedulerConfig()).blueskySync.enabled) return;
   try {
     const g = await syncBlueskyGraph();
+    // Posts from the people we follow (#393). After the graph sync, so a
+    // brand-new follow is already known before its posts arrive.
+    const { syncBlueskyFeed } = await import("./bluesky-feed");
+    const f = await syncBlueskyFeed();
     const d = await pollBlueskyDMs();
     const n = await syncBlueskyNotifications();
-    log(`bluesky-sync: ${g.followers}/${g.following} graph, ${d.messages} dms, ${n.pushed} pushed`);
+    log(
+      `bluesky-sync: ${g.followers}/${g.following} graph, ${f.imported} posts` +
+        `${f.skippedBlocked > 0 ? ` (${f.skippedBlocked} blocked)` : ""}, ${d.messages} dms, ${n.pushed} pushed`,
+    );
   } catch (err) {
     console.error("scheduler: bluesky-sync failed:", err);
   }

@@ -49,7 +49,11 @@ interface BlockedDomainItem {
 
 interface FediPostItem {
   id: string;
-  apId: string;
+  /** Null for Bluesky rows (#393) — they're identified by bskyUri instead. */
+  apId: string | null;
+  /** "fedi" or "bluesky". */
+  source?: string;
+  bskyUri?: string | null;
   /** The real actor URI as stored. Never rebuild this from username+domain:
    *  that assumes Mastodon's /users/<name> shape and is wrong for Lemmy,
    *  Akkoma, PeerTube and FediHome itself (/ap/actor), so block/unfollow and
@@ -533,11 +537,26 @@ function PostCard({
               Cancel
             </button>
           </div>
+        ) : post.source === "bluesky" || !post.apId ? (
+          // Replying to a Bluesky post needs an AT-Protocol write, not an
+          // ActivityPub inbox delivery (#393). Rather than offer a button that
+          // builds a fabricated `https://<domain>/users/<handle>/inbox` and
+          // silently fails, link out until that path exists.
+          postSourceUrl(post) ? (
+            <a
+              href={postSourceUrl(post)!}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-gray-500 hover:text-accent-400 transition-colors"
+            >
+              Reply on Bluesky ↗
+            </a>
+          ) : null
         ) : (
           <button
             onClick={() =>
               setReplyTo({
-                apId: post.apId,
+                apId: post.apId!,
                 inbox: `https://${post.domain}/users/${post.username}/inbox`,
               })
             }
@@ -602,7 +621,13 @@ function PostCard({
 // The shareable source URL for a post. Normal posts: apId is the canonical URL.
 // Boosts have a synthetic "boost:<actorUri>:<originalApId>" id — pull the
 // original post URL back out of it. Returns null when there's no real URL.
-function postSourceUrl(post: { apId: string }): string | null {
+function postSourceUrl(post: { apId: string | null; source?: string; bskyUri?: string | null }): string | null {
+  // Bluesky rows carry an at:// URI, which isn't linkable — turn it into the
+  // bsky.app permalink so Share and "view original" still work (#393).
+  if (post.source === "bluesky") {
+    const m = post.bskyUri?.match(/^at:\/\/([^/]+)\/app\.bsky\.feed\.post\/(.+)$/);
+    return m ? `https://bsky.app/profile/${m[1]}/post/${m[2]}` : null;
+  }
   const id = post.apId || "";
   if (id.startsWith("http")) return id;
   if (id.startsWith("boost:")) {
@@ -850,6 +875,12 @@ function ThreadActions({ post }: { post: FediPostItem }) {
   const [liked, setLiked] = useState(post.likedByMe ?? false);
   const [boosted, setBoosted] = useState(post.boostedByMe ?? false);
   const inbox = `https://${post.domain}/users/${post.username}/inbox`;
+
+  // A Bluesky like is an AT-Protocol record, not an ActivityPub Like delivered
+  // to an inbox (#393). The imported row already shows whether you liked it in
+  // the Bluesky app; the button is hidden until the write path exists, rather
+  // than posting an activity into the void.
+  if (post.source === "bluesky" || !post.apId) return null;
 
   const react = (action: "like" | "boost" | "unlike" | "unboost") => {
     fetch("/api/admin", {
