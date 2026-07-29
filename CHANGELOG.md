@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- **Opening a thread could bring back someone you'd blocked** (#396) — blocking removes that person's posts from your instance, but viewing a conversation they'd replied in fetched the whole thread from the other server and wrote their posts straight back. If the post it re-imported was the start of the thread, it reappeared in your main feed and stayed there. Your instance was also making signed requests to servers you'd blocked in order to do it. Both are now checked before anything is fetched or stored, and blocked accounts are additionally filtered out of the feed on the way to the screen — so a block holds even if some future path forgets to ask.
+
 ## 1.22.0 (2026-07-29)
 
 ### Added
