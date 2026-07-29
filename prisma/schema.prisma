@@ -554,6 +554,12 @@ model FailedCrosspost {
 model FailedDelivery {
   id          String    @id @default(cuid())
   inbox       String
+  /// Who this delivery was for, when that is knowable (#397). NULL for a shared
+  /// inbox, which serves many accounts and so identifies none of them — the same
+  /// distinction deliverToFollowers makes. Without it the retry sweep can only
+  /// ever ask "is this HOST blocked?", so an account block was enforced over
+  /// queued rows solely by a best-effort purge.
+  actorUri    String?
   activityId  String
   activity    String // the full activity JSON, re-sent verbatim so the id is stable (remote servers dedupe)
   attempts    Int       @default(0)
