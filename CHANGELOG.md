@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.22.0 (2026-07-29)
 
 ### Added
 - **See how full your disk is before it bites** (#385) — nothing told you the uploads volume was filling until a post failed to save, which matters more now that media can live on a separate disk. **Admin → Site settings → Storage** shows free space, and splits your own photos and audio from the cache of other people's media — so you know whether the answer is a bigger disk or just a smaller cache. `/api/health` reports a plain `ok` / `low` / `critical`, enough for an uptime monitor to warn you, without publishing your disk size to anyone who asks. A full disk is reported but never marks the instance unhealthy, because restarting doesn't free space. Also fixes the cache trim itself: it only ever ran after a **video** was cached, so an instance that mostly saw images never trimmed at all and its 2GB budget was fiction.
