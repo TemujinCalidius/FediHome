@@ -301,8 +301,8 @@ function PostCard({
   onLoadCounts,
 }: {
   post: FediPostItem;
-  replyTo: { apId: string; inbox: string } | null;
-  setReplyTo: (v: { apId: string; inbox: string } | null) => void;
+  replyTo: { apId: string | null; inbox: string; bskyUri?: string | null } | null;
+  setReplyTo: (v: { apId: string | null; inbox: string; bskyUri?: string | null } | null) => void;
   replyContent: string;
   setReplyContent: (v: string) => void;
   allPosts: FediPostItem[];
@@ -341,7 +341,9 @@ function PostCard({
     await fetch("/api/admin", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: next ? "like" : "unlike", postApId: post.apId, targetInbox: inbox }),
+      // postId, not postApId: the server looks the row up and picks the network,
+      // so this works for a Bluesky post as well as a federated one (#393).
+      body: JSON.stringify({ action: next ? "like" : "unlike", postId: post.id, targetInbox: inbox }),
     });
   };
 
@@ -351,7 +353,7 @@ function PostCard({
     await fetch("/api/admin", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: next ? "boost" : "unboost", postApId: post.apId, targetInbox: inbox }),
+      body: JSON.stringify({ action: next ? "boost" : "unboost", postId: post.id, targetInbox: inbox }),
     });
   };
 
@@ -496,7 +498,7 @@ function PostCard({
         </button>
 
         {/* Reply */}
-        {replyTo?.apId === post.apId ? (
+        {replyTo && (post.source === "bluesky" ? replyTo.bskyUri === post.bskyUri : replyTo.apId === post.apId) ? (
           <div className="flex gap-2 flex-1">
             <input
               type="text"
@@ -510,18 +512,29 @@ function PostCard({
                 if (!replyContent.trim()) return;
                 const fediStripped = replyContent.replace(/@[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]+/g, "");
                 const hasBskyMention = /@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+/.test(fediStripped);
+                // Route by the post's own network (#393). A Bluesky reply is a
+                // record written into our repo against the parent's at:// URI,
+                // not an ActivityPub Note delivered to an inbox.
+                const payload =
+                  post.source === "bluesky"
+                    ? {
+                        action: "bsky_reply",
+                        content: replyContent.trim(),
+                        blueskyUri: post.bskyUri,
+                      }
+                    : {
+                        action: "reply",
+                        content: replyContent.trim(),
+                        inReplyTo: post.apId,
+                        targetInbox: `https://${post.domain}/users/${post.username}/inbox`,
+                        actorUri: post.actorUri || `https://${post.domain}/users/${post.username}`,
+                        mentionHandle: `@${post.username}@${post.domain}`,
+                        crosspostBluesky: hasBskyMention,
+                      };
                 await fetch("/api/admin", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    action: "reply",
-                    content: replyContent.trim(),
-                    inReplyTo: post.apId,
-                    targetInbox: `https://${post.domain}/users/${post.username}/inbox`,
-                    actorUri: post.actorUri || `https://${post.domain}/users/${post.username}`,
-                    mentionHandle: `@${post.username}@${post.domain}`,
-                    crosspostBluesky: hasBskyMention,
-                  }),
+                  body: JSON.stringify(payload),
                 });
                 setReplyContent("");
                 setReplyTo(null);
@@ -537,26 +550,14 @@ function PostCard({
               Cancel
             </button>
           </div>
-        ) : post.source === "bluesky" || !post.apId ? (
-          // Replying to a Bluesky post needs an AT-Protocol write, not an
-          // ActivityPub inbox delivery (#393). Rather than offer a button that
-          // builds a fabricated `https://<domain>/users/<handle>/inbox` and
-          // silently fails, link out until that path exists.
-          postSourceUrl(post) ? (
-            <a
-              href={postSourceUrl(post)!}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs text-gray-500 hover:text-accent-400 transition-colors"
-            >
-              Reply on Bluesky ↗
-            </a>
-          ) : null
         ) : (
           <button
             onClick={() =>
               setReplyTo({
-                apId: post.apId!,
+                apId: post.apId,
+                bskyUri: post.bskyUri ?? null,
+                // Only meaningful on the fediverse side; a Bluesky reply is an
+                // AT-Protocol write with no inbox involved (#393).
                 inbox: `https://${post.domain}/users/${post.username}/inbox`,
               })
             }
@@ -876,17 +877,16 @@ function ThreadActions({ post }: { post: FediPostItem }) {
   const [boosted, setBoosted] = useState(post.boostedByMe ?? false);
   const inbox = `https://${post.domain}/users/${post.username}/inbox`;
 
-  // A Bluesky like is an AT-Protocol record, not an ActivityPub Like delivered
-  // to an inbox (#393). The imported row already shows whether you liked it in
-  // the Bluesky app; the button is hidden until the write path exists, rather
-  // than posting an activity into the void.
-  if (post.source === "bluesky" || !post.apId) return null;
+  // Both networks: a Bluesky like writes an AT-Protocol record rather than
+  // delivering an ActivityPub Like, and the server picks which from the row's
+  // own `source` (#393).
 
   const react = (action: "like" | "boost" | "unlike" | "unboost") => {
     fetch("/api/admin", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action, postApId: post.apId, targetInbox: inbox }),
+      // postId, not postApId — the server routes on the row's source (#393).
+      body: JSON.stringify({ action, postId: post.id, targetInbox: inbox }),
     }).catch(() => {});
   };
 
@@ -1841,7 +1841,7 @@ export default function TimelineClient({
   useEffect(() => {
     postsRef.current = posts;
   }, [posts]);
-  const [replyTo, setReplyTo] = useState<{ apId: string; inbox: string } | null>(null);
+  const [replyTo, setReplyTo] = useState<{ apId: string | null; inbox: string; bskyUri?: string | null } | null>(null);
   const [replyContent, setReplyContent] = useState("");
   const [followHandle, setFollowHandle] = useState("");
   const [followError, setFollowError] = useState<string | null>(null);

@@ -4,7 +4,7 @@ import { approveComment, rejectComment } from "./_actions/comments";
 import { reply, editReply, backfillReplies } from "./_actions/replies";
 import { fediDm, bskyDm, markDmRead, markAllDmsRead } from "./_actions/dms";
 import { follow, unfollow, unfollowByUri, block, unblock, blockDomain, unblockDomain } from "./_actions/fedi-graph";
-import { like, boost, unlike, unboost } from "./_actions/fedi-interactions";
+import { interact } from "./_actions/interactions";
 import { bskyReply, syncGraph, bskyFollow, bskyUnfollow } from "./_actions/bluesky";
 import { updateProfile } from "./_actions/profile";
 
@@ -99,10 +99,11 @@ export async function POST(req: NextRequest) {
     case "block_domain": return blockDomain(body);
     case "unblock_domain": return unblockDomain(body);
     case "update_profile": return updateProfile(body);
-    case "like": return like(body);
-    case "unlike": return unlike(body);
-    case "boost": return boost(body);
-    case "unboost": return unboost(body);
+    // Routed by the post's own network — see _actions/interactions.ts.
+    case "like": return interact("like", body);
+    case "unlike": return interact("unlike", body);
+    case "boost": return interact("boost", body);
+    case "unboost": return interact("unboost", body);
     case "bsky_reply": return bskyReply(body);
     case "sync_bluesky_graph": return syncGraph();
     case "bsky_follow": return bskyFollow(body);

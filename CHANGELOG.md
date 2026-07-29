@@ -3,7 +3,7 @@
 ## Unreleased
 
 ### Added
-- **Posts from the people you follow on Bluesky now show up** (#393) — following someone on Bluesky imported their name and their avatar and then nothing else: their posts never arrived, because nothing had ever asked for them. FediHome now pulls your Bluesky Following feed on the same schedule as the rest of the Bluesky sync, and those posts sit in your timeline alongside federated ones. Replies and reposts land as replies and boosts, so the toggles you already have work on them. Images are cached locally rather than hot-linked, blocked accounts are skipped — including when someone you follow reposts them — and your own posts are left out so they don't appear twice. **Liking, boosting and replying to a Bluesky post from here is not built yet**; there's a link out to Bluesky in the meantime.
+- **Posts from the people you follow on Bluesky now show up** (#393) — following someone on Bluesky imported their name and their avatar and then nothing else: their posts never arrived, because nothing had ever asked for them. FediHome now pulls your Bluesky Following feed on the same schedule as the rest of the Bluesky sync, and those posts sit in your timeline alongside federated ones. Replies and reposts land as replies and boosts, so the toggles you already have work on them. Images are cached locally rather than hot-linked, blocked accounts are skipped — including when someone you follow reposts them — and your own posts are left out so they don't appear twice. **Liking, boosting and replying work too** — a like from your timeline is a real Bluesky like, and shows up in the Bluesky app straight away. If you already liked something over there, the heart is already lit here.
 
 ### Changed
 - Dependency refresh: `postcss` 8.5.24.
