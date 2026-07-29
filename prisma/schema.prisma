@@ -312,8 +312,19 @@ model BlueskyFollowing {
 
 model FediPost {
   id          String   @id @default(cuid())
+  /// For Bluesky rows this is the author's DID, not an https actor URI (#393).
+  /// Block matching depends on that: a Bluesky account block is stored as a DID
+  /// in BlockedActor, so it matches this column directly.
   actorUri    String
-  apId        String   @unique
+  /// Which network this came from: "fedi" or "bluesky". An explicit
+  /// discriminator rather than guessing from the shape of an id — the same
+  /// choice DirectMessage has made since it was written.
+  source      String   @default("fedi")
+  /// Exactly one of these identifies the post upstream. apId is nullable now
+  /// that Bluesky rows exist; Postgres allows many NULLs under a unique index,
+  /// so both stay uniquely keyed and both remain safe to upsert on.
+  apId        String?  @unique
+  bskyUri     String?  @unique // at:// URI for Bluesky rows
   content     String
   contentHtml String?
   mediaUrls   String[]
@@ -361,6 +372,7 @@ model FediPost {
   @@index([publishedAt])
   @@index([conversationId])
   @@index([inReplyTo])
+  @@index([source])
 }
 
 model FediInteraction {

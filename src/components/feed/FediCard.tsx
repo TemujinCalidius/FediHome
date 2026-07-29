@@ -2,8 +2,10 @@ import { sanitizeHtml } from "@/lib/sanitize";
 import type { FediPost } from "@/generated/prisma/client";
 
 /** Canonical source URL for a post (apId is usually the URL); null if unknown. */
-export function sourceUrl(apId: string): string | null {
-  return apId.startsWith("http") ? apId : null;
+export function sourceUrl(apId: string | null): string | null {
+  // Bluesky rows carry no apId (#393); a boost row carries a synthetic one.
+  // Either way, only a real https id is linkable.
+  return apId?.startsWith("http") ? apId : null;
 }
 
 function fmtCount(n: number | null | undefined): string {

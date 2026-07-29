@@ -70,7 +70,13 @@ export async function pruneStaleFediPosts(now: Date = new Date()): Promise<Reten
       where: {
         isOutgoing: false,
         createdAt: { lt: cutoff },
-        ...(keepApIds.size > 0 ? { apId: { notIn: [...keepApIds] } } : {}),
+        // Same NULL trap as the conversation clause below, and now reachable:
+        // Bluesky rows have no apId (#393), and `notIn` skips NULLs in SQL — so
+        // without the OR they would be excluded from every prune and grow
+        // without bound.
+        ...(keepApIds.size > 0
+          ? { AND: [{ OR: [{ apId: null }, { apId: { notIn: [...keepApIds] } }] }] }
+          : {}),
         // notIn skips NULLs in SQL, so OR back the null-conversation rows —
         // else remote posts with no thread would never be prunable.
         ...(keepConvIds.size > 0

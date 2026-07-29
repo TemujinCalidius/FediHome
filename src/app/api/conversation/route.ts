@@ -5,7 +5,7 @@ import { authenticateApiRequest } from "@/lib/auth";
 import { signedGet } from "@/lib/http-signatures";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { assertPublicHost } from "@/lib/url-guard";
-import { blockedActorUris, isBlockedSender } from "@/lib/blocks";
+import { blockedActorUris, blockedPostFilter, isBlockedSender } from "@/lib/blocks";
 
 const MAX_DEPTH = 20;
 const MAX_CONTEXT = 200; // cap on remote thread posts ingested per view
@@ -29,10 +29,30 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "post not found" }, { status: 404 });
   }
 
+  // Bluesky rows have no apId and no AP thread endpoint to walk (#393). The
+  // conversation is already stored locally via conversationId, so serve that
+  // rather than trying to federate a thread that doesn't exist.
+  if (!startPost.apId) {
+    const thread = startPost.conversationId
+      ? await prisma.fediPost.findMany({
+          where: { conversationId: startPost.conversationId, ...(await blockedPostFilter()) },
+          orderBy: { publishedAt: "asc" },
+        })
+      : [startPost];
+    return NextResponse.json({
+      thread: thread.map((p) => ({
+        ...p,
+        publishedAt: p.publishedAt.toISOString(),
+        createdAt: p.createdAt.toISOString(),
+      })),
+    });
+  }
+  const startApId = startPost.apId;
+
   // Boost rows carry a synthetic id — thread the ORIGINAL post.
-  const sourceApId = startPost.apId.startsWith("boost:")
-    ? startPost.apId.match(/^boost:.*:(https?:\/\/.*)$/)?.[1] || startPost.apId
-    : startPost.apId;
+  const sourceApId = startApId.startsWith("boost:")
+    ? startApId.match(/^boost:.*:(https?:\/\/.*)$/)?.[1] || startApId
+    : startApId;
 
   // PREFERRED: pull the whole conversation (everyone's replies) from the origin
   // instance's Mastodon-API context endpoint, ingesting each post locally.
@@ -55,12 +75,16 @@ export async function GET(req: NextRequest) {
       depth++;
     }
 
-    const threadApIds = [...ancestors.map((p) => p.apId), startPost.apId];
+    // Bluesky rows in the same reply chain have no apId; drop them from the
+    // ancestor id list rather than passing nulls into an `in` clause.
+    const threadApIds = [...ancestors.map((p) => p.apId), startApId].filter(
+      (a): a is string => a !== null,
+    );
     const replies = await prisma.fediPost.findMany({
       where: { inReplyTo: { in: threadApIds } },
       orderBy: { publishedAt: "asc" },
     });
-    const replyApIds = replies.map((r) => r.apId);
+    const replyApIds = replies.map((r) => r.apId).filter((a): a is string => a !== null);
     const deepReplies =
       replyApIds.length > 0
         ? await prisma.fediPost.findMany({
@@ -84,8 +108,9 @@ function dedupe(posts: NonNullable<FediPostRow>[]): NonNullable<FediPostRow>[] {
   const seen = new Set<string>();
   const out: NonNullable<FediPostRow>[] = [];
   for (const p of posts) {
-    if (p && !seen.has(p.apId)) {
-      seen.add(p.apId);
+    // Keyed on id, not apId: Bluesky rows have no apId, and id is unique for both.
+    if (p && !seen.has(p.id)) {
+      seen.add(p.id);
       out.push(p);
     }
   }
