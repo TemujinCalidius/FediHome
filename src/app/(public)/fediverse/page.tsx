@@ -6,6 +6,7 @@ import { siteConfig } from "@/../site.config";
 import { getRuntimeSiteConfig } from "@/lib/site-settings";
 import { resolveLayout } from "@/lib/themes";
 import FediFeed from "@/components/feed/FediFeed";
+import { blockedPostFilter } from "@/lib/blocks";
 
 const MAX_POSTS = 50;
 
@@ -24,8 +25,10 @@ export default async function FediversePage() {
 
   const feedVariant = resolveLayout(site.theme.id, site.layout).feed;
 
+  // This page renders to strangers, so a blocked actor reappearing here is the
+  // worst version of the ingest gap (#396).
   const posts = await prisma.fediPost.findMany({
-    where: { inReplyTo: null, boostedBy: null },
+    where: { inReplyTo: null, boostedBy: null, ...(await blockedPostFilter()) },
     orderBy: { publishedAt: "desc" },
     take: MAX_POSTS,
   });

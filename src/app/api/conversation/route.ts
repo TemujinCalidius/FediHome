@@ -5,6 +5,7 @@ import { authenticateApiRequest } from "@/lib/auth";
 import { signedGet } from "@/lib/http-signatures";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { assertPublicHost } from "@/lib/url-guard";
+import { blockedActorUris, isBlockedSender } from "@/lib/blocks";
 
 const MAX_DEPTH = 20;
 const MAX_CONTEXT = 200; // cap on remote thread posts ingested per view
@@ -110,6 +111,9 @@ async function fetchThreadViaMastodon(
   const id = u.pathname.split("/").filter(Boolean).pop();
   if (!id) return null;
   const ctxUrl = `${u.origin}/api/v1/statuses/${encodeURIComponent(id)}/context`;
+  // Before any network contact: a domain-blocked instance must not be asked for
+  // a thread, the same reasoning follow() uses for its pre-WebFinger check.
+  if (await isBlockedSender(apId)) return null;
   if (!(await assertPublicHost(ctxUrl))) return null;
 
   let ctx: { ancestors?: unknown; descendants?: unknown };
@@ -134,8 +138,18 @@ async function fetchThreadViaMastodon(
   // The queried status isn't in its own context — map it so direct replies link.
   idToUri.set(String(id), apId);
 
+  // One batch check over the whole context before anything is written (#396).
+  // This route had no block gate at all, so opening a thread re-imported posts
+  // that block() had purged — and a re-imported thread ROOT is a top-level row,
+  // so it came back in /timeline permanently, not just in the thread view.
+  const contextActors = [...(anc || []), ...(desc || [])]
+    .map((s) => s?.account?.uri)
+    .filter((u): u is string => !!u);
+  const blocked = await blockedActorUris(contextActors);
+
   const ingest = async (s: MastoStatus): Promise<NonNullable<FediPostRow> | null> => {
     if (!s?.uri || !s.account?.uri) return null;
+    if (blocked.has(s.account.uri)) return null;
     const safe = sanitizeHtml(s.content || "");
     const media = (s.media_attachments || []).filter((m) => m?.url);
     const mediaUrls = media.map((m) => m.url!);
@@ -199,6 +213,12 @@ async function fetchRemoteNote(apId: string) {
   try {
     // Signed GET — most servers run authorized-fetch and 401 unsigned requests,
     // which is why "View thread" on a reply to someone else loaded no ancestors.
+    //
+    // The block check comes FIRST, before the request rather than before the
+    // write (#396): a signed GET to a blocked host is exactly the outbound
+    // contact #379 was opened to stop, and the note's own id is enough to
+    // decide the domain half.
+    if (await isBlockedSender(apId)) return null;
     if (!(await assertPublicHost(apId))) return null;
     const res = await signedGet(apId, 6000);
     if (!res.ok) return null;
@@ -209,6 +229,9 @@ async function fetchRemoteNote(apId: string) {
     // Fetch actor info
     const actorUri = note.attributedTo as string;
     if (!actorUri || !(await assertPublicHost(actorUri))) return null;
+    // The note's host and its author's host can differ, so re-check on the
+    // author before fetching their profile and before the upsert below.
+    if (await isBlockedSender(actorUri)) return null;
 
     const actorRes = await signedGet(actorUri, 6000);
     if (!actorRes.ok) return null;
