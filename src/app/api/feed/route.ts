@@ -15,6 +15,16 @@ export async function GET(req: NextRequest) {
   const cursor = parseCursor(req.nextUrl.searchParams.get("cursor")); // "<iso>_<id>"
   const showReplies = req.nextUrl.searchParams.get("replies") === "1";
   const showBoosts = req.nextUrl.searchParams.get("boosts") === "1";
+  // OPT-IN, and it has to stay that way. Importing Bluesky posts (#393) made
+  // `apId` nullable, and a client that decodes it as a required string fails the
+  // WHOLE response rather than one row — so the moment a single Bluesky post
+  // entered a page, an existing app's feed went blank. Excluding them by default
+  // keeps every already-shipped client working; a client that understands
+  // `source` and a null `apId` asks for them with ?bluesky=1.
+  //
+  // Remove this default only once no supported client decodes `apId` as
+  // non-optional. See FediHome#407.
+  const showBluesky = req.nextUrl.searchParams.get("bluesky") === "1";
 
   const where: Record<string, unknown> = {};
   if (cursor) {
@@ -25,6 +35,9 @@ export async function GET(req: NextRequest) {
   }
   if (!showBoosts) {
     where.boostedBy = null;
+  }
+  if (!showBluesky) {
+    where.source = "fedi";
   }
 
   const posts = await prisma.fediPost.findMany({
