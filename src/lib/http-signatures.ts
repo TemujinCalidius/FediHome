@@ -209,7 +209,7 @@ const FIRST_RETRY_DELAY_MS = 2 * 60_000;
 export async function enqueueFailedDeliveries(
   activityId: string,
   activityJson: string,
-  failures: { inbox: string; error: string; permanent?: boolean }[]
+  failures: { inbox: string; error: string; permanent?: boolean; actorUri?: string | null }[]
 ): Promise<void> {
   // Filtered HERE rather than at each call site, so a future caller can't forget
   // and quietly queue 31 hours of retries against a recipient we refuse to talk
@@ -222,7 +222,15 @@ export async function enqueueFailedDeliveries(
       prisma.failedDelivery
         .upsert({
           where: { activityId_inbox: { activityId, inbox: f.inbox } },
-          create: { activityId, inbox: f.inbox, activity: activityJson, attempts: 1, nextRetryAt, lastError: f.error.slice(0, 300) },
+          create: {
+            activityId,
+            inbox: f.inbox,
+            actorUri: f.actorUri ?? null,
+            activity: activityJson,
+            attempts: 1,
+            nextRetryAt,
+            lastError: f.error.slice(0, 300),
+          },
           update: { attempts: { increment: 1 }, lastError: f.error.slice(0, 300) },
         })
         .catch((err) => console.error(`Failed to enqueue delivery retry for ${f.inbox}:`, err))
@@ -278,16 +286,22 @@ export async function deliverToFollowers(
   // { ok:false } on failure; handle a rejection defensively too.
   const activityId = typeof activity.id === "string" ? activity.id : null;
   if (activityId) {
-    const failures: { inbox: string; error: string; permanent?: boolean }[] = [];
+    const failures: { inbox: string; error: string; permanent?: boolean; actorUri?: string | null }[] = [];
     results.forEach((r, i) => {
+      // Carry the recipient onto the queued row (#397). It was dropped twice
+      // before: once by the shared-inbox collapsing above, and again here,
+      // because the failure record had nowhere to put it — so the retry sweep
+      // could never enforce an account block.
+      const actorUri = byInbox.get(inboxList[i]) ?? null;
       if (r.status === "fulfilled" && !r.value.ok) {
         failures.push({
           inbox: inboxList[i],
           error: r.value.error || `status ${r.value.status}`,
           permanent: r.value.permanent,
+          actorUri,
         });
       } else if (r.status === "rejected") {
-        failures.push({ inbox: inboxList[i], error: String(r.reason) });
+        failures.push({ inbox: inboxList[i], error: String(r.reason), actorUri });
       }
     });
     if (failures.length > 0) {

@@ -65,7 +65,11 @@ export async function retryFailedDeliveries(now: Date = new Date()): Promise<Ret
       continue;
     }
 
-    const res = await deliverActivity(row.inbox, activity);
+    // The recipient, when the row has one (#397). Without it blockedRecipient()
+    // sees `actorUri: undefined` and can only ever check the host — so a replay
+    // to a blocked ACCOUNT was never refused here. NULL on a shared-inbox row,
+    // deliberately: one delivery there serves everyone behind it.
+    const res = await deliverActivity(row.inbox, activity, { actorUri: row.actorUri });
     if (res.ok) {
       await prisma.failedDelivery.deleteMany({ where: { id: row.id } });
       delivered++;

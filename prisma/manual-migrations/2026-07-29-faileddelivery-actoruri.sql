@@ -1,0 +1,13 @@
+-- Remember who a queued delivery was for (#397). Additive + idempotent.
+--
+-- FailedDelivery stored only `inbox`, so the retry sweep called deliverActivity
+-- with no recipient and blockedRecipient() could evaluate only the DOMAIN half
+-- of the check. An account block was therefore enforced over queued rows solely
+-- by purgeQueuedDeliveriesForInbox(), which is best-effort by construction — if
+-- it threw, the rows survived and the sweep re-delivered them to the blocked
+-- account with backoff for ~31 hours.
+--
+-- No backfill: rows queued before this column cannot recover the actor, because
+-- block() deletes the FediFollower row before the purge runs. They stay NULL and
+-- fall back to the host check, which is what they had before.
+ALTER TABLE "FailedDelivery" ADD COLUMN IF NOT EXISTS "actorUri" TEXT;
