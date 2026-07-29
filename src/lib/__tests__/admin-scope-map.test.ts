@@ -17,7 +17,10 @@ vi.mock("@/app/api/admin/_actions/comments", () => ({ approveComment: tag("appro
 vi.mock("@/app/api/admin/_actions/replies", () => ({ reply: tag("reply"), editReply: tag("editReply"), backfillReplies: tag("backfillReplies") }));
 vi.mock("@/app/api/admin/_actions/dms", () => ({ fediDm: tag("fediDm"), bskyDm: tag("bskyDm"), markDmRead: tag("markDmRead"), markAllDmsRead: tag("markAllDmsRead") }));
 vi.mock("@/app/api/admin/_actions/fedi-graph", () => ({ follow: tag("follow"), unfollow: tag("unfollow"), unfollowByUri: tag("unfollowByUri"), block: tag("block"), unblock: tag("unblock") }));
-vi.mock("@/app/api/admin/_actions/fedi-interactions", () => ({ like: tag("like"), boost: tag("boost"), unlike: tag("unlike"), unboost: tag("unboost") }));
+// like/boost/unlike/unboost now go through the router, which picks the network
+// from the row's own `source` (#393). Mock it here: this file is about the scope
+// gate, not about which network an action lands on.
+vi.mock("@/app/api/admin/_actions/interactions", () => ({ interact: tag("interact") }));
 vi.mock("@/app/api/admin/_actions/bluesky", () => ({ bskyReply: tag("bskyReply"), syncGraph: tag("syncGraph"), bskyFollow: tag("bskyFollow"), bskyUnfollow: tag("bskyUnfollow") }));
 vi.mock("@/app/api/admin/_actions/profile", () => ({ updateProfile: tag("updateProfile") }));
 
@@ -95,7 +98,7 @@ describe("/api/admin — auth + CSRF gates", () => {
     authenticateApiRequest.mockResolvedValue(bearer("interact"));
     const res = await POST(req({ action: "like" }));
     expect(res.status).toBe(200);
-    expect((await res.json()).handler).toBe("like");
+    expect((await res.json()).handler).toBe("interact");
     expect(verifyOrigin).not.toHaveBeenCalled();
   });
 
