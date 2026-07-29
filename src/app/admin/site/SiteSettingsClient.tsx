@@ -31,6 +31,7 @@ export default function SiteSettingsClient({
   aliases,
   encryptionAvailable,
   uploadsDefault,
+  storage,
   profile,
   profileDefaults,
 }: {
@@ -45,6 +46,14 @@ export default function SiteSettingsClient({
   encryptionAvailable: boolean;
   /** The built-in uploads path, shown as the placeholder when nothing is set. */
   uploadsDefault: string;
+  /** Live disk figures (#385). `usage` is null until the scheduler's first scan. */
+  storage: {
+    uploadsDir: string;
+    status: "ok" | "low" | "critical" | "unknown";
+    availableBytes: number | null;
+    volumeBytes: number | null;
+    usage: { totalBytes: number; fediCacheBytes: number; ownBytes: number; measuredAt: string } | null;
+  };
   profile: {
     authorName: string; authorTagline: string; authorBio: string;
     actorSummary: string; avatarPath: string; bannerPath: string;
@@ -496,6 +505,13 @@ export default function SiteSettingsClient({
   const setLayout = (patch: Partial<RuntimeSiteConfig["layout"]>) => setCfg((c) => ({ ...c, layout: { ...c.layout, ...patch } }));
   const setSidebar = (patch: Partial<RuntimeSiteConfig["sidebar"]>) => setCfg((c) => ({ ...c, sidebar: { ...c.sidebar, ...patch } }));
   const setSecurity = (patch: Partial<RuntimeSiteConfig["security"]>) => setCfg((c) => ({ ...c, security: { ...c.security, ...patch } }));
+  /** Bytes → a figure a person reads, not a computer. */
+  const gb = (n: number) => {
+    if (n >= 1024 ** 3) return `${(n / 1024 ** 3).toFixed(1)} GB`;
+    if (n >= 1024 ** 2) return `${Math.round(n / 1024 ** 2)} MB`;
+    return `${Math.round(n / 1024)} KB`;
+  };
+
   const setStorage = (patch: Partial<RuntimeSiteConfig["storage"]>) => setCfg((c) => ({ ...c, storage: { ...c.storage, ...patch } }));
   const setContact = (patch: Partial<RuntimeSiteConfig["contact"]>) => setCfg((c) => ({ ...c, contact: { ...c.contact, ...patch } }));
   const setPodcast = (patch: Partial<RuntimeSiteConfig["podcast"]>) => setCfg((c) => ({ ...c, podcast: { ...c.podcast, ...patch } }));
@@ -1017,6 +1033,46 @@ export default function SiteSettingsClient({
               one failed.
             </span>
           </label>
+          <div className="rounded-lg border border-surface-700 p-3 flex flex-col gap-1.5">
+            <p className="text-xs font-semibold text-content m-0">Disk usage</p>
+            <p className="text-xs text-gray-600 m-0">
+              Writing to <code>{storage.uploadsDir}</code>
+            </p>
+            {storage.availableBytes !== null && storage.volumeBytes !== null ? (
+              <p
+                className={`text-xs m-0 ${
+                  storage.status === "critical"
+                    ? "text-red-400"
+                    : storage.status === "low"
+                      ? "text-amber-400"
+                      : "text-green-400"
+                }`}
+              >
+                {storage.status === "critical"
+                  ? "⚠️ Almost full — "
+                  : storage.status === "low"
+                    ? "⚠️ Running low — "
+                    : "✓ "}
+                <strong>{gb(storage.availableBytes)}</strong> free of {gb(storage.volumeBytes)}
+              </p>
+            ) : (
+              <p className="text-xs text-gray-600 m-0">Free space couldn&apos;t be read on this system.</p>
+            )}
+            {storage.usage ? (
+              <p className="text-xs text-gray-600 m-0">
+                <strong>{gb(storage.usage.ownBytes)}</strong> your media ·{" "}
+                <strong>{gb(storage.usage.fediCacheBytes)}</strong> cached from other servers
+                {storage.usage.fediCacheBytes > 0 && (
+                  <> — that cache is trimmed automatically and is safe to lose</>
+                )}
+              </p>
+            ) : (
+              <p className="text-xs text-gray-600 m-0">
+                Usage hasn&apos;t been measured yet — it&apos;s counted in the background shortly after start-up.
+              </p>
+            )}
+          </div>
+
           <p className="text-xs text-amber-400/90 m-0">
             <strong>Media already on disk is not moved.</strong> New uploads go to the new
             location; everything uploaded before it keeps being served from the old one, so

@@ -567,6 +567,19 @@ model FailedDelivery {
   @@index([nextRetryAt])
 }
 
+/// Which prisma/manual-migrations/*.sql have been applied to THIS database, and
+/// at what content hash (#384). Written by scripts/apply-migrations.mjs, which
+/// runs before `db push` and creates this table itself if it is missing.
+///
+/// It MUST be declared here: `db push` diffs the whole database against this
+/// schema and drops tables it doesn't know about, so an unmanaged ledger would
+/// make the next push demand --accept-data-loss and crash-loop every container.
+model ManualMigration {
+  name      String   @id
+  hash      String
+  appliedAt DateTime @default(now())
+}
+
 model SiteSetting {
   key       String   @id
   value     String

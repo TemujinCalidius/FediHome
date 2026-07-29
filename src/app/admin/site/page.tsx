@@ -14,6 +14,7 @@ import TimelineLogin from "../../timeline/TimelineLogin";
 import SiteSettingsClient from "./SiteSettingsClient";
 import { getAlsoKnownAs } from "@/lib/identity-store";
 import { legacyUploadsDir } from "@/lib/uploads-dir";
+import { storageReport } from "@/lib/storage-usage";
 
 export const metadata = {
   title: "Site settings",
@@ -57,6 +58,7 @@ export default async function AdminSitePage() {
       overrides={Object.fromEntries(rows.map((r) => [r.key, r.value]))}
       accent={{ accentColor: profile.accentColor, themeAccents: profile.themeAccents }}
       uploadsDefault={legacyUploadsDir()}
+      storage={await storageReport()}
       profile={{
         authorName: profile.authorName,
         authorTagline: profile.authorTagline,

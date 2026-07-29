@@ -6,6 +6,7 @@ import { log } from "@/lib/log";
 import pkg from "@/../package.json";
 import { shortSha } from "@/lib/build-info";
 import { schedulerLastTickAgoMs, schedulerStarted, SCHEDULER_TICK_MS } from "@/lib/scheduler";
+import { classifySpace, volumeSpace } from "@/lib/storage-usage";
 
 // Never cache — a health probe must reflect live state.
 export const dynamic = "force-dynamic";
@@ -24,6 +25,18 @@ export const dynamic = "force-dynamic";
  *  - Is the scheduler alive? It runs IN-PROCESS, so it can wedge while HTTP
  *    keeps returning 200 — an instance that looks fine while silently no longer
  *    publishing scheduled posts. A stale tick is reported as degraded.
+ *  - Is the disk filling? (#385) A full uploads volume fails every upload, and
+ *    the first symptom is usually a failed post.
+ *
+ * `storage` is a STATUS, not a byte count. This endpoint is public and
+ * unauthenticated, and how big your disk is and how full it is are nobody
+ * else's business — the same reason `db` reports "ok"/"error" rather than a
+ * connection string. Exact figures, and the split between your own media and
+ * cached remote media, are in Admin → Site settings → Storage.
+ *
+ * It also deliberately does NOT affect `status`. The Docker HEALTHCHECK restarts
+ * a degraded container, and restarting does not free disk space — it would just
+ * crash-loop. Report it; let a monitor decide.
  */
 export async function GET() {
   let db: "ok" | "error" = "ok";
@@ -41,6 +54,10 @@ export async function GET() {
   const schedulerStale =
     schedulerStarted() && tickAgoMs !== null && tickAgoMs > SCHEDULER_TICK_MS * 20;
 
+  // One statfs syscall — cheap enough for a probe polled every 30s. The usage
+  // walk is far too expensive for that and runs in the scheduler instead.
+  const storage = classifySpace(await volumeSpace());
+
   const healthy = db === "ok" && !schedulerStale;
 
   // Piggyback token hygiene on the regularly-polled health check (throttled to
@@ -57,6 +74,7 @@ export async function GET() {
       build: shortSha(),
       db,
       uptimeSeconds: Math.round(process.uptime()),
+      storage,
       scheduler: schedulerStarted()
         ? {
             running: !schedulerStale,

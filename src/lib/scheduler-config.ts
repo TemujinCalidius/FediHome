@@ -27,6 +27,7 @@ export interface SchedulerConfig {
   blueskySync: SchedulerJobConfig;
   deliveryRetry: SchedulerJobConfig;
   crosspostRetry: SchedulerJobConfig;
+  storageScan: SchedulerJobConfig;
   retentionSweep: RetentionJobConfig;
 }
 
@@ -72,6 +73,14 @@ export function getSchedulerConfig(): SchedulerConfig {
       enabled: flag(process.env.SCHEDULER_DELIVERY_ENABLED, true),
       intervalSec: posNum(process.env.SCHEDULER_DELIVERY_INTERVAL_SEC, 60),
     },
+    // Measure uploads usage and trim the remote-media cache (#385). Default: on,
+    // hourly. The walk stats every file, so it deliberately doesn't run per
+    // request — and it is also the ONLY thing that trims the cache on an
+    // image-only instance, since the old trigger fired solely after a video.
+    storageScan: {
+      enabled: flag(process.env.SCHEDULER_STORAGE_ENABLED, true),
+      intervalSec: posNum(process.env.SCHEDULER_STORAGE_INTERVAL_SEC, 3600),
+    },
     // Retry failed Bluesky/Threads crossposts (#225). Default: on, every 60s.
     crosspostRetry: {
       enabled: flag(process.env.SCHEDULER_CROSSPOST_ENABLED, true),
@@ -99,6 +108,8 @@ export const SCHEDULER_SETTING_KEYS = [
   "scheduler.delivery.intervalSec",
   "scheduler.crosspost.enabled",
   "scheduler.crosspost.intervalSec",
+  "scheduler.storage.enabled",
+  "scheduler.storage.intervalSec",
   "scheduler.retention.enabled",
   "scheduler.retention.intervalSec",
   "scheduler.retention.days",
@@ -166,6 +177,10 @@ export async function getEffectiveSchedulerConfig(): Promise<SchedulerConfig> {
       crosspostRetry: {
         enabled: overrideFlag(o["scheduler.crosspost.enabled"], base.crosspostRetry.enabled),
         intervalSec: overrideNum(o["scheduler.crosspost.intervalSec"], base.crosspostRetry.intervalSec),
+      },
+      storageScan: {
+        enabled: overrideFlag(o["scheduler.storage.enabled"], base.storageScan.enabled),
+        intervalSec: overrideNum(o["scheduler.storage.intervalSec"], base.storageScan.intervalSec),
       },
       retentionSweep: {
         enabled: overrideFlag(o["scheduler.retention.enabled"], base.retentionSweep.enabled),
