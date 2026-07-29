@@ -168,7 +168,7 @@ All are `GET` (read-only, no CSRF) with `Authorization: Bearer <token>`.
 
 ### Bluesky posts in the feed
 
-Since v1.23.0 the timeline can also hold posts imported from Bluesky. **They are
+The timeline can also hold posts imported from Bluesky. **They are
 excluded from `/api/feed` unless you pass `bluesky=1`**, because they changed the
 shape of a post:
 

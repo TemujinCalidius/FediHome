@@ -23,7 +23,8 @@ export async function GET(req: NextRequest) {
   // `source` and a null `apId` asks for them with ?bluesky=1.
   //
   // Remove this default only once no supported client decodes `apId` as
-  // non-optional. See FediHome#407.
+  // non-optional — tracked in #408, with the app-side change in
+  // FediHome-macOS#73.
   const showBluesky = req.nextUrl.searchParams.get("bluesky") === "1";
 
   const where: Record<string, unknown> = {};
