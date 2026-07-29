@@ -155,7 +155,7 @@ All are `GET` (read-only, no CSRF) with `Authorization: Bearer <token>`.
 
 | endpoint | returns |
 |---|---|
-| `GET /api/feed?cursor=<ISO>&replies=1&boosts=1` | `{ posts: [...], nextCursor }` — your private Fediverse timeline (paged, 20/page; `cursor` = last `publishedAt`) |
+| `GET /api/feed?cursor=<ISO>&replies=1&boosts=1&bluesky=1` | `{ posts: [...], nextCursor }` — your private timeline (paged, 20/page; `cursor` = last `publishedAt`) |
 | `GET /api/posts?cursor=<ISO_id>&status=&type=&limit=` | `{ posts: [...], nextCursor }` — **your own** posts for a content manager (incl. drafts/scheduled). Each post has `id, slug, url, title, excerpt, preview, contentHtml, category, type, status, published, publishedAt, updatedAt, scheduledFor, counts, media`. `preview` is a short markup-stripped body snippet (`""` when genuinely empty) so title-less notes still render; `contentHtml` is the **sanitized HTML body** (`string \| null`) for rendering a post in full, styled (`q=source` returns markdown for the editor instead). Filters: `status` = `all\|published\|draft\|scheduled`, `type` = `note\|article\|journal\|photo\|video\|audio` |
 | `GET /api/notifications` | `{ count, items, categoryCounts }` — the bell. **DM items require `dm` scope** (redacted otherwise) |
 | `GET /api/conversation?postId=<id>` | `{ thread: [...] }` — a full thread (ancestors + replies) |
@@ -165,6 +165,26 @@ All are `GET` (read-only, no CSRF) with `Authorization: Bearer <token>`.
 | `GET /api/dms` | `{ messages: [...], readState }` — direct messages. **Requires `dm` scope** |
 
 ---
+
+### Bluesky posts in the feed
+
+The timeline can also hold posts imported from Bluesky. **They are
+excluded from `/api/feed` unless you pass `bluesky=1`**, because they changed the
+shape of a post:
+
+| field | notes |
+|---|---|
+| `apId` | **nullable** — `null` on every Bluesky row. A Bluesky post has no ActivityPub id |
+| `bskyUri` | the `at://` URI, present only on Bluesky rows |
+| `source` | `"fedi"` or `"bluesky"` |
+
+If your client decodes `apId` as a required string, a single Bluesky post will
+fail the **whole response** rather than one row, and the feed will appear empty.
+Make `apId` optional and handle `source` before opting in.
+
+Interactions need no client change: `POST /api/admin` with `like` / `unlike` /
+`boost` / `unboost` accepts `postId` (the row id) and routes to the right network
+server-side. Sending `postApId` still works for fediverse posts.
 
 ## Creating posts — `POST /api/micropub` (`create` scope)
 
