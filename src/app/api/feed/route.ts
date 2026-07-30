@@ -8,24 +8,34 @@ const PAGE_SIZE = 20;
 
 export async function GET(req: NextRequest) {
   // Owner cookie OR a `read`-scoped bearer token (a native app). Read-only → no CSRF.
-  if (!(await authenticateApiRequest(req, "read")).ok) {
+  const auth = await authenticateApiRequest(req, "read");
+  if (!auth.ok) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
   const cursor = parseCursor(req.nextUrl.searchParams.get("cursor")); // "<iso>_<id>"
   const showReplies = req.nextUrl.searchParams.get("replies") === "1";
   const showBoosts = req.nextUrl.searchParams.get("boosts") === "1";
-  // OPT-IN, and it has to stay that way. Importing Bluesky posts (#393) made
-  // `apId` nullable, and a client that decodes it as a required string fails the
-  // WHOLE response rather than one row — so the moment a single Bluesky post
-  // entered a page, an existing app's feed went blank. Excluding them by default
-  // keeps every already-shipped client working; a client that understands
-  // `source` and a null `apId` asks for them with ?bluesky=1.
+  // Bluesky posts (#393) default by WHO IS ASKING, because the two callers need
+  // opposite answers and neither should have to remember to say so:
   //
-  // Remove this default only once no supported client decodes `apId` as
-  // non-optional — tracked in #408, with the app-side change in
-  // FediHome-macOS#73.
-  const showBluesky = req.nextUrl.searchParams.get("bluesky") === "1";
+  //   cookie  → our own web UI, which renders Bluesky posts, and whose
+  //             server-rendered first page already includes them. Include.
+  //   bearer  → a native app. Importing Bluesky posts made `apId` nullable, and
+  //             a client that decodes it as a required string fails the WHOLE
+  //             response rather than one row, so its feed goes blank rather than
+  //             partial. Exclude until it asks (#407).
+  //
+  // Keying on the auth mode rather than a query flag is deliberate: the first
+  // attempt at this defaulted to excluding for everyone, and the web client had
+  // FOUR fetch paths. Three of them forgot the flag, so Bluesky posts appeared on
+  // first paint and vanished the moment anything re-fetched. A default the caller
+  // has to opt out of, rather than into, cannot drift like that.
+  //
+  // `?bluesky=1` / `?bluesky=0` still override, either way.
+  // Tracked in #408; the app-side change is FediHome-macOS#73.
+  const blueskyParam = req.nextUrl.searchParams.get("bluesky");
+  const showBluesky = blueskyParam === null ? auth.via === "cookie" : blueskyParam === "1";
 
   const where: Record<string, unknown> = {};
   if (cursor) {

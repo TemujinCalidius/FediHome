@@ -27,12 +27,16 @@ const req = (qs = ""): NextRequest => {
   return { nextUrl: url, url: url.toString(), headers: new Headers() } as unknown as NextRequest;
 };
 
+/** The web UI authenticates with the owner cookie; a native app uses a bearer token. */
+const asCookie = () => authenticateApiRequest.mockResolvedValue({ ok: true, via: "cookie", scope: "*" });
+const asBearer = () => authenticateApiRequest.mockResolvedValue({ ok: true, via: "bearer", scope: "read" });
+
 const whereOf = () =>
   (vi.mocked(prisma.fediPost.findMany).mock.calls[0][0]?.where ?? {}) as Record<string, unknown>;
 
 beforeEach(() => {
   vi.clearAllMocks();
-  authenticateApiRequest.mockResolvedValue({ ok: true });
+  asCookie();
   vi.mocked(prisma.fediPost.findMany).mockResolvedValue([] as never);
 });
 
@@ -43,25 +47,48 @@ describe("auth", () => {
   });
 });
 
-describe("Bluesky rows are opt-in, so existing clients keep working (#393)", () => {
-  it("excludes them by default", async () => {
+describe("Bluesky rows default by who is asking (#393, #407)", () => {
+  it("INCLUDES them for the web UI", async () => {
+    // The regression that shipped in v1.23.0: defaulting to exclude for everyone
+    // meant the web feed showed Bluesky posts on the server-rendered first paint
+    // and then lost them the moment the client re-fetched — which it does on
+    // load-more, on a filter toggle, and on a periodic silent refresh. The
+    // release notes said Bluesky posts show. They didn't, reliably.
+    asCookie();
+    await GET(req());
+    expect(whereOf()).not.toHaveProperty("source");
+  });
+
+  it("EXCLUDES them for a native app", async () => {
+    // A client that decodes `apId` as a required string fails the whole response
+    // rather than one row, so its feed goes blank rather than partial.
+    asBearer();
     await GET(req());
     expect(whereOf().source).toBe("fedi");
   });
 
-  it("includes them only when asked", async () => {
+  it("lets an app opt in once it can handle a null apId", async () => {
+    asBearer();
     await GET(req("?bluesky=1"));
     expect(whereOf()).not.toHaveProperty("source");
   });
 
+  it("lets the web UI opt out too, so the flag isn't one-way", async () => {
+    asCookie();
+    await GET(req("?bluesky=0"));
+    expect(whereOf().source).toBe("fedi");
+  });
+
   it("keeps the existing default filters untouched", async () => {
-    // Replies and boosts were already opt-in; adding a third toggle must not
-    // change how the first two behave.
+    // Replies and boosts were already opt-in; the Bluesky default must not have
+    // changed how the first two behave.
+    asBearer();
     await GET(req());
     expect(whereOf()).toMatchObject({ inReplyTo: null, boostedBy: null, source: "fedi" });
   });
 
   it("composes with the other toggles rather than overriding them", async () => {
+    asBearer();
     await GET(req("?replies=1&boosts=1&bluesky=1"));
     const where = whereOf();
     expect(where).not.toHaveProperty("inReplyTo");
@@ -69,11 +96,11 @@ describe("Bluesky rows are opt-in, so existing clients keep working (#393)", () 
     expect(where).not.toHaveProperty("source");
   });
 
-  it("treats any value other than 1 as off", async () => {
-    // No accidental opt-in from `?bluesky=true` or `?bluesky=0`.
+  it("treats an explicit non-1 value as off, whoever is asking", async () => {
     for (const v of ["0", "true", "yes", ""]) {
       vi.clearAllMocks();
       vi.mocked(prisma.fediPost.findMany).mockResolvedValue([] as never);
+      asCookie();
       await GET(req(`?bluesky=${v}`));
       expect(whereOf().source, `?bluesky=${v}`).toBe("fedi");
     }
