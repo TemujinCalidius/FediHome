@@ -6,6 +6,7 @@ import { signedGet } from "@/lib/http-signatures";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { assertPublicHost } from "@/lib/url-guard";
 import { blockedActorUris, blockedPostFilter, isBlockedSender } from "@/lib/blocks";
+import { guardedFetch } from "@/lib/safe-fetch";
 
 const MAX_DEPTH = 20;
 const MAX_CONTEXT = 200; // cap on remote thread posts ingested per view
@@ -143,10 +144,14 @@ async function fetchThreadViaMastodon(
 
   let ctx: { ancestors?: unknown; descendants?: unknown };
   try {
-    const res = await fetch(ctxUrl, {
+    const res = await guardedFetch(ctxUrl, {
+      crossOrigin: true,
+      label: "conversation context",
+      timeoutMs: FETCH_TIMEOUT_MS,
+      init: {
       headers: { Accept: "application/json" },
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    });
+    },
+  });
     if (!res.ok) return null;
     ctx = await res.json();
   } catch {

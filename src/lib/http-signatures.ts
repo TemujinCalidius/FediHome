@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { prisma } from "./db";
 import { blockedRecipient, partitionBlockedRecipients } from "./blocks";
 import { assertPublicHost } from "./url-guard";
+import { guardedFetch, isPolicyRefusal } from "./safe-fetch";
 import { getIdentity } from "./identity";
 
 
@@ -10,88 +11,27 @@ const ACTOR_FETCH_TIMEOUT_MS = 8000;
 const REPLAY_WINDOW_MS = 60 * 60 * 1000; // ±1 hour
 
 /**
- * How many redirects a signed request will follow.
+ * Sign each hop and let the shared guard follow the redirects.
  *
- * Small on purpose: a legitimate actor URL redirects once (a vanity path, an
- * http→https upgrade), never three times.
- */
-const MAX_REDIRECT_HOPS = 3;
-
-/**
- * Follow a signed request's redirects **safely**.
- *
- * Both signed helpers used to call `assertPublicHost()` once and then hand the URL
- * to `fetch()`, which follows redirects by default. That validated only the first
- * hop, so a host that passed the check could redirect the request anywhere —
- * including straight at `169.254.169.254` or a service on loopback. Worse for the
- * GET path than the POST path, because the GET's response **body is parsed** as an
- * actor document, so an internal endpoint's response comes back into the app.
- *
- * The URLs on both paths are remote-controlled: an actor URI arrives in an inbox
- * activity, and the inbox we deliver to comes out of a fetched actor document. So
- * the entry point is any server we federate with.
- *
- * `fedi-media.ts`'s `safeFetch` already got this right and says so — "Doing this
- * on every redirect hop closes the rebinding/redirect-chain SSRF (H1)". This is the
- * same fix for the signed paths, with one addition it doesn't need: the signature
- * covers `(request-target)` and `host`, so each hop must be **re-signed** for its
- * own URL or the redirect target rejects it.
- *
- * `crossOrigin` controls whether a redirect may change host:
- *
- *  - **GET → allowed.** Actor URLs legitimately redirect across hosts, and refusing
- *    would break real federation.
- *  - **POST → refused.** Nothing in ActivityPub needs delivery to follow a
- *    cross-host redirect, and allowing it hands any peer a way to make us produce a
- *    validly-signed request aimed at a host of their choosing. Same-host redirects
- *    still work, which covers the realistic case of an inbox moving path or
- *    upgrading scheme.
+ * The signature covers `(request-target)` and `host`, so a signature minted for the
+ * first URL is rejected by a redirect target — hence a per-hop `sign` callback
+ * rather than one set of headers. See `safe-fetch.ts` for why the hop-following
+ * lives there and what was wrong before.
  */
 async function followSigned(
   url: string,
   sign: (target: string) => Promise<{ headers: Record<string, string>; init: RequestInit }>,
   opts: { crossOrigin: boolean; timeoutMs: number; label: string },
 ): Promise<Response> {
-  let current = url;
-  const origin = new URL(url);
-
-  for (let hop = 0; hop <= MAX_REDIRECT_HOPS; hop++) {
-    // Every hop, not just the first. This is the whole point.
-    if (!(await assertPublicHost(current))) {
-      throw new Error(`${opts.label}: refusing non-public host ${current}`);
-    }
-
-    const { headers, init } = await sign(current);
-    const res = await fetch(current, {
-      ...init,
-      headers,
-      redirect: "manual", // we do the following, so we can re-check and re-sign
-      signal: AbortSignal.timeout(opts.timeoutMs),
-    });
-
-    if (res.status < 300 || res.status >= 400) return res;
-
-    const location = res.headers.get("location");
-    if (!location) return res; // a 3xx with nowhere to go — let the caller see it
-
-    let next: URL;
-    try {
-      next = new URL(location, current);
-    } catch {
-      throw new Error(`${opts.label}: unparseable redirect from ${current}`);
-    }
-    if (next.protocol !== "http:" && next.protocol !== "https:") {
-      throw new Error(`${opts.label}: refusing redirect to ${next.protocol} from ${current}`);
-    }
-    if (!opts.crossOrigin && next.hostname !== origin.hostname) {
-      throw new Error(
-        `${opts.label}: refusing cross-host redirect ${origin.hostname} → ${next.hostname}`,
-      );
-    }
-    current = next.toString();
-  }
-
-  throw new Error(`${opts.label}: too many redirects from ${url}`);
+  return guardedFetch(url, {
+    crossOrigin: opts.crossOrigin,
+    label: opts.label,
+    timeoutMs: opts.timeoutMs,
+    init: async (target) => {
+      const { headers, init } = await sign(target);
+      return { ...init, headers };
+    },
+  });
 }
 
 /**
@@ -117,9 +57,13 @@ export async function signedFetch(
       const parsedUrl = new URL(target);
       const date = new Date().toUTCString();
 
-      // Build the signing string
+      // Build the signing string. `search` included, matching signedGet: without
+      // it a same-host redirect to a query-bearing URL would be signed over a
+      // request-target the remote can't reconstruct, so it 401s — and 401 is
+      // permanent, so the activity would be discarded rather than retried. Empty
+      // for every inbox in practice, so this changes nothing on the normal path.
       const signingString = [
-        `(request-target): post ${parsedUrl.pathname}`,
+        `(request-target): post ${parsedUrl.pathname}${parsedUrl.search}`,
         `host: ${parsedUrl.host}`,
         `date: ${date}`,
         `digest: ${digest}`,
@@ -286,7 +230,11 @@ export async function deliverActivity(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("Delivery to %s error:", inbox, err);
-    return { ok: false, status: 0, error: msg };
+    // A policy refusal is permanent: the inbox isn't public, or it cross-host
+    // redirects, and neither changes within the retry window. Without this the item
+    // sits in the queue being re-attempted for a day and a half and reads as a
+    // transient outage (#379 gave callers `permanent` for exactly this reason).
+    return { ok: false, status: 0, error: msg, permanent: isPolicyRefusal(err) };
   }
 }
 
@@ -471,14 +419,17 @@ export async function verifyIncomingSignature(
   // Fetch the signer's public key (with timeout to prevent slowloris-style DoS — H7)
   const actorUriFromKey = parts.keyId.split("#")[0];
   // SSRF guard: keyId originates from an attacker-controlled signature header.
-  if (!(await assertPublicHost(actorUriFromKey))) {
-    return { valid: false, reason: "keyId resolves to private/blocked host" };
-  }
   let actor: { publicKey?: { publicKeyPem?: string; owner?: string }; id?: string };
   try {
-    const actorRes = await fetch(actorUriFromKey, {
-      headers: { Accept: "application/activity+json" },
-      signal: AbortSignal.timeout(ACTOR_FETCH_TIMEOUT_MS),
+    // guardedFetch, not fetch: the keyId is chosen by whoever signed the request,
+    // so this is the cheapest SSRF entry point in the whole app — one signed POST
+    // to /ap/inbox from anywhere makes us fetch a URL the sender picked. The old
+    // single assertPublicHost() call was bypassed by a redirect (see safe-fetch.ts).
+    const actorRes = await guardedFetch(actorUriFromKey, {
+      crossOrigin: true, //  key URLs legitimately redirect
+      label: "keyId fetch",
+      timeoutMs: ACTOR_FETCH_TIMEOUT_MS,
+      init: { headers: { Accept: "application/activity+json" } },
     });
     if (!actorRes.ok) return { valid: false, reason: `actor fetch failed: ${actorRes.status}` };
     actor = await actorRes.json();

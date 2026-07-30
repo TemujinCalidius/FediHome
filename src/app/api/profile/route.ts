@@ -4,6 +4,7 @@ import { authenticateApiRequest } from "@/lib/auth";
 import { resolveFediActorByHandle } from "@/lib/fedi-resolve";
 import { assertPublicHost } from "@/lib/url-guard";
 import { sanitizeHtml } from "@/lib/sanitize";
+import { guardedFetch } from "@/lib/safe-fetch";
 
 /**
  * Remote actor profile (#176) + handle discovery (#177).
@@ -35,10 +36,14 @@ async function collectionTotal(ref: unknown): Promise<number | null> {
   if (typeof ref !== "string") return null;
   if (!(await assertPublicHost(ref))) return null;
   try {
-    const res = await fetch(ref, {
+    const res = await guardedFetch(ref, {
+      crossOrigin: true,
+      label: "profile ref",
+      timeoutMs: COLLECTION_TIMEOUT_MS,
+      init: {
       headers: { Accept: "application/activity+json" },
-      signal: AbortSignal.timeout(COLLECTION_TIMEOUT_MS),
-    });
+    },
+  });
     if (!res.ok) return null;
     const c = (await res.json()) as { totalItems?: unknown };
     return typeof c.totalItems === "number" ? c.totalItems : null;
@@ -52,10 +57,14 @@ async function fetchActorProfile(knownUri: string) {
   if (!(await assertPublicHost(knownUri))) return null;
   let actor: Record<string, unknown>;
   try {
-    const res = await fetch(knownUri, {
+    const res = await guardedFetch(knownUri, {
+      crossOrigin: true,
+      label: "profile actor",
+      timeoutMs: ACTOR_TIMEOUT_MS,
+      init: {
       headers: { Accept: "application/activity+json" },
-      signal: AbortSignal.timeout(ACTOR_TIMEOUT_MS),
-    });
+    },
+  });
     if (!res.ok) return null;
     actor = await res.json();
   } catch {

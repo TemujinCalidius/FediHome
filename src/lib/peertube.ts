@@ -1,3 +1,4 @@
+import { guardedFetch } from "./safe-fetch";
 /**
  * PeerTube URL parser + oEmbed metadata fetcher.
  *
@@ -93,9 +94,15 @@ export async function parsePeerTubeUrl(rawUrl: string): Promise<ParsedVideo | nu
   const oembedUrl = `https://${host}/services/oembed?url=${encodeURIComponent(embedUrl)}&format=json`;
 
   try {
-    const res = await fetch(oembedUrl, {
-      headers: { Accept: "application/json" },
-      signal: AbortSignal.timeout(8000),
+    // Host is allowlisted above, which makes this the lowest-risk of the outbound
+    // fetches — but an allowlisted host can still redirect, so it goes through the
+    // same guard as the rest (see safe-fetch.ts). crossOrigin: false, because a
+    // PeerTube oEmbed endpoint has no reason to send us to another host.
+    const res = await guardedFetch(oembedUrl, {
+      crossOrigin: false,
+      label: "peertube oembed",
+      timeoutMs: 8000,
+      init: { headers: { Accept: "application/json" } },
     });
     if (!res.ok) {
       // oEmbed failed but we have enough info to embed regardless — return minimal record
