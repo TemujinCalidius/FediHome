@@ -361,10 +361,19 @@ If you'd rather run the steps manually:
 cd /opt/fedihome
 git pull
 npm install
+npm run migrate        # hand-written migrations — see the note below
 npx prisma db push
+npm run migrate        # again, for anything that needed a table db push just made
 npm run build
 pm2 restart fedihome
 ```
+
+`npm run migrate` is easy to miss and `npm run update` does it for you, which is
+why the bundled updater is the recommended path. It runs either side of
+`db push` on purpose: the first pass prepares the schema so `db push` never hits
+its data-loss guard, and the second catches anything that needed a table
+`db push` had yet to create. Both passes are no-ops once applied — every file is
+recorded in the `ManualMigration` table.
 
 For Docker (manual):
 
