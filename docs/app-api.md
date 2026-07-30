@@ -168,9 +168,10 @@ All are `GET` (read-only, no CSRF) with `Authorization: Bearer <token>`.
 
 ### Bluesky posts in the feed
 
-The timeline can also hold posts imported from Bluesky. **They are
-excluded from `/api/feed` unless you pass `bluesky=1`**, because they changed the
-shape of a post:
+The timeline can also hold posts imported from Bluesky. **They are excluded from
+`/api/feed` for bearer-token clients unless you pass `bluesky=1`** — the owner
+cookie (the web UI) gets them by default — because they changed the shape of a
+post:
 
 | field | notes |
 |---|---|
@@ -181,6 +182,8 @@ shape of a post:
 If your client decodes `apId` as a required string, a single Bluesky post will
 fail the **whole response** rather than one row, and the feed will appear empty.
 Make `apId` optional and handle `source` before opting in.
+
+`?bluesky=0` opts out explicitly, whichever way you authenticate.
 
 Interactions need no client change: `POST /api/admin` with `like` / `unlike` /
 `boost` / `unboost` accepts `postId` (the row id) and routes to the right network
