@@ -5,6 +5,7 @@ import { getRuntimeProfile } from "./site-profile";
 import { getAlsoKnownAs } from "./identity-store";
 import { getIdentity, getSiteUrl } from "./identity";
 import crypto from "crypto";
+import { raiseMaintenanceItem } from "./maintenance";
 
 
 // Initialize federation
@@ -34,34 +35,39 @@ async function looksEstablished(): Promise<boolean> {
  * Record the key regeneration where the owner will actually see it (#310).
  * Reuses the existing MaintenanceItem surface, which NotificationBell already
  * renders in the admin with dismiss support — so no new UI. The unique key is
- * [kind, packageName, latest], so a fixed `latest` makes repeat calls upsert the
- * same row instead of spamming one per request.
+ * [kind, packageName, latest], so a fixed `latest` collapses repeat calls into
+ * one row instead of spamming one per request.
+ *
+ * **This alert is never auto-resolved**, unlike the rest of #412's sweep, and it
+ * is exempt in `NEVER_SWEPT`. Two reasons. It shares `kind: "security"` with
+ * `npm audit`, which has no opinion about signing keys. And more fundamentally it
+ * records something that *happened* rather than something that *is*: this line is
+ * only ever reached in the branch that has just minted a replacement keypair, so
+ * "are the keys intact?" is true by construction one instruction later. Resolving
+ * on that would clear the alert on the next render and tell the owner nothing.
+ * It clears when they dismiss it, which is the correct signal — the damage is
+ * historical and only they can judge whether they've recovered from it.
+ *
+ * Going through `raiseMaintenanceItem` still buys something: a *second* identity
+ * loss lands as occurrence 2 on a dismissed-then-resolved row rather than
+ * vanishing silently, and repeat keypair loss is exactly the symptom of a volume
+ * that isn't persisting.
  */
 async function flagKeyRegeneration(): Promise<void> {
   try {
-    await prisma.maintenanceItem.upsert({
-      where: {
-        kind_packageName_latest: {
-          kind: "security",
-          packageName: "federation-identity",
-          latest: "actor-keys-regenerated",
-        },
-      },
-      update: {}, // already flagged — don't resurrect a dismissed alert
-      create: {
-        kind: "security",
-        packageName: "federation-identity",
-        latest: "actor-keys-regenerated",
-        severity: "high",
-        title: "Federation identity was regenerated",
-        description:
-          "Your ActorKeys row was missing, so a new signing keypair was generated. " +
-          "Existing followers hold your OLD public key, so posts may fail to verify on " +
-          "remote servers until they re-fetch your actor. Common causes: `docker compose down -v`, " +
-          "restoring a content-only database dump, or migrating to a new database. " +
-          "If you have a backup of the ActorKeys row, restoring it will recover your original identity.",
-        url: "https://github.com/TemujinCalidius/FediHome/issues/310",
-      },
+    await raiseMaintenanceItem({
+      kind: "security",
+      packageName: "federation-identity",
+      latest: "actor-keys-regenerated",
+      severity: "high",
+      title: "Federation identity was regenerated",
+      description:
+        "Your ActorKeys row was missing, so a new signing keypair was generated. " +
+        "Existing followers hold your OLD public key, so posts may fail to verify on " +
+        "remote servers until they re-fetch your actor. Common causes: `docker compose down -v`, " +
+        "restoring a content-only database dump, or migrating to a new database. " +
+        "If you have a backup of the ActorKeys row, restoring it will recover your original identity.",
+      url: "https://github.com/TemujinCalidius/FediHome/issues/310",
     });
   } catch (err) {
     // Never let alerting break the render path this sits on.

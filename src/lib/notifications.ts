@@ -213,8 +213,13 @@ export async function computeNotifications(): Promise<NotificationResult> {
 
   // 5. Maintenance items (package updates, security advisories, release notes)
   const maintenanceItems = await prisma.maintenanceItem.findMany({
-    where: { dismissed: false, applied: false },
+    // resolvedAt: the condition no longer holds, so it isn't news (#412).
+    where: { dismissed: false, applied: false, resolvedAt: null },
     orderBy: { createdAt: "desc" },
+    // Capped: the bell polls every 30 seconds, and before items could resolve an
+    // instance accumulated one row per upstream release of every watched package
+    // — all of them loaded, every poll.
+    take: 20,
   });
 
   for (const m of maintenanceItems) {
@@ -246,7 +251,10 @@ export async function computeNotifications(): Promise<NotificationResult> {
               : "Package update",
       actorUrl: null,
       avatarUrl: null,
-      summary: m.title || summary,
+      // A recurring fault is worth flagging as recurring: an identity that has
+      // come back after being resolved says something a first occurrence doesn't
+      // (a credential that keeps breaking, an update that keeps being undone).
+      summary: m.occurrences > 1 ? `${m.title || summary} (×${m.occurrences})` : m.title || summary,
       targetUrl: m.url,
       maintenanceId: m.id,
       createdAt: m.createdAt.toISOString(),

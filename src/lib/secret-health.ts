@@ -1,5 +1,6 @@
 import { prisma } from "./db";
 import { decryptSecret, secretBoxAvailable } from "./secret-box";
+import { raiseMaintenanceItem, resolveMaintenanceItem } from "./maintenance";
 
 /**
  * Notice when stored credentials have become undecryptable (#359).
@@ -15,9 +16,10 @@ import { decryptSecret, secretBoxAvailable } from "./secret-box";
  * database backup does NOT contain it. Restoring a database onto a host with a
  * freshly generated secret produces exactly this state.
  *
- * Reuses the #310 alerting idiom verbatim — `upsert` with an empty `update`, so
- * a dismissed alert is never resurrected and repeated boots don't spam. The
- * notification bell already renders these with Dismiss / Mark-applied actions.
+ * Raised through `raiseMaintenanceItem`, which never disturbs an outstanding
+ * alert — so a dismissal survives and repeated boots don't spam — and resolved
+ * when everything decrypts again (#412). Before that, a fix left the bell still
+ * insisting the credentials were unreadable, forever.
  */
 
 /** Every credential the secret box holds, with a human name for the alert. */
@@ -65,7 +67,13 @@ export async function findUndecryptableCredentials(): Promise<string[]> {
 export async function checkStoredCredentials(): Promise<void> {
   try {
     const broken = await findUndecryptableCredentials();
-    if (broken.length === 0) return;
+    if (broken.length === 0) {
+      // Everything decrypts. Previously this wrote nothing, so an alert raised
+      // once outlived the fix forever — you re-entered the credentials and the
+      // bell went on telling you they were unreadable (#412).
+      await resolveMaintenanceItem(ALERT.kind, ALERT.packageName, ALERT.latest);
+      return;
+    }
 
     const list = broken.join(", ");
     const cause = secretBoxAvailable()
@@ -78,22 +86,18 @@ export async function checkStoredCredentials(): Promise<void> {
         `           They will keep appearing as configured while silently not working. Re-enter them in the admin panel.\n`,
     );
 
-    await prisma.maintenanceItem.upsert({
-      where: { kind_packageName_latest: { ...ALERT } },
-      update: {}, // already flagged — never resurrect a dismissed alert
-      create: {
-        ...ALERT,
-        severity: "high",
-        title: "Saved credentials can't be read any more",
-        description:
-          `These are stored encrypted and can no longer be decrypted: ${list}. ${cause} ` +
-          `Until they're re-entered they will keep looking configured while silently doing nothing — ` +
-          `push notifications aren't delivered, crossposting doesn't happen, analytics don't report. ` +
-          `Re-enter each one in the admin panel to fix it. ` +
-          `Worth knowing: ADMIN_SECRET lives only in .env.local, so a database backup does not include it — ` +
-          `back it up separately, or restoring a database onto a new host reproduces this.`,
-        url: "https://github.com/TemujinCalidius/FediHome/issues/359",
-      },
+    await raiseMaintenanceItem({
+      ...ALERT,
+      severity: "high",
+      title: "Saved credentials can't be read any more",
+      description:
+        `These are stored encrypted and can no longer be decrypted: ${list}. ${cause} ` +
+        `Until they're re-entered they will keep looking configured while silently doing nothing — ` +
+        `push notifications aren't delivered, crossposting doesn't happen, analytics don't report. ` +
+        `Re-enter each one in the admin panel to fix it. ` +
+        `Worth knowing: ADMIN_SECRET lives only in .env.local, so a database backup does not include it — ` +
+        `back it up separately, or restoring a database onto a new host reproduces this.`,
+      url: "https://github.com/TemujinCalidius/FediHome/issues/359",
     });
   } catch (err) {
     console.error("[fedihome] couldn't check stored credentials:", err);

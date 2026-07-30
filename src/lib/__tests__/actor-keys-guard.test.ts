@@ -9,16 +9,19 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
  * It still mints (never brick the site) but must now be impossible to miss.
  */
 
-const { findUnique, create, settingsFindUnique, followerCount, itemUpsert } = vi.hoisted(() => ({
+const { findUnique, create, settingsFindUnique, followerCount, item } = vi.hoisted(() => ({
   findUnique: vi.fn(), create: vi.fn(),
-  settingsFindUnique: vi.fn(), followerCount: vi.fn(), itemUpsert: vi.fn(),
+  settingsFindUnique: vi.fn(), followerCount: vi.fn(),
+  // The alert goes through src/lib/maintenance now, which reads before it writes
+  // so a returning fault lands as a second occurrence rather than silently (#412).
+  item: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
 }));
 vi.mock("@/lib/db", () => ({
   prisma: {
     actorKeys: { findUnique, create },
     siteSettings: { findUnique: settingsFindUnique },
     fediFollower: { count: followerCount },
-    maintenanceItem: { upsert: itemUpsert },
+    maintenanceItem: item,
   },
 }));
 vi.mock("@/../site.config", () => ({ siteConfig: { url: "https://demo.example", fediHandle: "me" } }));
@@ -32,7 +35,9 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.spyOn(console, "error").mockImplementation(() => {});
   create.mockResolvedValue(KEYS);
-  itemUpsert.mockResolvedValue({});
+  item.findUnique.mockResolvedValue(null);
+  item.create.mockResolvedValue({});
+  item.update.mockResolvedValue({});
   settingsFindUnique.mockResolvedValue({ setupDone: false });
   followerCount.mockResolvedValue(0);
 });
@@ -43,7 +48,7 @@ describe("ensureActorKeys — existing keys", () => {
     findUnique.mockResolvedValue(KEYS);
     expect(await ensureActorKeys()).toEqual({ publicKey: "PUB", privateKey: "PRIV" });
     expect(create).not.toHaveBeenCalled();
-    expect(itemUpsert).not.toHaveBeenCalled();
+    expect(item.create).not.toHaveBeenCalled();
     expect(console.error).not.toHaveBeenCalled();
   });
 });
@@ -56,14 +61,14 @@ describe("ensureActorKeys — brand-new instance (correct silent bootstrap)", ()
     await ensureActorKeys();
     expect(create).toHaveBeenCalled();
     expect(console.error).not.toHaveBeenCalled();
-    expect(itemUpsert).not.toHaveBeenCalled();
+    expect(item.create).not.toHaveBeenCalled();
   });
 
   it("treats a missing SiteSettings row as new, not established", async () => {
     findUnique.mockResolvedValue(null);
     settingsFindUnique.mockResolvedValue(null);
     await ensureActorKeys();
-    expect(itemUpsert).not.toHaveBeenCalled();
+    expect(item.create).not.toHaveBeenCalled();
   });
 });
 
@@ -78,7 +83,7 @@ describe("ensureActorKeys — ESTABLISHED instance with missing keys (#310)", ()
     expect(keys.privateKey).toContain("BEGIN PRIVATE KEY");
     expect(create).toHaveBeenCalled();
     expect(console.error).toHaveBeenCalledWith(expect.stringContaining("FEDERATION IDENTITY REGENERATED"));
-    expect(itemUpsert).toHaveBeenCalledTimes(1);
+    expect(item.create).toHaveBeenCalledTimes(1);
   });
 
   it("detects 'established' from followers even when setupDone is false", async () => {
@@ -87,25 +92,63 @@ describe("ensureActorKeys — ESTABLISHED instance with missing keys (#310)", ()
     followerCount.mockResolvedValue(3); // has real followers → history exists
     await ensureActorKeys();
     expect(console.error).toHaveBeenCalled();
-    expect(itemUpsert).toHaveBeenCalled();
+    expect(item.create).toHaveBeenCalled();
   });
 
-  it("files the alert under a stable key so repeat calls don't spam, and doesn't resurrect a dismissal", async () => {
+  it("files the alert under a stable key so repeat calls don't spam", async () => {
     findUnique.mockResolvedValue(null);
     settingsFindUnique.mockResolvedValue({ setupDone: true });
     await ensureActorKeys();
-    const arg = itemUpsert.mock.calls[0][0];
-    expect(arg.where.kind_packageName_latest).toEqual({
-      kind: "security", packageName: "federation-identity", latest: "actor-keys-regenerated",
+    expect(item.create.mock.calls[0][0].data).toMatchObject({
+      kind: "security",
+      packageName: "federation-identity",
+      latest: "actor-keys-regenerated",
+      severity: "high",
     });
-    expect(arg.update).toEqual({}); // an already-dismissed alert stays dismissed
-    expect(arg.create.severity).toBe("high");
+  });
+
+  it("doesn't resurrect a dismissed alert on the next boot", async () => {
+    // Every render path can reach this, so a dismissal has to hold.
+    item.findUnique.mockResolvedValue({ dismissed: true, resolvedAt: null, occurrences: 1 });
+    findUnique.mockResolvedValue(null);
+    settingsFindUnique.mockResolvedValue({ setupDone: true });
+    await ensureActorKeys();
+    expect(item.create).not.toHaveBeenCalled();
+    expect(item.update).not.toHaveBeenCalled();
+  });
+
+  it("counts a SECOND identity loss rather than losing it silently", async () => {
+    // Losing the keypair twice is the signature of a volume that isn't
+    // persisting, which is a different and worse problem than losing it once.
+    item.findUnique.mockResolvedValue({
+      dismissed: true, resolvedAt: new Date("2026-06-01"), occurrences: 1,
+    });
+    findUnique.mockResolvedValue(null);
+    settingsFindUnique.mockResolvedValue({ setupDone: true });
+    await ensureActorKeys();
+    expect(item.update.mock.calls[0][0].data).toMatchObject({ occurrences: 2, dismissed: false });
+  });
+
+  it("is NEVER auto-resolved — it records a past event, not a current state", async () => {
+    // The keypair is intact by construction one instruction after this fires, so
+    // resolving on "keys are fine" would clear the alert on the next render and
+    // tell the owner nothing. It clears when they dismiss it.
+    findUnique.mockResolvedValue(null);
+    settingsFindUnique.mockResolvedValue({ setupDone: true });
+    await ensureActorKeys();
+    expect(item.updateMany).not.toHaveBeenCalled();
+
+    // And with keys present it must not touch the alert at all.
+    vi.clearAllMocks();
+    findUnique.mockResolvedValue(KEYS);
+    await ensureActorKeys();
+    expect(item.updateMany).not.toHaveBeenCalled();
   });
 
   it("a failure while alerting never breaks key generation", async () => {
     findUnique.mockResolvedValue(null);
     settingsFindUnique.mockResolvedValue({ setupDone: true });
-    itemUpsert.mockRejectedValue(new Error("db down"));
+    item.findUnique.mockRejectedValue(new Error("db down"));
     const keys = await ensureActorKeys();
     expect(keys.privateKey).toContain("BEGIN PRIVATE KEY");
   });
@@ -115,6 +158,6 @@ describe("ensureActorKeys — ESTABLISHED instance with missing keys (#310)", ()
     settingsFindUnique.mockRejectedValue(new Error("db down"));
     await ensureActorKeys();
     expect(create).toHaveBeenCalled();
-    expect(itemUpsert).not.toHaveBeenCalled();
+    expect(item.create).not.toHaveBeenCalled();
   });
 });
