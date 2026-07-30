@@ -13,10 +13,12 @@ export default function SettingsClient({
   defaults,
   effective,
   overrides,
+  lastCheckedAt: initialLastCheckedAt,
 }: {
   defaults: SchedulerConfig;
   effective: SchedulerConfig;
   overrides: Record<string, string>;
+  lastCheckedAt: string | null;
 }) {
   const [publishEnabled, setPublishEnabled] = useState(effective.publishScheduled.enabled);
   const [publishInterval, setPublishInterval] = useState(String(effective.publishScheduled.intervalSec));
@@ -28,12 +30,49 @@ export default function SettingsClient({
   const [crosspostInterval, setCrosspostInterval] = useState(String(effective.crosspostRetry.intervalSec));
   const [storageEnabled, setStorageEnabled] = useState(effective.storageScan.enabled);
   const [storageInterval, setStorageInterval] = useState(String(effective.storageScan.intervalSec));
+  const [updateEnabled, setUpdateEnabled] = useState(effective.updateCheck.enabled);
+  const [updateInterval, setUpdateInterval] = useState(String(effective.updateCheck.intervalSec));
+  const [lastCheckedAt, setLastCheckedAt] = useState<string | null>(initialLastCheckedAt);
+  const [checking, setChecking] = useState(false);
+  const [checkMsg, setCheckMsg] = useState<string | null>(null);
   const [retentionEnabled, setRetentionEnabled] = useState(effective.retentionSweep.enabled);
   const [retentionInterval, setRetentionInterval] = useState(String(effective.retentionSweep.intervalSec));
   const [retentionDays, setRetentionDays] = useState(String(effective.retentionSweep.retentionDays));
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [hasOverrides, setHasOverrides] = useState(Object.keys(overrides).length > 0);
+
+  /** Re-read the watermark after a manual check, so the label updates (#399). */
+  async function loadLastChecked() {
+    try {
+      const res = await fetch("/api/maintenance/check");
+      if (!res.ok) return;
+      setLastCheckedAt((await res.json()).lastCheckedAt ?? null);
+    } catch {
+      /* nothing to show is fine */
+    }
+  }
+
+  async function checkNow() {
+    setChecking(true);
+    setCheckMsg(null);
+    try {
+      const res = await fetch("/api/maintenance/check", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        // The check runs as a detached child process, so there is nothing to
+        // await — it writes to the notification bell when it finishes.
+        setCheckMsg("Started — results appear in your notifications shortly.");
+        setTimeout(() => void loadLastChecked(), 2000);
+      } else {
+        setCheckMsg(data.error || "Couldn't start the check.");
+      }
+    } catch {
+      setCheckMsg("Couldn't start the check.");
+    } finally {
+      setChecking(false);
+    }
+  }
 
   async function post(settings: Record<string, string | null>) {
     setSaving(true);
@@ -58,8 +97,10 @@ export default function SettingsClient({
       setDeliveryInterval(String(eff.deliveryRetry.intervalSec));
       setCrosspostEnabled(eff.crosspostRetry.enabled);
       setCrosspostInterval(String(eff.crosspostRetry.intervalSec));
-      setStorageEnabled(data.effective.storageScan.enabled);
-      setStorageInterval(String(data.effective.storageScan.intervalSec));
+      setStorageEnabled(eff.storageScan.enabled);
+      setStorageInterval(String(eff.storageScan.intervalSec));
+      setUpdateEnabled(eff.updateCheck.enabled);
+      setUpdateInterval(String(eff.updateCheck.intervalSec));
       setRetentionEnabled(eff.retentionSweep.enabled);
       setRetentionInterval(String(eff.retentionSweep.intervalSec));
       setRetentionDays(String(eff.retentionSweep.retentionDays));
@@ -86,6 +127,8 @@ export default function SettingsClient({
         "scheduler.crosspost.intervalSec": crosspostInterval,
         "scheduler.storage.enabled": storageEnabled ? "true" : "false",
         "scheduler.storage.intervalSec": storageInterval,
+        "scheduler.updateCheck.enabled": updateEnabled ? "true" : "false",
+        "scheduler.updateCheck.intervalSec": updateInterval,
         "scheduler.retention.enabled": retentionEnabled ? "true" : "false",
         "scheduler.retention.intervalSec": retentionInterval,
         "scheduler.retention.days": retentionDays,
@@ -108,6 +151,8 @@ export default function SettingsClient({
         "scheduler.crosspost.intervalSec": null,
         "scheduler.storage.enabled": null,
         "scheduler.storage.intervalSec": null,
+        "scheduler.updateCheck.enabled": null,
+        "scheduler.updateCheck.intervalSec": null,
         "scheduler.retention.enabled": null,
         "scheduler.retention.intervalSec": null,
         "scheduler.retention.days": null,
@@ -210,6 +255,32 @@ export default function SettingsClient({
           setStorageInterval,
           defaults.storageScan.intervalSec,
         )}
+
+        {jobRow(
+          "Check for updates",
+          "Looks for new FediHome releases, package updates and security advisories, and tells you in your notifications. Makes outbound requests to the npm registry and GitHub.",
+          updateEnabled,
+          setUpdateEnabled,
+          updateInterval,
+          setUpdateInterval,
+          defaults.updateCheck.intervalSec,
+        )}
+
+        <div className="flex flex-wrap items-center gap-3 pb-4 -mt-2">
+          <button
+            onClick={checkNow}
+            disabled={checking}
+            className="text-xs rounded-md border border-surface-700 px-3 py-1.5 text-gray-300 hover:text-white hover:border-surface-600 disabled:opacity-50"
+          >
+            {checking ? "Starting…" : "Check now"}
+          </button>
+          <span className="text-xs text-gray-500">
+            {lastCheckedAt
+              ? `Last checked ${new Date(lastCheckedAt).toLocaleString()}`
+              : "Never checked"}
+          </span>
+          {checkMsg && <span className="text-xs text-gray-400">{checkMsg}</span>}
+        </div>
 
         <div className="flex flex-wrap items-center gap-4 py-4 border-b border-surface-800 last:border-b-0">
           <label className="flex items-center gap-2 min-w-56">
