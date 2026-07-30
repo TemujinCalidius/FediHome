@@ -21,7 +21,7 @@ The script will:
 4. Copy `.env.example` to `.env.local`
 5. Generate an admin secret
 6. Prompt you for your PostgreSQL connection URL
-7. Run database migrations
+7. Create the database tables and apply any hand-written migrations
 8. Build the production app
 
 When it finishes, start the server:
