@@ -10,6 +10,7 @@ import { validateImagePath } from "@/lib/media";
 import { getConfiguredSiteUrl } from "@/lib/identity";
 // Shared with the boot guard and the wizard UI, so all three enforce one rule set (#357).
 import { isLocalOrPrivateHost } from "@/lib/public-host";
+import { isContainerised } from "@/lib/install-shape";
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
@@ -41,16 +42,6 @@ class SetupValidationError extends Error {}
  * container — so the honest move is to tell the operator, loudly, while they
  * still have the secret on screen.
  */
-function isContainerised(): boolean {
-  try {
-    if (fs.existsSync("/.dockerenv")) return true;
-    const cgroup = fs.readFileSync("/proc/1/cgroup", "utf-8");
-    return /docker|containerd|kubepods/i.test(cgroup);
-  } catch {
-    return false; // no /proc (macOS/Windows) → assume bare metal
-  }
-}
-
 function validateField(name: string, value: unknown): string {
   if (typeof value !== "string") {
     throw new SetupValidationError(`${name} must be a string`);

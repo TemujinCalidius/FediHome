@@ -34,10 +34,36 @@ if [ -n "${1:-}" ] && [ -d "$1" ]; then
   cd "$1"
 fi
 
-if [ ! -d .git ] || [ ! -f package.json ]; then
-  fail "This doesn't look like a FediHome checkout (no .git or package.json)."
+# The updater's first real step is `git pull`, so it needs a checkout. Say WHICH
+# thing is missing, and what to do instead (#398) — "this doesn't look like a
+# FediHome checkout" is actively confusing inside a container, where package.json
+# is right there and only the history is absent.
+if [ ! -f package.json ]; then
+  fail "This doesn't look like a FediHome folder (no package.json)."
   echo "  Run this script from your FediHome folder, or pass the path:"
   echo "    bash update.sh /opt/fedihome"
+  exit 1
+fi
+
+if [ ! -d .git ]; then
+  if [ -f /.dockerenv ] || grep -qEi 'docker|containerd|kubepods' /proc/1/cgroup 2>/dev/null; then
+    fail "You're inside the container — it can't update itself."
+    echo "  The image has no git history, no source tree and no Docker socket."
+    echo "  Run this on the HOST instead, from the folder with your compose file:"
+    echo ""
+    echo "    docker compose pull && docker compose up -d"
+    echo ""
+    echo "  (or 'docker compose build && docker compose up -d' if you build it yourself)"
+  else
+    fail "This install has no git history, so there's nothing to pull."
+    echo "  That means it came from a release archive rather than 'git clone'."
+    echo "  To update, unpack the new release over this folder and then run:"
+    echo ""
+    echo "    npm install && npm run migrate && npx prisma db push && npm run build"
+    echo ""
+    echo "  Then restart FediHome. To get automatic updates in future, reinstall"
+    echo "  with 'git clone' instead."
+  fi
   exit 1
 fi
 

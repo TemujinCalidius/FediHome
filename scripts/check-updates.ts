@@ -12,6 +12,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { prisma } from "../src/lib/db";
 import { raiseMaintenanceItem, seenKey, sweepResolved } from "../src/lib/maintenance";
+import { installShape, updateInstruction } from "../src/lib/install-shape";
 
 interface OutdatedEntry {
   current: string;
@@ -268,7 +269,8 @@ const FEDIHOME_BRANCH = process.env.FEDIHOME_BRANCH || "main";
 // Compare the local checkout's HEAD against the upstream branch tip on GitHub.
 // If we're behind, surface a single "FediHome update available" maintenance
 // item with the latest commit subjects so the admin can see what's new at a
-// glance and run `npm run update` to apply it.
+// glance, and the command that will actually apply it on THIS install (#398) —
+// this used to say `npm run update` to everyone, which in a container refuses.
 async function checkFediHomeSelf(): Promise<CheckResult> {
   // A git checkout is the precise signal, but it's absent in every container
   // (.dockerignore excludes .git) and in tarball installs — which used to mean
@@ -278,12 +280,21 @@ async function checkFediHomeSelf(): Promise<CheckResult> {
   let localSha: string | null = buildSha();
   if (!localSha) {
     try {
-      localSha = execSync("git rev-parse HEAD", { encoding: "utf-8" }).trim() || null;
+      // stderr discarded: the runner image has no `git` at all, so this prints
+      // "git: not found" on every container run — which reads as a failure when
+      // it is the expected path into the release-tag fallback below.
+      localSha =
+        execSync("git rev-parse HEAD", {
+          encoding: "utf-8",
+          stdio: ["ignore", "pipe", "ignore"],
+        }).trim() || null;
     } catch {
       localSha = null;
     }
   }
   if (!localSha) return await checkFediHomeByReleaseTag();
+
+  const shape = installShape();
 
   try {
     const res = await fetch(
@@ -331,7 +342,7 @@ async function checkFediHomeSelf(): Promise<CheckResult> {
           .slice(-10)
           .reverse()
           .map((c) => `• ${c.commit.message.split("\n")[0]}`);
-        description = `${ahead} new commit${ahead === 1 ? "" : "s"} on ${FEDIHOME_BRANCH}:\n${lines.join("\n")}\n\nRun \`npm run update\` to apply.`;
+        description = `${ahead} new commit${ahead === 1 ? "" : "s"} on ${FEDIHOME_BRANCH}:\n${lines.join("\n")}\n\n${updateInstruction(shape)}`;
       }
     } catch {
       // Compare endpoint failed — fall back to a generic message
@@ -347,7 +358,7 @@ async function checkFediHomeSelf(): Promise<CheckResult> {
         current: installedVersion,
         latest: shortSha,
         title: `FediHome update available (${shortSha})`,
-        description: description || `New commits on ${FEDIHOME_BRANCH}. Run \`npm run update\`.`,
+        description: description || `New commits on ${FEDIHOME_BRANCH}. ${updateInstruction(shape)}`,
         url: `https://github.com/${FEDIHOME_REPO}/compare/${localSha}...${remoteSha}`,
       },
       { refresh: true }, // the commit list grows while you stay on the same tip
@@ -466,9 +477,10 @@ async function checkFediHomeByReleaseTag(): Promise<CheckResult> {
       severity: "info",
       title: `FediHome ${latest} is available`,
       description:
-        `You're running ${current}. This check compared release versions rather than ` +
-        `commits, because this install has no commit SHA available (a container built ` +
-        `without a build SHA, or a tarball install), so it only notices tagged releases.`,
+        `You're running ${current}. ${updateInstruction()}\n\n` +
+        `This check compared release versions rather than commits, because this install ` +
+        `has no commit SHA available (a container built without a build SHA, or a tarball ` +
+        `install), so it only notices tagged releases.`,
       url: rel.html_url || `https://github.com/${FEDIHOME_REPO}/releases/latest`,
     });
 

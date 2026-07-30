@@ -354,7 +354,22 @@ If using Cloudflare Tunnel, see [Cloudflare Tunnel](cloudflare-tunnel.md) instea
 
 ## Updating FediHome
 
-The simplest way is the bundled updater, which handles git pull, dependency install, schema migration, rebuild, and restart in one command:
+How you update depends on how you installed, and the bundled updater only covers
+one of the three:
+
+| Install | Update with |
+| --- | --- |
+| `git clone` (Options 1 and 2 above) | `npm run update` |
+| Docker | `docker compose pull && docker compose up -d`, **on the host** |
+| Release archive (no git history) | unpack the new release, then the manual steps below |
+
+A container **cannot** update itself: the image has no git history, no `src/`, no
+Docker socket, and runs unprivileged. `npm run update` inside one refuses and
+tells you this. FediHome's own update alerts name the command that applies to
+your install rather than assuming a git checkout.
+
+For a git checkout, the bundled updater handles git pull, dependency install,
+schema migration, rebuild, and restart in one command:
 
 ```bash
 cd /opt/fedihome    # or wherever you installed it
