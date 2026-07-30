@@ -19,6 +19,7 @@ beforeEach(() => {
     "SCHEDULER_PUBLISH_ENABLED", "SCHEDULER_PUBLISH_INTERVAL_SEC",
     "SCHEDULER_BLUESKY_ENABLED", "SCHEDULER_BLUESKY_INTERVAL_SEC", "BLUESKY_HANDLE",
     "SCHEDULER_RETENTION_ENABLED", "SCHEDULER_RETENTION_INTERVAL_SEC", "SCHEDULER_RETENTION_DAYS",
+    "SCHEDULER_UPDATE_CHECK_ENABLED", "SCHEDULER_UPDATE_CHECK_INTERVAL_SEC",
   ]) delete process.env[k];
 });
 
@@ -30,6 +31,7 @@ describe("getSchedulerConfig", () => {
       deliveryRetry: { enabled: true, intervalSec: 60 },
       crosspostRetry: { enabled: true, intervalSec: 60 },
       storageScan: { enabled: true, intervalSec: 3600 },
+      updateCheck: { enabled: true, intervalSec: 86_400 },
       retentionSweep: { enabled: false, intervalSec: 86_400, retentionDays: 90 },
     });
   });
@@ -103,5 +105,38 @@ describe("getEffectiveSchedulerConfig (admin overrides, #59)", () => {
       rows({ "scheduler.publish.intervalSec": "120" }) as never,
     );
     expect((await getEffectiveSchedulerConfig()).publishScheduled.intervalSec).toBe(120);
+  });
+});
+
+describe("the update check job (#399)", () => {
+  it("is on daily by default", () => {
+    // On by default because the alternative was what shipped: the check existed,
+    // nothing ran it, and an instance never heard about a security advisory.
+    expect(getSchedulerConfig().updateCheck).toEqual({ enabled: true, intervalSec: 86_400 });
+  });
+
+  it("can be turned off by env, for an instance that shouldn't call out", () => {
+    process.env.SCHEDULER_UPDATE_CHECK_ENABLED = "false";
+    expect(getSchedulerConfig().updateCheck.enabled).toBe(false);
+  });
+
+  it("honours an admin override, and reverts when it's cleared", async () => {
+    vi.mocked(prisma.siteSetting.findMany).mockResolvedValue(
+      rows({ "scheduler.updateCheck.enabled": "false", "scheduler.updateCheck.intervalSec": "43200" }) as never,
+    );
+    expect((await getEffectiveSchedulerConfig()).updateCheck).toEqual({ enabled: false, intervalSec: 43_200 });
+
+    invalidateSchedulerConfigCache();
+    vi.mocked(prisma.siteSetting.findMany).mockResolvedValue([] as never);
+    expect((await getEffectiveSchedulerConfig()).updateCheck).toEqual({ enabled: true, intervalSec: 86_400 });
+  });
+
+  it("ignores an override above the 24h ceiling rather than accepting it", async () => {
+    // Daily IS the slowest cadence the system permits (MAX_INTERVAL_SEC), so a
+    // well-meaning "check weekly" must fall back rather than silently become 10s.
+    vi.mocked(prisma.siteSetting.findMany).mockResolvedValue(
+      rows({ "scheduler.updateCheck.intervalSec": "604800" }) as never,
+    );
+    expect((await getEffectiveSchedulerConfig()).updateCheck.intervalSec).toBe(86_400);
   });
 });

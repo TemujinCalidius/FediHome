@@ -44,7 +44,16 @@ const globalScheduler = globalThis as typeof globalThis & {
 };
 
 const MASTER_TICK_MS = 15_000;
-const lastRun = { publish: 0, bluesky: 0, delivery: 0, crosspost: 0, storage: 0, retention: 0 };
+/**
+ * How often to ASK whether an update check is due (#399) — not how often one runs.
+ *
+ * The configured `updateCheck.intervalSec` is the real cadence and lives in the
+ * persisted watermark. This is just how often the cheap "is it time yet?" lookup
+ * happens, and it has to be well under the configured interval or a long-running
+ * process would drift past its own schedule.
+ */
+const UPDATE_CHECK_POLL_MS = 5 * 60_000;
+const lastRun = { publish: 0, bluesky: 0, delivery: 0, crosspost: 0, storage: 0, updateCheck: 0, retention: 0 };
 
 /**
  * When the master loop last completed a pass (#358).
@@ -164,6 +173,32 @@ export async function runStorageScanTick(): Promise<void> {
   }
 }
 
+/**
+ * Check for updates, advisories and new FediHome releases (#399).
+ *
+ * The cadence is decided by a **persisted** watermark, not by `lastRun`. Every
+ * other job here is throttled purely in memory, which is fine at 60s but wrong
+ * for a daily one: seeded `Date.now()` (like the retention sweep) it would never
+ * fire at all on an instance that restarts more than once a day, and seeded `0`
+ * (like publish) it would fire on every single boot — against an unauthenticated
+ * GitHub API allowing 60 requests an hour per IP. Neither is acceptable, so
+ * `startUpdateCheck` reads the last completed check out of `SiteSetting`.
+ *
+ * That makes this tick cheap to attempt often: one indexed lookup, and a spawn
+ * only when it's genuinely due.
+ */
+export async function runUpdateCheckTick(): Promise<void> {
+  const cfg = await getEffectiveSchedulerConfig();
+  if (!cfg.updateCheck.enabled) return;
+  try {
+    const { startUpdateCheck } = await import("./update-check");
+    const r = await startUpdateCheck({ intervalSec: cfg.updateCheck.intervalSec });
+    if (r.started) log("update-check: started");
+  } catch (err) {
+    console.error("scheduler: update-check failed:", err);
+  }
+}
+
 export async function runCrosspostRetryTick(): Promise<void> {
   if (!(await getEffectiveSchedulerConfig()).crosspostRetry.enabled) return;
   try {
@@ -214,6 +249,13 @@ async function masterTick(): Promise<void> {
     lastRun.storage = now;
     await runStorageScanTick();
   }
+  // Attempted on a short in-memory cadence deliberately: the persisted watermark
+  // inside the tick is what decides whether anything actually runs, so a restart
+  // can't skip a due check and can't force an undue one.
+  if (cfg.updateCheck.enabled && now - lastRun.updateCheck >= UPDATE_CHECK_POLL_MS) {
+    lastRun.updateCheck = now;
+    await runUpdateCheckTick();
+  }
   if (cfg.retentionSweep.enabled && now - lastRun.retention >= cfg.retentionSweep.intervalSec * 1000) {
     lastRun.retention = now;
     await runRetentionSweepTick();
@@ -250,6 +292,10 @@ export function startScheduler(): boolean {
       `bluesky=${cfg.blueskySync.enabled ? cfg.blueskySync.intervalSec + "s" : "off"}, ` +
       `delivery=${cfg.deliveryRetry.enabled ? cfg.deliveryRetry.intervalSec + "s" : "off"}, ` +
       `crosspost=${cfg.crosspostRetry.enabled ? cfg.crosspostRetry.intervalSec + "s" : "off"}, ` +
+      // storage was missing from this line since it was added, so the boot log
+      // said nothing about a job that walks the entire uploads tree.
+      `storage=${cfg.storageScan.enabled ? cfg.storageScan.intervalSec + "s" : "off"}, ` +
+      `updates=${cfg.updateCheck.enabled ? cfg.updateCheck.intervalSec + "s" : "off"}, ` +
       `retention=${cfg.retentionSweep.enabled ? cfg.retentionSweep.intervalSec + "s/" + cfg.retentionSweep.retentionDays + "d" : "off"}` +
       ` (env defaults; /admin/settings overrides apply live)`,
   );
@@ -263,6 +309,9 @@ export function startScheduler(): boolean {
   // 0, like publish: the admin panel and /api/health would otherwise report
   // "not measured yet" for a full interval after every restart.
   lastRun.storage = 0;
+  // 0 as well, but for a different reason: the tick itself is a watermark lookup,
+  // and an instance that has been off for a week should find out on boot.
+  lastRun.updateCheck = 0;
   lastRun.retention = Date.now();
 
   const boot = masterTick().catch((err) => console.error("scheduler: tick failed:", err));

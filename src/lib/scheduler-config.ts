@@ -28,6 +28,7 @@ export interface SchedulerConfig {
   deliveryRetry: SchedulerJobConfig;
   crosspostRetry: SchedulerJobConfig;
   storageScan: SchedulerJobConfig;
+  updateCheck: SchedulerJobConfig;
   retentionSweep: RetentionJobConfig;
 }
 
@@ -81,6 +82,18 @@ export function getSchedulerConfig(): SchedulerConfig {
       enabled: flag(process.env.SCHEDULER_STORAGE_ENABLED, true),
       intervalSec: posNum(process.env.SCHEDULER_STORAGE_INTERVAL_SEC, 3600),
     },
+    // Check for package updates, security advisories and new FediHome releases
+    // (#399). Default: on, daily — daily is also the slowest cadence the system
+    // permits, since MAX_INTERVAL_SEC is 24h.
+    //
+    // On by default because the alternative was what shipped: the check existed,
+    // nothing ran it, and an instance never heard about a security advisory. It
+    // makes outbound requests to the npm registry and the GitHub API, which is
+    // why it's a visible toggle rather than something buried.
+    updateCheck: {
+      enabled: flag(process.env.SCHEDULER_UPDATE_CHECK_ENABLED, true),
+      intervalSec: posNum(process.env.SCHEDULER_UPDATE_CHECK_INTERVAL_SEC, 86_400),
+    },
     // Retry failed Bluesky/Threads crossposts (#225). Default: on, every 60s.
     crosspostRetry: {
       enabled: flag(process.env.SCHEDULER_CROSSPOST_ENABLED, true),
@@ -110,6 +123,8 @@ export const SCHEDULER_SETTING_KEYS = [
   "scheduler.crosspost.intervalSec",
   "scheduler.storage.enabled",
   "scheduler.storage.intervalSec",
+  "scheduler.updateCheck.enabled",
+  "scheduler.updateCheck.intervalSec",
   "scheduler.retention.enabled",
   "scheduler.retention.intervalSec",
   "scheduler.retention.days",
@@ -181,6 +196,10 @@ export async function getEffectiveSchedulerConfig(): Promise<SchedulerConfig> {
       storageScan: {
         enabled: overrideFlag(o["scheduler.storage.enabled"], base.storageScan.enabled),
         intervalSec: overrideNum(o["scheduler.storage.intervalSec"], base.storageScan.intervalSec),
+      },
+      updateCheck: {
+        enabled: overrideFlag(o["scheduler.updateCheck.enabled"], base.updateCheck.enabled),
+        intervalSec: overrideNum(o["scheduler.updateCheck.intervalSec"], base.updateCheck.intervalSec),
       },
       retentionSweep: {
         enabled: overrideFlag(o["scheduler.retention.enabled"], base.retentionSweep.enabled),
