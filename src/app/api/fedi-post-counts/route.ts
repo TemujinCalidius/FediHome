@@ -13,7 +13,8 @@ interface Counts {
   replyCount: number | null;
 }
 interface CountsResult extends Counts {
-  countsFetchedAt: string;
+  // Null for a Bluesky row that hasn't been re-synced since import (#393).
+  countsFetchedAt: string | null;
 }
 
 export async function POST(req: NextRequest) {
@@ -51,10 +52,23 @@ export async function POST(req: NextRequest) {
     } satisfies CountsResult);
   }
 
+  // Bluesky rows (#393) have no apId and no AP endpoint to ask — getTimeline
+  // already returns the counts inline, so they're stored at import time and the
+  // early return above serves them.
+  if (!post.apId) {
+    return NextResponse.json({
+      likeCount: post.likeCount,
+      boostCount: post.boostCount,
+      replyCount: post.replyCount,
+      countsFetchedAt: post.countsFetchedAt?.toISOString() ?? null,
+    } satisfies CountsResult);
+  }
+  const postApId = post.apId;
+
   // Boosts use a synthetic "boost:<actor>:<originalApId>" id — count the original.
-  const sourceApId = post.apId.startsWith("boost:")
-    ? post.apId.match(/^boost:.*:(https?:\/\/.*)$/)?.[1] || post.apId
-    : post.apId;
+  const sourceApId = postApId.startsWith("boost:")
+    ? postApId.match(/^boost:.*:(https?:\/\/.*)$/)?.[1] || postApId
+    : postApId;
 
   if (!(await assertPublicHost(sourceApId))) {
     return NextResponse.json({ error: "blocked host" }, { status: 400 });

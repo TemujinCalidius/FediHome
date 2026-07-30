@@ -225,3 +225,112 @@ export async function isBlockedDomainHost(host: string): Promise<boolean> {
   const hit = await prisma.blockedDomain.findFirst({ where: { domain: { in: chain } }, select: { id: true } });
   return !!hit;
 }
+
+/**
+ * Which of these actor URIs are blocked, by account or by instance? (#396)
+ *
+ * The batch shape `partitionBlockedRecipients` has, for callers that hold actor
+ * URIs rather than delivery targets — thread ingestion, where up to 400 statuses
+ * arrive at once and a per-status check would be 800 queries. Two queries total,
+ * whatever the batch size.
+ *
+ * Fails **closed**: an unreadable block list returns every URI as blocked, so a
+ * database hiccup can't quietly re-import content a block was meant to remove.
+ * That is the same direction the outbound path takes and the opposite of
+ * `isBlockedSender`, and the asymmetry is deliberate — refusing to ingest costs
+ * a thread view the owner can retry, while ingesting wrongly writes rows that
+ * only another explicit block will clear.
+ */
+export async function blockedActorUris(actorUris: string[]): Promise<Set<string>> {
+  const unique = Array.from(new Set(actorUris.filter(Boolean)));
+  if (unique.length === 0) return new Set();
+
+  const domains = Array.from(new Set(unique.flatMap((u) => hostCandidates(u))));
+
+  try {
+    const [actors, blockedDomains] = await Promise.all([
+      prisma.blockedActor.findMany({ where: { actorUri: { in: unique } }, select: { actorUri: true } }),
+      domains.length
+        ? prisma.blockedDomain.findMany({ where: { domain: { in: domains } }, select: { domain: true } })
+        : Promise.resolve([]),
+    ]);
+    const blockedByUri = new Set(actors.map((a) => a.actorUri));
+    const blockedHosts = new Set(blockedDomains.map((d) => d.domain));
+
+    return new Set(
+      unique.filter((u) => blockedByUri.has(u) || hostCandidates(u).some((h) => blockedHosts.has(h))),
+    );
+  } catch {
+    return new Set(unique);
+  }
+}
+
+/**
+ * A `where` fragment excluding blocked actors from a `FediPost` query (#396).
+ *
+ * Blocking works by purging at block time and gating at ingest, not by filtering
+ * on read — which is fine right up until an ingest path is missed, and then the
+ * purged rows are simply back with nothing to remove them again. This is the
+ * belt to that braces.
+ *
+ * Returns `{}` when nothing is blocked, so the common case adds no clauses at
+ * all. **Never build an empty `OR: []`** — and note the reason this shape is
+ * safe: both `FediPost.actorUri` and `FediPost.domain` are NOT NULL, so
+ * `NOT { OR [...] }` can't hit SQL three-valued logic. A nullable column here
+ * would silently drop every row whose value is NULL, which is exactly how a
+ * filter like this empties a whole feed.
+ */
+export async function blockedPostFilter(): Promise<Record<string, unknown>> {
+  try {
+    const [actors, domains] = await Promise.all([
+      prisma.blockedActor.findMany({ select: { actorUri: true } }),
+      prisma.blockedDomain.findMany({ select: { domain: true } }),
+    ]);
+    if (actors.length === 0 && domains.length === 0) return {};
+
+    return {
+      NOT: {
+        OR: [
+          ...(actors.length ? [{ actorUri: { in: actors.map((a) => a.actorUri) } }] : []),
+          // Subdomains too, matching domainChain's semantics on the ingest side.
+          ...domains.flatMap((d) => [{ domain: d.domain }, { domain: { endsWith: `.${d.domain}` } }]),
+        ],
+      },
+    };
+  } catch {
+    // A filter we couldn't build must not empty the feed — the ingest gates and
+    // the purge are still in force.
+    return {};
+  }
+}
+
+/**
+ * Is this Bluesky account blocked, by DID or by handle domain? (#393)
+ *
+ * Bluesky identities aren't URLs, so the URL-shaped helpers above don't apply:
+ * `uriHostname("did:plc:abc")` is `null`, and a handle like
+ * `alice.spam.example` has no scheme. A Bluesky block is therefore stored as
+ * the **DID** in `BlockedActor` — which is also what `FediPost.actorUri` holds
+ * for a Bluesky row, so the two match directly.
+ *
+ * The handle still carries a domain, and a domain block should cover it:
+ * blocking `spam.example` covers `alice.spam.example`, the same subdomain
+ * semantics `domainChain` gives the fediverse side.
+ *
+ * Fails **closed**, like the other ingest-side check — see `blockedActorUris`.
+ */
+export async function isBlueskyBlocked(actor: { did: string; handle?: string | null }): Promise<boolean> {
+  try {
+    const candidates = actor.handle ? domainChain(actor.handle.toLowerCase()) : [];
+    const [byDid, byDomain] = await Promise.all([
+      prisma.blockedActor.findUnique({ where: { actorUri: actor.did }, select: { id: true } }),
+      candidates.length
+        ? prisma.blockedDomain.findFirst({ where: { domain: { in: candidates } }, select: { id: true } })
+        : Promise.resolve(null),
+    ]);
+    return !!byDid || !!byDomain;
+  } catch {
+    return true;
+  }
+}
+

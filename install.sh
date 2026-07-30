@@ -444,6 +444,11 @@ ok ".env.local written"
 
 say "Creating database tables..."
 npx prisma db push
+# AFTER db push, not before (#410): on a brand-new database there is nothing for
+# the migrations to prepare, and every file that ALTERs a table would just fail.
+# Running them here populates the ManualMigration ledger, so the operator's first
+# `npm run update` isn't the run that applies nineteen files at once.
+sh scripts/apply-migrations.sh
 ok "Schema applied"
 
 say "Generating Prisma client..."

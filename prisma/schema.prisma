@@ -312,8 +312,19 @@ model BlueskyFollowing {
 
 model FediPost {
   id          String   @id @default(cuid())
+  /// For Bluesky rows this is the author's DID, not an https actor URI (#393).
+  /// Block matching depends on that: a Bluesky account block is stored as a DID
+  /// in BlockedActor, so it matches this column directly.
   actorUri    String
-  apId        String   @unique
+  /// Which network this came from: "fedi" or "bluesky". An explicit
+  /// discriminator rather than guessing from the shape of an id — the same
+  /// choice DirectMessage has made since it was written.
+  source      String   @default("fedi")
+  /// Exactly one of these identifies the post upstream. apId is nullable now
+  /// that Bluesky rows exist; Postgres allows many NULLs under a unique index,
+  /// so both stay uniquely keyed and both remain safe to upsert on.
+  apId        String?  @unique
+  bskyUri     String?  @unique // at:// URI for Bluesky rows
   content     String
   contentHtml String?
   mediaUrls   String[]
@@ -361,6 +372,7 @@ model FediPost {
   @@index([publishedAt])
   @@index([conversationId])
   @@index([inReplyTo])
+  @@index([source])
 }
 
 model FediInteraction {
@@ -554,6 +566,12 @@ model FailedCrosspost {
 model FailedDelivery {
   id          String    @id @default(cuid())
   inbox       String
+  /// Who this delivery was for, when that is knowable (#397). NULL for a shared
+  /// inbox, which serves many accounts and so identifies none of them — the same
+  /// distinction deliverToFollowers makes. Without it the retry sweep can only
+  /// ever ask "is this HOST blocked?", so an account block was enforced over
+  /// queued rows solely by a best-effort purge.
+  actorUri    String?
   activityId  String
   activity    String // the full activity JSON, re-sent verbatim so the id is stable (remote servers dedupe)
   attempts    Int       @default(0)

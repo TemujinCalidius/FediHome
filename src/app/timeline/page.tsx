@@ -9,6 +9,7 @@ import { isTinylyticsConfigured, getSiteStats, getLeaderboard, getRecentHits, ge
 import { siteConfig } from "@/../site.config";
 import TimelineClient from "./TimelineClient";
 import TimelineLogin from "./TimelineLogin";
+import { blockedPostFilter } from "@/lib/blocks";
 
 export const metadata = {
   title: "Timeline",
@@ -25,7 +26,10 @@ export default async function TimelinePage() {
   }
   // Fetch first page of timeline posts (top-level only for initial load)
   const fediPostsRaw = await prisma.fediPost.findMany({
-    where: { inReplyTo: null, boostedBy: null },
+    // Blocked actors excluded on read as well as at ingest (#396) — the purge
+    // is reversible by any path that writes a FediPost, so the feed shouldn't
+    // depend on it having held.
+    where: { inReplyTo: null, boostedBy: null, ...(await blockedPostFilter()) },
     orderBy: { publishedAt: "desc" },
     take: 21, // 20 + 1 to check for more
   });

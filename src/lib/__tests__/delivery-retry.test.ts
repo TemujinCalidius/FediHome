@@ -16,6 +16,8 @@ const row = (over: Record<string, unknown> = {}) => ({
   id: "d1", inbox: "https://m.example/inbox", activityId: "https://me/ap/create/1",
   activity: JSON.stringify({ id: "https://me/ap/create/1", type: "Create" }),
   attempts: 1, nextRetryAt: new Date("2026-07-06T11:58:00.000Z"), failedAt: null,
+  // Who the delivery was for (#397). NULL on a shared-inbox row.
+  actorUri: "https://m.example/users/ada",
   createdAt: new Date("2026-07-06T11:55:00.000Z"), ...over,
 });
 
@@ -43,7 +45,11 @@ describe("retryFailedDeliveries (#207)", () => {
   it("deletes a row on successful redelivery", async () => {
     mockDue([row()]);
     const r = await retryFailedDeliveries(NOW);
-    expect(deliverActivity).toHaveBeenCalledWith("https://m.example/inbox", { id: "https://me/ap/create/1", type: "Create" });
+    expect(deliverActivity).toHaveBeenCalledWith(
+      "https://m.example/inbox",
+      { id: "https://me/ap/create/1", type: "Create" },
+      { actorUri: "https://m.example/users/ada" },
+    );
     expect(prisma.failedDelivery.deleteMany).toHaveBeenCalledWith({ where: { id: "d1" } });
     expect(r.delivered).toBe(1);
   });
@@ -153,6 +159,52 @@ describe("permanent failures don't ride the 31-hour ladder (#379)", () => {
     expect(r.discarded).toBe(0);
     const call = vi.mocked(prisma.failedDelivery.updateMany).mock.calls.at(-1)?.[0] as { data: { nextRetryAt?: Date } };
     expect(call.data.nextRetryAt).toBeInstanceOf(Date);
+  });
+});
+
+describe("the sweep can enforce an ACCOUNT block, not just a host one (#397)", () => {
+  beforeEach(() => {
+    vi.mocked(prisma.failedDelivery.updateMany).mockResolvedValue({ count: 1 } as never);
+    vi.mocked(prisma.failedDelivery.deleteMany).mockResolvedValue({ count: 1 } as never);
+  });
+
+  it("passes the recipient, so blockedRecipient can check the actor at all", async () => {
+    // Without this the sweep called deliverActivity with two arguments,
+    // blockedRecipient saw actorUri: undefined, and only the DOMAIN half of the
+    // check could ever fire — an account block was unenforceable on replay.
+    mockDue([row({ actorUri: "https://m.example/users/mallory" })]);
+    vi.mocked(deliverActivity).mockResolvedValue({ ok: true, status: 202 } as never);
+
+    await retryFailedDeliveries(NOW);
+
+    expect(vi.mocked(deliverActivity).mock.calls[0][2]).toEqual({
+      actorUri: "https://m.example/users/mallory",
+    });
+  });
+
+  it("discards a row refused because the account is blocked", async () => {
+    mockDue([row({ actorUri: "https://m.example/users/mallory" })]);
+    vi.mocked(deliverActivity).mockResolvedValue({
+      ok: false, status: 0, error: "blocked: actor", permanent: true, blockedBy: "actor",
+    } as never);
+
+    const r = await retryFailedDeliveries(NOW);
+
+    expect(r.discarded).toBe(1);
+    expect(prisma.failedDelivery.deleteMany).toHaveBeenCalledWith({ where: { id: "d1" } });
+  });
+
+  it("passes null for a shared inbox rather than pinning one recipient to it", async () => {
+    // One delivery to a shared inbox serves everyone behind it, so suppressing
+    // it because a single recipient is blocked would withhold the post from all
+    // the others. purgeQueuedDeliveriesForInbox declines to purge a shared inbox
+    // for the same reason — the two agree by construction.
+    mockDue([row({ actorUri: null })]);
+    vi.mocked(deliverActivity).mockResolvedValue({ ok: true, status: 202 } as never);
+
+    await retryFailedDeliveries(NOW);
+
+    expect(vi.mocked(deliverActivity).mock.calls[0][2]).toEqual({ actorUri: null });
   });
 });
 

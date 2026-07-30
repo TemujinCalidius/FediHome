@@ -5,6 +5,7 @@ import { authenticateApiRequest } from "@/lib/auth";
 import { signedGet } from "@/lib/http-signatures";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { assertPublicHost } from "@/lib/url-guard";
+import { blockedActorUris, blockedPostFilter, isBlockedSender } from "@/lib/blocks";
 
 const MAX_DEPTH = 20;
 const MAX_CONTEXT = 200; // cap on remote thread posts ingested per view
@@ -28,10 +29,30 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "post not found" }, { status: 404 });
   }
 
+  // Bluesky rows have no apId and no AP thread endpoint to walk (#393). The
+  // conversation is already stored locally via conversationId, so serve that
+  // rather than trying to federate a thread that doesn't exist.
+  if (!startPost.apId) {
+    const thread = startPost.conversationId
+      ? await prisma.fediPost.findMany({
+          where: { conversationId: startPost.conversationId, ...(await blockedPostFilter()) },
+          orderBy: { publishedAt: "asc" },
+        })
+      : [startPost];
+    return NextResponse.json({
+      thread: thread.map((p) => ({
+        ...p,
+        publishedAt: p.publishedAt.toISOString(),
+        createdAt: p.createdAt.toISOString(),
+      })),
+    });
+  }
+  const startApId = startPost.apId;
+
   // Boost rows carry a synthetic id — thread the ORIGINAL post.
-  const sourceApId = startPost.apId.startsWith("boost:")
-    ? startPost.apId.match(/^boost:.*:(https?:\/\/.*)$/)?.[1] || startPost.apId
-    : startPost.apId;
+  const sourceApId = startApId.startsWith("boost:")
+    ? startApId.match(/^boost:.*:(https?:\/\/.*)$/)?.[1] || startApId
+    : startApId;
 
   // PREFERRED: pull the whole conversation (everyone's replies) from the origin
   // instance's Mastodon-API context endpoint, ingesting each post locally.
@@ -54,12 +75,16 @@ export async function GET(req: NextRequest) {
       depth++;
     }
 
-    const threadApIds = [...ancestors.map((p) => p.apId), startPost.apId];
+    // Bluesky rows in the same reply chain have no apId; drop them from the
+    // ancestor id list rather than passing nulls into an `in` clause.
+    const threadApIds = [...ancestors.map((p) => p.apId), startApId].filter(
+      (a): a is string => a !== null,
+    );
     const replies = await prisma.fediPost.findMany({
       where: { inReplyTo: { in: threadApIds } },
       orderBy: { publishedAt: "asc" },
     });
-    const replyApIds = replies.map((r) => r.apId);
+    const replyApIds = replies.map((r) => r.apId).filter((a): a is string => a !== null);
     const deepReplies =
       replyApIds.length > 0
         ? await prisma.fediPost.findMany({
@@ -83,8 +108,9 @@ function dedupe(posts: NonNullable<FediPostRow>[]): NonNullable<FediPostRow>[] {
   const seen = new Set<string>();
   const out: NonNullable<FediPostRow>[] = [];
   for (const p of posts) {
-    if (p && !seen.has(p.apId)) {
-      seen.add(p.apId);
+    // Keyed on id, not apId: Bluesky rows have no apId, and id is unique for both.
+    if (p && !seen.has(p.id)) {
+      seen.add(p.id);
       out.push(p);
     }
   }
@@ -110,6 +136,9 @@ async function fetchThreadViaMastodon(
   const id = u.pathname.split("/").filter(Boolean).pop();
   if (!id) return null;
   const ctxUrl = `${u.origin}/api/v1/statuses/${encodeURIComponent(id)}/context`;
+  // Before any network contact: a domain-blocked instance must not be asked for
+  // a thread, the same reasoning follow() uses for its pre-WebFinger check.
+  if (await isBlockedSender(apId)) return null;
   if (!(await assertPublicHost(ctxUrl))) return null;
 
   let ctx: { ancestors?: unknown; descendants?: unknown };
@@ -134,8 +163,18 @@ async function fetchThreadViaMastodon(
   // The queried status isn't in its own context — map it so direct replies link.
   idToUri.set(String(id), apId);
 
+  // One batch check over the whole context before anything is written (#396).
+  // This route had no block gate at all, so opening a thread re-imported posts
+  // that block() had purged — and a re-imported thread ROOT is a top-level row,
+  // so it came back in /timeline permanently, not just in the thread view.
+  const contextActors = [...(anc || []), ...(desc || [])]
+    .map((s) => s?.account?.uri)
+    .filter((u): u is string => !!u);
+  const blocked = await blockedActorUris(contextActors);
+
   const ingest = async (s: MastoStatus): Promise<NonNullable<FediPostRow> | null> => {
     if (!s?.uri || !s.account?.uri) return null;
+    if (blocked.has(s.account.uri)) return null;
     const safe = sanitizeHtml(s.content || "");
     const media = (s.media_attachments || []).filter((m) => m?.url);
     const mediaUrls = media.map((m) => m.url!);
@@ -199,6 +238,12 @@ async function fetchRemoteNote(apId: string) {
   try {
     // Signed GET — most servers run authorized-fetch and 401 unsigned requests,
     // which is why "View thread" on a reply to someone else loaded no ancestors.
+    //
+    // The block check comes FIRST, before the request rather than before the
+    // write (#396): a signed GET to a blocked host is exactly the outbound
+    // contact #379 was opened to stop, and the note's own id is enough to
+    // decide the domain half.
+    if (await isBlockedSender(apId)) return null;
     if (!(await assertPublicHost(apId))) return null;
     const res = await signedGet(apId, 6000);
     if (!res.ok) return null;
@@ -209,6 +254,9 @@ async function fetchRemoteNote(apId: string) {
     // Fetch actor info
     const actorUri = note.attributedTo as string;
     if (!actorUri || !(await assertPublicHost(actorUri))) return null;
+    // The note's host and its author's host can differ, so re-check on the
+    // author before fetching their profile and before the upsert below.
+    if (await isBlockedSender(actorUri)) return null;
 
     const actorRes = await signedGet(actorUri, 6000);
     if (!actorRes.ok) return null;

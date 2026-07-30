@@ -71,6 +71,20 @@ CREATE TABLE IF NOT EXISTS "${LEDGER}" (
 const say = (m) => console.log(`  ${m}`);
 const warn = (m) => console.log(`  ⚠️  ${m}`);
 
+/**
+ * Is this failure just "the schema doesn't exist yet"? (#410)
+ *
+ * On a FRESH database the first pass runs before `db push` has created any
+ * tables, so every file that ALTERs one fails — expected, not exceptional. It
+ * used to print two ⚠️ lines per file, so a brand-new install's very first boot
+ * showed twenty warnings and read as a failed install. The pass that runs after
+ * `db push` applies them for real.
+ *
+ * 42P01 undefined_table, 42703 undefined_column. Matching the SQLSTATE rather
+ * than the message text, which is localised.
+ */
+const NOT_READY_CODES = new Set(["42P01", "42703"]);
+
 function readMigrations() {
   if (!existsSync(DIR)) return null;
   return readdirSync(DIR)
@@ -145,6 +159,7 @@ async function main() {
 
     let ok = 0;
     let failed = 0;
+    let notReady = 0;
     for (const m of run) {
       const file = files.find((f) => f.name === m.name);
       say(`Applying ${m.name}…`);
@@ -164,14 +179,21 @@ async function main() {
         ok++;
       } catch (err) {
         await client.query("ROLLBACK").catch(() => {});
-        failed++;
-        warn(`Could not apply ${m.name}: ${err.message}`);
-        warn("Continuing; the 'db push' that follows will reconcile or report the cause.");
+        if (NOT_READY_CODES.has(err.code)) {
+          notReady++;
+          say(`${m.name} — not applicable yet; will apply once the schema exists.`);
+        } else {
+          failed++;
+          warn(`Could not apply ${m.name}: ${err.message}`);
+          warn("Continuing; the 'db push' that follows will reconcile or report the cause.");
+        }
       }
     }
 
-    const tail = failed > 0 ? `, ${failed} could not be applied (see above)` : "";
-    say(`Applied ${ok} migration(s)${tail}.`);
+    const parts = [];
+    if (notReady > 0) parts.push(`${notReady} waiting for the schema`);
+    if (failed > 0) parts.push(`${failed} could not be applied (see above)`);
+    say(`Applied ${ok} migration(s)${parts.length ? `, ${parts.join(", ")}` : ""}.`);
   } finally {
     if (locked) await client.query("SELECT pg_advisory_unlock($1)", [ADVISORY_LOCK_KEY]).catch(() => {});
     await client.end().catch(() => {});

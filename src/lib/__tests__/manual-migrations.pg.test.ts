@@ -3,28 +3,30 @@ import { execFileSync } from "node:child_process";
 import pg from "pg";
 
 /**
- * The manual migrations, executed against a real Postgres (#384).
+ * The manual migrations, executed against a real Postgres (#384, #410).
  *
- * Everything else in this suite mocks `@/lib/db`, so the SQL that actually runs
- * on every install had never been executed by a test. That is exactly how #384
- * shipped: the offending file's own header asserted idempotency, and nothing
- * checked.
+ * Everything else in this suite mocks `@/lib/db`, so the SQL that runs on every
+ * install had never been run by a test. That is exactly how #384 shipped: the
+ * offending file's own header asserted idempotency, and nothing checked.
  *
- * Two acts, mirroring the two states a real database can be in:
+ * Three acts, mirroring the three states a real database can be in:
  *
- *   1. `federatedAt` doesn't exist yet — the column is created and the one-shot
- *      backfill runs. This is the path the guard in
- *      2026-07-03-post-delivery-markers.sql fences.
- *   2. The column exists and the app is live. Nothing may be touched except rows
- *      the old ungated backfill damaged.
+ *   1. **Fresh** — nothing exists. The pre-`db push` pass can only report that
+ *      it isn't applicable yet; the pass AFTER schema creation does the work.
+ *      This act is #410: before it was fixed those files applied only on the
+ *      *next* boot, which nobody is told to perform.
+ *   2. **Upgrade** — a pre-migration schema, every table present. One pass
+ *      applies everything.
+ *   3. **Live** — the app is running, and the #384 fixtures must survive.
  *
- * The fixture that matters most is `inflight`: a post that is mid-delivery right
- * now. Against the pre-fix file it gets marked delivered — the whole of #384 in
- * one row.
+ * Every act asserts the output carries **no failures**. That matters more than
+ * it sounds: `Applied 8 migration(s), 7 could not be applied` matches
+ * `/Applied \d+ migration\(s\)/` perfectly happily, which is how this file
+ * stayed green for days while seven files failed on every single run.
  *
  * The schema is built with raw SQL rather than `prisma db push`, deliberately:
  * this tests the migrations, not Prisma's schema sync, and starting from a
- * pre-migration shape is what lets act 1 exist at all.
+ * pre-migration shape is what lets acts 1 and 2 exist at all.
  *
  * Skipped unless FEDIHOME_TEST_DATABASE_URL points at a scratch database.
  */
@@ -38,18 +40,28 @@ const WITNESS = at("2026-07-10T10:00:00.000Z");
 const WITNESS_MARKER = new Date(WITNESS.getTime() + 42_000);
 const CLOBBERED = at("2026-07-20T10:00:00.000Z");
 
-/** The `Post` shape as it stood BEFORE 2026-07-03 — no markers. */
-const PRE_MIGRATION_SCHEMA = `
-DROP TABLE IF EXISTS "Post";
-DROP TABLE IF EXISTS "ManualMigration";
-CREATE TABLE "Post" (
-  "id"           TEXT PRIMARY KEY,
-  "slug"         TEXT NOT NULL,
-  "published"    BOOLEAN NOT NULL DEFAULT true,
-  "publishedAt"  TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "updatedAt"    TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  "scheduledFor" TIMESTAMP(3)
-);`;
+/** Every table the migrations ALTER, in the shape it had before they ran. */
+const TABLES = [
+  `CREATE TABLE "Post" (
+     "id" TEXT PRIMARY KEY, "slug" TEXT NOT NULL,
+     "published" BOOLEAN NOT NULL DEFAULT true,
+     "publishedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     "scheduledFor" TIMESTAMP(3))`,
+  // apId NOT NULL on purpose: 2026-07-29-fedipost-bluesky-source drops that
+  // constraint, so the column has to start out carrying it.
+  `CREATE TABLE "FediPost" ("id" TEXT PRIMARY KEY, "apId" TEXT NOT NULL)`,
+  `CREATE TABLE "FediInteraction" ("id" TEXT PRIMARY KEY)`,
+  `CREATE TABLE "FediFollowing" ("id" TEXT PRIMARY KEY)`,
+  `CREATE TABLE "AuthToken" ("id" TEXT PRIMARY KEY)`,
+  `CREATE TABLE "SiteSettings" ("id" TEXT PRIMARY KEY)`,
+];
+
+/** Everything the migrations themselves create, plus the ledger. */
+const MIGRATION_OWNED = [
+  "PushSubscription", "BlueskyInteraction", "AuthorizationCode", "AppTokenUsage",
+  "BlockedActor", "FailedDelivery", "FailedCrosspost", "BlockedDomain", "ManualMigration",
+];
 
 describe.skipIf(!URL)("manual migrations against real Postgres", () => {
   let client: pg.Client;
@@ -59,6 +71,15 @@ describe.skipIf(!URL)("manual migrations against real Postgres", () => {
       encoding: "utf8",
       env: { ...process.env, DATABASE_URL: URL },
     });
+
+  /** Back to genuinely nothing — the state a brand-new install starts from. */
+  const wipe = async () => {
+    const names = [...TABLES.map((t) => t.match(/"([^"]+)"/)![1]), ...MIGRATION_OWNED];
+    await client.query(names.map((n) => `DROP TABLE IF EXISTS "${n}" CASCADE;`).join("\n"));
+  };
+
+  /** Stands in for `prisma db push`, which won't run under an agent. */
+  const createSchema = () => client.query(TABLES.join(";\n") + ";");
 
   const insert = (id: string, publishedAt: Date, federatedAt: Date | null, withMarker = true) =>
     client.query(
@@ -75,51 +96,106 @@ describe.skipIf(!URL)("manual migrations against real Postgres", () => {
     return rows[0].federatedAt;
   };
 
+  const ledgerCount = async (): Promise<number> => {
+    const { rows } = await client.query(`SELECT count(*)::int AS n FROM "ManualMigration"`);
+    return rows[0].n;
+  };
+
+  const fileCount = (): number =>
+    Number(
+      execFileSync("sh", ["-c", "ls prisma/manual-migrations/*.sql | wc -l"], {
+        encoding: "utf8",
+      }).trim(),
+    );
+
   beforeAll(async () => {
     client = new pg.Client({ connectionString: URL });
     await client.connect();
-    await client.query(PRE_MIGRATION_SCHEMA);
   });
 
   afterAll(async () => {
     await client?.end().catch(() => {});
   });
 
-  describe("act 1 — the column does not exist yet", () => {
-    it("creates federatedAt and backfills pre-markers scheduled posts, exactly once", async () => {
-      await insert("pre-markers", PRE_MARKERS, null, false);
+  describe("act 1 — a fresh install (#410)", () => {
+    let firstPass = "";
+    let secondPass = "";
 
-      const out = runMigrations();
-      expect(out).toMatch(/Applied \d+ migration\(s\)/);
+    beforeAll(async () => {
+      await wipe();
+      firstPass = runMigrations(); //  the pre-`db push` pass
+      await createSchema(); //         stands in for `db push`
+      secondPass = runMigrations(); // the pass that now runs after it
+    });
 
-      // The one-shot backfill inside the creation guard: this post really had
-      // already delivered before markers existed, so it must not be re-sent.
-      expect(await marker("pre-markers")).toEqual(PRE_MARKERS);
+    it("says the schema isn't ready rather than reporting failures", () => {
+      // Twenty ⚠️ lines on a brand-new install read as a broken install. They
+      // aren't failures — there is simply nothing to alter yet.
+      expect(firstPass).toMatch(/not applicable yet/);
+      expect(firstPass).not.toMatch(/could not be applied/);
+      expect(firstPass).not.toMatch(/⚠️/);
+    });
+
+    it("applies everything in the SAME boot, once the schema exists", async () => {
+      // The whole of #410: these used to land only on the next restart.
+      expect(secondPass).not.toMatch(/could not be applied/);
+      expect(secondPass).not.toMatch(/not applicable yet/);
+      expect(await ledgerCount()).toBe(fileCount());
+    });
+
+    it("is a fixed point straight away — no third boot needed", () => {
+      const third = runMigrations();
+      expect(third).toMatch(/Applied 0 migration\(s\)\./);
+      expect(third).not.toMatch(/could not be applied/);
     });
   });
 
-  describe("act 2 — the column exists and the app is live", () => {
+  describe("act 2 — an upgrade, every table already present", () => {
+    let out = "";
+
+    beforeAll(async () => {
+      await wipe();
+      await createSchema();
+      await insert("pre-markers", PRE_MARKERS, null, false);
+      out = runMigrations();
+    });
+
+    it("applies every file in one pass, with no failures", () => {
+      expect(out).not.toMatch(/could not be applied/);
+      expect(out).not.toMatch(/not applicable yet/);
+      expect(out).toMatch(new RegExp(`Applied ${fileCount()} migration\\(s\\)\\.`));
+    });
+
+    it("runs the creation-guarded backfill for real", async () => {
+      // The pattern the README mandates. On a fresh install under the OLD
+      // ordering this guard was pre-satisfied by `db push` and the body never
+      // ran — silently, since the RAISE NOTICE never fired either.
+      expect(await marker("pre-markers")).toEqual(PRE_MARKERS);
+      expect(out).toMatch(/federatedAt created and backfilled/);
+    });
+  });
+
+  describe("act 3 — the app is live (#384)", () => {
     beforeAll(async () => {
       await client.query(`DELETE FROM "Post"`);
-      // Legitimate pre-#195 backfill: carries the same signature as damage, but
-      // predates any marker this install ever wrote from code.
+      // Legitimate pre-#195 backfill: same signature as damage, but it predates
+      // any marker this install ever wrote from code.
       await insert("legit", LEGIT_BACKFILL, LEGIT_BACKFILL);
-      // A genuine delivery — the marker lands 42s after publication. This is the
-      // witness proving the install was writing markers from code by then.
+      // A genuine delivery — marker 42s after publication. The witness proving
+      // the install was writing markers from code by then.
       await insert("witness", WITNESS, WITNESS_MARKER);
-      // Clobbered by the old ungated backfill while it was still in flight.
+      // Clobbered by the old ungated backfill while still in flight.
       await insert("clobbered", CLOBBERED, CLOBBERED);
       // Mid-delivery RIGHT NOW: claimed, not yet federated.
       await insert("inflight", new Date(), null);
 
-      // Force a re-apply: the ledger recorded act 1's run.
-      await client.query(`DELETE FROM "ManualMigration"`);
+      await client.query(`DELETE FROM "ManualMigration"`); // force a re-apply
       runMigrations();
     });
 
     it("leaves a post that is mid-delivery right now completely alone", async () => {
-      // THE regression test. The pre-fix backfill sets this, which both marks an
-      // undelivered post as delivered and removes it from the retry sweep.
+      // THE #384 regression test. The pre-fix backfill sets this, which both
+      // marks an undelivered post as delivered and removes it from the sweep.
       expect(await marker("inflight")).toBeNull();
     });
 
@@ -128,10 +204,8 @@ describe.skipIf(!URL)("manual migrations against real Postgres", () => {
     });
 
     it("does not touch the legitimate pre-markers backfill", async () => {
-      // Held out by the EXISTS witness: nothing published before 2026-06-01
-      // carries a prompt marker, so this row can't be proved to be damage. Drop
-      // that clause and this fails — and a false positive here costs the owner a
-      // duplicate Bluesky post.
+      // Held out by the EXISTS witness. Drop that clause and this fails — and a
+      // false positive here costs the owner a duplicate Bluesky post.
       expect(await marker("legit")).toEqual(LEGIT_BACKFILL);
     });
 
@@ -142,7 +216,8 @@ describe.skipIf(!URL)("manual migrations against real Postgres", () => {
     it("is a fixed point — a second run applies nothing and changes nothing", async () => {
       const before = await client.query(`SELECT "id","federatedAt" FROM "Post" ORDER BY "id"`);
       const out = runMigrations();
-      expect(out).toMatch(/Applied 0 migration\(s\)/);
+      expect(out).toMatch(/Applied 0 migration\(s\)\./);
+      expect(out).not.toMatch(/could not be applied/);
       const after = await client.query(`SELECT "id","federatedAt" FROM "Post" ORDER BY "id"`);
       expect(after.rows).toEqual(before.rows);
     });
@@ -150,7 +225,7 @@ describe.skipIf(!URL)("manual migrations against real Postgres", () => {
     it("re-applies a file whose content changed, without touching the others", async () => {
       await client.query(`UPDATE "ManualMigration" SET "hash" = 'stale' WHERE "name" LIKE '%repair-federatedat%'`);
       const out = runMigrations();
-      expect(out).toMatch(/Applied 1 migration\(s\)/);
+      expect(out).toMatch(/Applied 1 migration\(s\)\./);
     });
   });
 

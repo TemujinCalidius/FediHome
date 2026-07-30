@@ -67,8 +67,12 @@ describe("pruneStaleFediPosts (#240)", () => {
     expect(ownedWhere).toEqual({ isOutgoing: true }); // we only READ our own posts, never delete them
 
     const candWhere = vi.mocked(prisma.fediPost.findMany).mock.calls[1][0]?.where as Record<string, unknown>;
-    // The remote post our reply replies to is spared by apId…
-    expect(candWhere.apId).toEqual({ notIn: ["https://remote/parent"] });
+    // The remote post our reply replies to is spared by apId — OR'd with
+    // `apId: null` because Bluesky rows have none (#393) and `notIn` skips NULLs
+    // in SQL, which would otherwise exempt every Bluesky post from pruning.
+    expect(candWhere.AND).toEqual([
+      { OR: [{ apId: null }, { apId: { notIn: ["https://remote/parent"] } }] },
+    ]);
     // …and threads we're part of are spared by conversationId (null rows still prunable),
     // including the thread rooted at our own post's apId.
     expect(candWhere.OR).toEqual([

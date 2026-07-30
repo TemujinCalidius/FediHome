@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 const {
   getSchedulerConfig, getEffectiveSchedulerConfig,
   publishDueScheduledPosts, syncBlueskyGraph, pollBlueskyDMs, syncBlueskyNotifications, retryFailedDeliveries, retryFailedCrossposts, pruneStaleFediPosts,
-  measureStorageUsage, trimFediStorage,
+  measureStorageUsage, trimFediStorage, syncBlueskyFeed,
 } = vi.hoisted(() => ({
   getSchedulerConfig: vi.fn(),
   getEffectiveSchedulerConfig: vi.fn(),
@@ -16,6 +16,7 @@ const {
   pruneStaleFediPosts: vi.fn(),
   measureStorageUsage: vi.fn(),
   trimFediStorage: vi.fn(),
+  syncBlueskyFeed: vi.fn(),
 }));
 vi.mock("@/lib/scheduler-config", () => ({ getSchedulerConfig, getEffectiveSchedulerConfig }));
 vi.mock("@/lib/publish-post", () => ({ publishDueScheduledPosts }));
@@ -28,6 +29,8 @@ vi.mock("@/lib/fedi-retention", () => ({ pruneStaleFediPosts }));
 // The storage scan walks the real filesystem; without this it would stall the
 // tick under fake timers and the jobs after it would never dispatch.
 vi.mock("@/lib/storage-usage", () => ({ measureStorageUsage }));
+// The Bluesky sync now imports the following feed too (#393).
+vi.mock("@/lib/bluesky-feed", () => ({ syncBlueskyFeed }));
 vi.mock("@/lib/fedi-media", () => ({ trimFediStorage }));
 
 import { startScheduler, runPublishTick, runBlueskySyncTick, runDeliveryRetryTick, runCrosspostRetryTick, runRetentionSweepTick, runStorageScanTick } from "@/lib/scheduler";
@@ -50,6 +53,7 @@ beforeEach(() => {
   getEffectiveSchedulerConfig.mockResolvedValue(cfg());
   publishDueScheduledPosts.mockResolvedValue(0);
   syncBlueskyGraph.mockResolvedValue({ followers: 1, following: 2 });
+  syncBlueskyFeed.mockResolvedValue({ fetched: 0, imported: 0, skippedBlocked: 0 });
   pollBlueskyDMs.mockResolvedValue({ messages: 0 });
   syncBlueskyNotifications.mockResolvedValue({ pushed: 0 });
   retryFailedDeliveries.mockResolvedValue({ claimed: 0, delivered: 0, gaveUp: 0, pruned: 0 });

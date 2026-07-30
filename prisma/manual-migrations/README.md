@@ -1,8 +1,19 @@
 # Manual migrations
 
-Hand-written SQL applied by `scripts/apply-migrations.sh` **before** every
-`prisma db push`, on both the container path (`Dockerfile` `CMD`) and the
-bare-metal one (`update.sh`).
+Hand-written SQL applied by `scripts/apply-migrations.sh` **either side of**
+every `prisma db push`, on both the container path (`Dockerfile` `CMD`) and the
+bare-metal one (`update.sh`). `install.sh` runs it once, after `db push`.
+
+**Why two passes (#410).** The pass *before* `db push` is what stops `db push`
+tripping its data-loss guard on an upgrade. But on a **fresh** database there is
+nothing to prepare and every file that ALTERs a table can only fail — so before
+this they applied on the *next* boot, which nobody is told to perform. Worse, the
+creation-guard pattern below was silently disarmed by that ordering: the guarded
+body failed on boot 1, `db push` then created the column, and on boot 2 the guard
+was false, so the body never ran at all — and the `RAISE NOTICE` never fired
+either, so nothing in the log said so.
+
+The second pass costs one connection and a ledger read on an upgrade.
 
 ## Why this directory exists
 

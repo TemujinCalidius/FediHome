@@ -98,3 +98,35 @@ describe("enqueueFailedDeliveries", () => {
     consoleErr.mockRestore();
   });
 });
+
+describe("the queued row remembers who it was for (#397)", () => {
+  it("carries the actor URI for a private inbox", async () => {
+    // It was dropped twice before: once by the shared-inbox collapsing, and
+    // again because the failure record had no field for it. So FailedDelivery
+    // rows never knew their recipient and the retry sweep could only ever ask
+    // "is this HOST blocked?".
+    vi.mocked(prisma.fediFollower.findMany).mockResolvedValue([
+      { actorUri: "https://m.example/users/ada", inbox: "https://m.example/users/ada/inbox", sharedInbox: null },
+    ] as never);
+    global.fetch = vi.fn(async () => new Response("oops", { status: 500 })) as unknown as typeof fetch;
+
+    await deliverToFollowers(activity);
+
+    const create = vi.mocked(prisma.failedDelivery.upsert).mock.calls[0][0].create as { actorUri: string | null };
+    expect(create.actorUri).toBe("https://m.example/users/ada");
+  });
+
+  it("stores null for a shared inbox", async () => {
+    // A shared inbox serves many accounts and identifies none of them.
+    vi.mocked(prisma.fediFollower.findMany).mockResolvedValue([
+      { actorUri: "https://m.example/users/ada", inbox: "https://m.example/users/ada/inbox", sharedInbox: "https://m.example/inbox" },
+    ] as never);
+    global.fetch = vi.fn(async () => new Response("oops", { status: 500 })) as unknown as typeof fetch;
+
+    await deliverToFollowers(activity);
+
+    const create = vi.mocked(prisma.failedDelivery.upsert).mock.calls[0][0].create as { actorUri: string | null };
+    expect(create.actorUri).toBeNull();
+  });
+});
+

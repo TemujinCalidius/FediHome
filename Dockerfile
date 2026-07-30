@@ -79,6 +79,18 @@ ENTRYPOINT ["sh", "/app/scripts/docker-entrypoint.sh"]
 # which is how a data backfill came to overwrite live delivery state. See
 # prisma/manual-migrations/README.md.
 #
+# TWO passes, one either side of `db push` (#410). The pre-push pass is what
+# stops `db push` tripping its data-loss guard on an upgrade. But on a FRESH
+# database there is nothing to prepare and every file that ALTERs a table fails,
+# so before this they only applied on the NEXT boot — nobody is told to perform
+# one. Worse, the sanctioned creation-guard pattern is silently disarmed by that
+# ordering: the guarded body fails on boot 1, `db push` then creates the column,
+# and on boot 2 the guard is false, so the body never runs at all.
+#
+# The post-push pass costs one connection and a ledger read on an upgrade,
+# because the content-hashed ledger (#384) skips everything already applied. It
+# is safe to run twice for the same reason.
+#
 # If `db push` fails, say so plainly instead of letting `&&` short-circuit into
 # a bare crash-loop with no explanation.
-CMD ["sh", "-c", "sh scripts/apply-migrations.sh && { npx prisma db push || { echo '\n✗ Database update failed. Common causes: DATABASE_URL missing or wrong, the database unreachable, or a change that would drop data (Prisma refuses by default). See the error above.\n' >&2; exit 1; }; } && node server.js"]
+CMD ["sh", "-c", "sh scripts/apply-migrations.sh && { npx prisma db push || { echo '\n✗ Database update failed. Common causes: DATABASE_URL missing or wrong, the database unreachable, or a change that would drop data (Prisma refuses by default). See the error above.\n' >&2; exit 1; }; } && sh scripts/apply-migrations.sh && node server.js"]

@@ -177,6 +177,11 @@ if ! npx prisma db push; then
   echo "  See the error above and CHANGELOG.md for details."
   exit 1
 fi
+# Second pass, after the schema exists (#410). A no-op on a normal upgrade — the
+# content-hashed ledger skips everything already applied — but it means a file
+# that needed a table `db push` had yet to create still lands in this run rather
+# than the next one.
+sh scripts/apply-migrations.sh
 npx prisma generate >/dev/null 2>&1 || npx prisma generate
 ok "Schema is current"
 

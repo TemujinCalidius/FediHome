@@ -358,8 +358,11 @@ async function purgeQueuedDeliveriesForInbox(inbox: string | null | undefined): 
     if (followers + following > 0) return; // shared — leave the queue alone
     await prisma.failedDelivery.deleteMany({ where: { inbox } });
   } catch {
-    // The retry sweep now refuses blocked recipients anyway, so a failure here
-    // costs a little wasted work, never a delivery.
+    // Best-effort. Since #397 the queued rows carry the recipient, so the retry
+    // sweep refuses a blocked ACCOUNT as well as a blocked host and a failure
+    // here costs wasted work rather than a delivery. Rows queued before that
+    // column existed have no actorUri and fall back to the host check — for
+    // those, this purge is still the only thing enforcing an account block.
   }
 }
 

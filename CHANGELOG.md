@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.23.0 (2026-07-30)
+
+### Added
+- **Posts from the people you follow on Bluesky now show up** (#393) — following someone on Bluesky imported their name and their avatar and then nothing else: their posts never arrived, because nothing had ever asked for them. FediHome now pulls your Bluesky Following feed on the same schedule as the rest of the Bluesky sync, and those posts sit in your timeline alongside federated ones. Replies and reposts land as replies and boosts, so the toggles you already have work on them. Images are cached locally rather than hot-linked, blocked accounts are skipped — including when someone you follow reposts them — and your own posts are left out so they don't appear twice. **Liking, boosting and replying work too** — a like from your timeline is a real Bluesky like, and shows up in the Bluesky app straight away. If you already liked something over there, the heart is already lit here.
+
+### Changed
+- Dependency refresh: `postcss` 8.5.24.
+
+### Fixed
+- **A brand-new Docker install no longer looks like it failed** (#410) — the hand-written database migrations ran before the tables they change existed, so a first boot printed twenty warnings and then applied them only on the *next* restart, which nothing told you to perform. They now run either side of the schema sync, so a fresh install is fully set up in one boot and says "waiting for the schema" instead of "could not be applied". `install.sh` applies them too, so your first `npm run update` isn't the run that does nineteen at once.
+- **The macOS app keeps working while it catches up** — importing Bluesky posts changed the shape of a post (they have no ActivityPub id), and an app that expects one gets an empty feed rather than a partial one. Bluesky posts are therefore left out of the app's feed until the app asks for them, so nothing breaks for anyone running the current version.
+- **A queued post could still reach someone you'd just blocked** (#397) — when a follower's server is down, the post waits in a retry queue. Those queued items recorded only where they were going, not who they were for, so on retry FediHome could tell whether you'd blocked the whole *server* but not whether you'd blocked the *person*. Blocking normally clears the queue immediately; if that clean-up failed at the wrong moment, the post kept being re-sent to them for the next day and a half. The queue now remembers the recipient, so the retry makes the same decision the first attempt would have.
+- **Opening a thread could bring back someone you'd blocked** (#396) — blocking removes that person's posts from your instance, but viewing a conversation they'd replied in fetched the whole thread from the other server and wrote their posts straight back. If the post it re-imported was the start of the thread, it reappeared in your main feed and stayed there. Your instance was also making signed requests to servers you'd blocked in order to do it. Both are now checked before anything is fetched or stored, and blocked accounts are additionally filtered out of the feed on the way to the screen — so a block holds even if some future path forgets to ask.
+
 ## 1.22.0 (2026-07-29)
 
 ### Added
