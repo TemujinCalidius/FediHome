@@ -4,8 +4,10 @@
 
 ### Added
 - **You're now offered a real password instead of typing a 64-character key forever** (#411) — if you sign in with your `ADMIN_SECRET`, FediHome now says so and offers to set a proper password, rather than leaving you to discover the option buried in Site settings. It's an offer, not a wall: "Not now" gets you straight in, and your saved Bluesky, Threads and notification credentials are unaffected either way.
-
 - **FediHome now tells you when there's an update — without you having to ask** (#399) — the update check has always existed, and nothing ever ran it. So the notification bell was wired to a source that only produced anything if you happened to run `npm run check-updates` by hand, which nothing tells you to do: an instance simply never heard about a new release or a security advisory. It now runs daily on its own, and **Admin → Instance settings** has a **Check now** button plus a toggle if you'd rather your instance didn't call out to the npm registry and GitHub. It remembers when it last ran, so restarting doesn't re-run it and a box that restarts every night doesn't skip it forever.
+
+### Changed
+- Dependency refresh: `@fedify/fedify` and `@fedify/next` 2.3.4, `postcss` 8.5.25. (`typescript` remains held at 6.x — see #234.)
 
 ### Fixed
 - **Update instructions that actually work on your install** (#398) — the "FediHome update available" alert told everyone to run `npm run update`. In Docker that command **refuses**, because the image deliberately has no git history — so the advice looked like the update was broken when it was only the instructions. It now tells you what applies to your install: the updater for a git checkout, `docker compose pull && docker compose up -d` **on the host** for a container, and the manual steps for a release-archive install. `npm run update` inside a container now explains this instead of saying the folder doesn't look like FediHome. The README and deployment docs say the same thing.
