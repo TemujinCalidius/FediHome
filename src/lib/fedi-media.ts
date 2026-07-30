@@ -2,6 +2,7 @@ import { writeFile, mkdir, readdir, stat, unlink } from "fs/promises";
 import path from "path";
 import sharp from "sharp";
 import { isPrivateUrl, assertPublicHost } from "./url-guard";
+import { guardedFetch } from "./safe-fetch";
 import { ensureUploadDir, uploadsDir, resolveUploadPath } from "./uploads-dir";
 
 export { isPrivateUrl, assertPublicHost };
@@ -15,9 +16,12 @@ const MAX_HTML_BYTES = 1 * 1024 * 1024; // 1MB for OG-fetch
 const SHARP_MAX_PIXELS = 100_000_000;
 
 /**
- * Fetch a URL with SSRF + size + redirect protection. Returns null on any
- * policy violation or transport error. Manually follows up to MAX_REDIRECT_HOPS
- * redirects, re-checking each hop against isPrivateUrl.
+ * Fetch a URL with SSRF + size + redirect protection. Returns null on any policy
+ * violation or transport error.
+ *
+ * Redirects and the per-hop host check are delegated to `guardedFetch`
+ * (safe-fetch.ts); this function owns the byte cap and content-type rules, which
+ * are specific to media and apply to the final response only.
  */
 async function safeFetch(
   url: string,
@@ -28,73 +32,63 @@ async function safeFetch(
     rejectContentTypeContains?: string;
   }
 ): Promise<{ buffer: Buffer; contentType: string; finalUrl: string } | null> {
-  let current = url;
-  for (let hop = 0; hop < MAX_REDIRECT_HOPS; hop++) {
-    // DNS-resolve and reject anything that points at private/loopback/etc.
-    // Doing this on every redirect hop closes the rebinding/redirect-chain
-    // SSRF (H1).
-    if (!(await assertPublicHost(current))) return null;
-    let res: Response;
-    try {
-      res = await fetch(current, {
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-        redirect: "manual",
-        headers: opts.accept ? { Accept: opts.accept } : undefined,
-      });
-    } catch {
-      return null;
-    }
-    if (res.status >= 300 && res.status < 400) {
-      const loc = res.headers.get("location");
-      if (!loc) return null;
-      try {
-        current = new URL(loc, current).toString();
-      } catch {
+  // The hop-following and per-hop host check now live in safe-fetch.ts, which was
+  // written from THIS loop after eight sibling call sites turned out to be missing
+  // it. Delegating rather than keeping a second copy is the whole point — see the
+  // note in safe-fetch.ts about a rule that only some paths enforce.
+  let res: Response;
+  try {
+    res = await guardedFetch(url, {
+      crossOrigin: true, //  media legitimately redirects to a CDN on another host
+      label: "media fetch",
+      timeoutMs: FETCH_TIMEOUT_MS,
+      maxHops: MAX_REDIRECT_HOPS,
+      init: opts.accept ? { headers: { Accept: opts.accept } } : {},
+    });
+  } catch {
+    return null;
+  }
+
+  const finalUrl = res.url || url;
+  if (!res.ok) return null;
+
+  const contentType = res.headers.get("content-type") || "";
+  if (opts.contentTypePrefix && !contentType.startsWith(opts.contentTypePrefix)) {
+    return null;
+  }
+  if (
+    opts.rejectContentTypeContains &&
+    contentType.toLowerCase().includes(opts.rejectContentTypeContains)
+  ) {
+    return null;
+  }
+
+  const declared = parseInt(res.headers.get("content-length") || "0", 10);
+  if (declared > opts.maxBytes) return null;
+
+  const reader = res.body?.getReader();
+  if (!reader) return null;
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      total += value.byteLength;
+      if (total > opts.maxBytes) {
+        await reader.cancel();
         return null;
       }
-      continue;
+      chunks.push(value);
     }
-    if (!res.ok) return null;
-
-    const contentType = res.headers.get("content-type") || "";
-    if (opts.contentTypePrefix && !contentType.startsWith(opts.contentTypePrefix)) {
-      return null;
-    }
-    if (
-      opts.rejectContentTypeContains &&
-      contentType.toLowerCase().includes(opts.rejectContentTypeContains)
-    ) {
-      return null;
-    }
-
-    const declared = parseInt(res.headers.get("content-length") || "0", 10);
-    if (declared > opts.maxBytes) return null;
-
-    const reader = res.body?.getReader();
-    if (!reader) return null;
-    const chunks: Uint8Array[] = [];
-    let total = 0;
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (!value) continue;
-        total += value.byteLength;
-        if (total > opts.maxBytes) {
-          await reader.cancel();
-          return null;
-        }
-        chunks.push(value);
-      }
-    } catch {
-      return null;
-    }
-    if (total === 0) return null;
-
-    const buffer = Buffer.concat(chunks.map((c) => Buffer.from(c)));
-    return { buffer, contentType, finalUrl: current };
+  } catch {
+    return null;
   }
-  return null;
+  if (total === 0) return null;
+
+  const buffer = Buffer.concat(chunks.map((c) => Buffer.from(c)));
+  return { buffer, contentType, finalUrl };
 }
 
 export interface EmbedData {

@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { prisma } from "./db";
 import { blockedRecipient, partitionBlockedRecipients } from "./blocks";
 import { assertPublicHost } from "./url-guard";
+import { guardedFetch, isPolicyRefusal } from "./safe-fetch";
 import { getIdentity } from "./identity";
 
 
@@ -10,58 +11,89 @@ const ACTOR_FETCH_TIMEOUT_MS = 8000;
 const REPLAY_WINDOW_MS = 60 * 60 * 1000; // ±1 hour
 
 /**
+ * Sign each hop and let the shared guard follow the redirects.
+ *
+ * The signature covers `(request-target)` and `host`, so a signature minted for the
+ * first URL is rejected by a redirect target — hence a per-hop `sign` callback
+ * rather than one set of headers. See `safe-fetch.ts` for why the hop-following
+ * lives there and what was wrong before.
+ */
+async function followSigned(
+  url: string,
+  sign: (target: string) => Promise<{ headers: Record<string, string>; init: RequestInit }>,
+  opts: { crossOrigin: boolean; timeoutMs: number; label: string },
+): Promise<Response> {
+  return guardedFetch(url, {
+    crossOrigin: opts.crossOrigin,
+    label: opts.label,
+    timeoutMs: opts.timeoutMs,
+    init: async (target) => {
+      const { headers, init } = await sign(target);
+      return { ...init, headers };
+    },
+  });
+}
+
+/**
  * Sign an outgoing HTTP request with HTTP Signatures (draft-cavage-http-signatures-12)
  * Required for ActivityPub federation with Mastodon, Pixelfed, etc.
+ *
+ * Redirects are followed only within the same host, and every hop is re-validated
+ * and re-signed — see `followSigned`.
  */
 export async function signedFetch(
   url: string,
   body: string
 ): Promise<Response> {
-  // SSRF defense-in-depth: callers generally vet the target inbox, but guard
-  // here too so a signed POST can never be coerced to a private/internal host.
-  if (!(await assertPublicHost(url))) {
-    throw new Error(`signedFetch: refusing non-public host ${url}`);
-  }
   const keys = await prisma.actorKeys.findUnique({ where: { id: "main" } });
   if (!keys) throw new Error("Actor keys not found");
 
   const keyId = getIdentity().keyId;
-  const parsedUrl = new URL(url);
-  const date = new Date().toUTCString();
   const digest = "SHA-256=" + crypto.createHash("sha256").update(body).digest("base64");
 
-  // Build the signing string
-  const signingString = [
-    `(request-target): post ${parsedUrl.pathname}`,
-    `host: ${parsedUrl.host}`,
-    `date: ${date}`,
-    `digest: ${digest}`,
-  ].join("\n");
+  return followSigned(
+    url,
+    async (target) => {
+      const parsedUrl = new URL(target);
+      const date = new Date().toUTCString();
 
-  // Sign with RSA-SHA256
-  const signer = crypto.createSign("sha256");
-  signer.update(signingString);
-  const signature = signer.sign(keys.privateKey, "base64");
+      // Build the signing string. `search` included, matching signedGet: without
+      // it a same-host redirect to a query-bearing URL would be signed over a
+      // request-target the remote can't reconstruct, so it 401s — and 401 is
+      // permanent, so the activity would be discarded rather than retried. Empty
+      // for every inbox in practice, so this changes nothing on the normal path.
+      const signingString = [
+        `(request-target): post ${parsedUrl.pathname}${parsedUrl.search}`,
+        `host: ${parsedUrl.host}`,
+        `date: ${date}`,
+        `digest: ${digest}`,
+      ].join("\n");
 
-  const signatureHeader = [
-    `keyId="${keyId}"`,
-    `algorithm="rsa-sha256"`,
-    `headers="(request-target) host date digest"`,
-    `signature="${signature}"`,
-  ].join(",");
+      // Sign with RSA-SHA256
+      const signer = crypto.createSign("sha256");
+      signer.update(signingString);
+      const signature = signer.sign(keys.privateKey, "base64");
 
-  return fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/activity+json",
-      Date: date,
-      Digest: digest,
-      Signature: signatureHeader,
-      Host: parsedUrl.host,
+      const signatureHeader = [
+        `keyId="${keyId}"`,
+        `algorithm="rsa-sha256"`,
+        `headers="(request-target) host date digest"`,
+        `signature="${signature}"`,
+      ].join(",");
+
+      return {
+        headers: {
+          "Content-Type": "application/activity+json",
+          Date: date,
+          Digest: digest,
+          Signature: signatureHeader,
+          Host: parsedUrl.host,
+        },
+        init: { method: "POST", body },
+      };
     },
-    body,
-    signal: AbortSignal.timeout(ACTOR_FETCH_TIMEOUT_MS),
-  });
+    { crossOrigin: false, timeoutMs: ACTOR_FETCH_TIMEOUT_MS, label: "signedFetch" },
+  );
 }
 
 /**
@@ -69,48 +101,54 @@ export async function signedFetch(
  * "authorized fetch" (secure mode) and reject UNSIGNED GETs with 401 — which
  * silently breaks reading remote notes, thread ancestors, and interaction
  * collections. Signs `(request-target) host date` with the site actor key.
+ *
+ * Redirects are followed — actor URLs legitimately redirect — but every hop is
+ * re-validated against `assertPublicHost` and re-signed for its own URL. See
+ * `followSigned` for why that matters here more than anywhere else: this response
+ * body is parsed.
  */
 export async function signedGet(url: string, timeoutMs = 10000): Promise<Response> {
-  // SSRF defense-in-depth: callers vet the target, but guard here too so a
-  // signed GET can never be coerced to a private/internal host.
-  if (!(await assertPublicHost(url))) {
-    throw new Error(`signedGet: refusing non-public host ${url}`);
-  }
   const keys = await prisma.actorKeys.findUnique({ where: { id: "main" } });
   if (!keys) throw new Error("Actor keys not found");
 
   const keyId = getIdentity().keyId;
-  const parsedUrl = new URL(url);
-  const date = new Date().toUTCString();
-  const target = `${parsedUrl.pathname}${parsedUrl.search}`;
 
-  const signingString = [
-    `(request-target): get ${target}`,
-    `host: ${parsedUrl.host}`,
-    `date: ${date}`,
-  ].join("\n");
+  return followSigned(
+    url,
+    async (urlToSign) => {
+      const parsedUrl = new URL(urlToSign);
+      const date = new Date().toUTCString();
+      const target = `${parsedUrl.pathname}${parsedUrl.search}`;
 
-  const signer = crypto.createSign("sha256");
-  signer.update(signingString);
-  const signature = signer.sign(keys.privateKey, "base64");
+      const signingString = [
+        `(request-target): get ${target}`,
+        `host: ${parsedUrl.host}`,
+        `date: ${date}`,
+      ].join("\n");
 
-  const signatureHeader = [
-    `keyId="${keyId}"`,
-    `algorithm="rsa-sha256"`,
-    `headers="(request-target) host date"`,
-    `signature="${signature}"`,
-  ].join(",");
+      const signer = crypto.createSign("sha256");
+      signer.update(signingString);
+      const signature = signer.sign(keys.privateKey, "base64");
 
-  return fetch(url, {
-    method: "GET",
-    headers: {
-      Accept: "application/activity+json, application/ld+json",
-      Date: date,
-      Signature: signatureHeader,
-      Host: parsedUrl.host,
+      const signatureHeader = [
+        `keyId="${keyId}"`,
+        `algorithm="rsa-sha256"`,
+        `headers="(request-target) host date"`,
+        `signature="${signature}"`,
+      ].join(",");
+
+      return {
+        headers: {
+          Accept: "application/activity+json, application/ld+json",
+          Date: date,
+          Signature: signatureHeader,
+          Host: parsedUrl.host,
+        },
+        init: { method: "GET" },
+      };
     },
-    signal: AbortSignal.timeout(timeoutMs),
-  });
+    { crossOrigin: true, timeoutMs, label: "signedGet" },
+  );
 }
 
 export interface DeliveryResult {
@@ -192,7 +230,11 @@ export async function deliverActivity(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("Delivery to %s error:", inbox, err);
-    return { ok: false, status: 0, error: msg };
+    // A policy refusal is permanent: the inbox isn't public, or it cross-host
+    // redirects, and neither changes within the retry window. Without this the item
+    // sits in the queue being re-attempted for a day and a half and reads as a
+    // transient outage (#379 gave callers `permanent` for exactly this reason).
+    return { ok: false, status: 0, error: msg, permanent: isPolicyRefusal(err) };
   }
 }
 
@@ -377,14 +419,17 @@ export async function verifyIncomingSignature(
   // Fetch the signer's public key (with timeout to prevent slowloris-style DoS — H7)
   const actorUriFromKey = parts.keyId.split("#")[0];
   // SSRF guard: keyId originates from an attacker-controlled signature header.
-  if (!(await assertPublicHost(actorUriFromKey))) {
-    return { valid: false, reason: "keyId resolves to private/blocked host" };
-  }
   let actor: { publicKey?: { publicKeyPem?: string; owner?: string }; id?: string };
   try {
-    const actorRes = await fetch(actorUriFromKey, {
-      headers: { Accept: "application/activity+json" },
-      signal: AbortSignal.timeout(ACTOR_FETCH_TIMEOUT_MS),
+    // guardedFetch, not fetch: the keyId is chosen by whoever signed the request,
+    // so this is the cheapest SSRF entry point in the whole app — one signed POST
+    // to /ap/inbox from anywhere makes us fetch a URL the sender picked. The old
+    // single assertPublicHost() call was bypassed by a redirect (see safe-fetch.ts).
+    const actorRes = await guardedFetch(actorUriFromKey, {
+      crossOrigin: true, //  key URLs legitimately redirect
+      label: "keyId fetch",
+      timeoutMs: ACTOR_FETCH_TIMEOUT_MS,
+      init: { headers: { Accept: "application/activity+json" } },
     });
     if (!actorRes.ok) return { valid: false, reason: `actor fetch failed: ${actorRes.status}` };
     actor = await actorRes.json();

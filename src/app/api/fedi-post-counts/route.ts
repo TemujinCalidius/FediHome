@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { authenticateApiRequest, verifyOrigin } from "@/lib/auth";
 import { assertPublicHost } from "@/lib/url-guard";
 import { signedGet } from "@/lib/http-signatures";
+import { guardedFetch } from "@/lib/safe-fetch";
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const FETCH_TIMEOUT_MS = 8000;
@@ -114,10 +115,14 @@ async function fetchCountsViaMastodonApi(apId: string): Promise<Counts | null> {
   const apiUrl = `${u.origin}/api/v1/statuses/${encodeURIComponent(id)}`;
   if (!(await assertPublicHost(apiUrl))) return null;
   try {
-    const res = await fetch(apiUrl, {
+    const res = await guardedFetch(apiUrl, {
+      crossOrigin: true,
+      label: "status counts",
+      timeoutMs: FETCH_TIMEOUT_MS,
+      init: {
       headers: { Accept: "application/json" },
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    });
+    },
+  });
     if (!res.ok) return null;
     const s = (await res.json()) as {
       favourites_count?: unknown;

@@ -44,7 +44,15 @@ beforeEach(() => {
   vi.mocked(prisma.fediFollowing.findUnique).mockResolvedValue(null as never);
   vi.mocked(prisma.fediFollowing.findFirst).mockResolvedValue(null as never);
   vi.mocked(prisma.fediPost.findFirst).mockResolvedValue(null as never);
-  fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ACTOR_JSON });
+  // status + headers, not just `ok`: the fetch goes through guardedFetch now
+  // (safe-fetch.ts), which inspects the status to spot a redirect. A stub without
+  // one reads as a 3xx with no Location.
+  fetchMock = vi.fn().mockResolvedValue({
+    ok: true,
+    status: 200,
+    headers: new Headers(),
+    json: async () => ACTOR_JSON,
+  });
   vi.stubGlobal("fetch", fetchMock);
 });
 
