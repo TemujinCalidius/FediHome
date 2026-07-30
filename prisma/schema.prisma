@@ -616,6 +616,13 @@ model MaintenanceItem {
   url         String?
   dismissed   Boolean  @default(false)
   applied     Boolean  @default(false)
+  /// Set when the condition no longer holds (#412) — the advisory cleared, the
+  /// package was upgraded, the credentials decrypt again. Resolved rather than
+  /// deleted so a recurring fault reads as a repeat rather than arriving as new.
+  resolvedAt  DateTime?
+  /// How many times this exact item has been raised. Bumped when it comes back
+  /// after being resolved; a still-outstanding item is never re-raised.
+  occurrences Int      @default(1)
   createdAt   DateTime @default(now())
 
   @@unique([kind, packageName, latest])

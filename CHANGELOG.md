@@ -5,6 +5,12 @@
 ### Added
 - **You're now offered a real password instead of typing a 64-character key forever** (#411) — if you sign in with your `ADMIN_SECRET`, FediHome now says so and offers to set a proper password, rather than leaving you to discover the option buried in Site settings. It's an offer, not a wall: "Not now" gets you straight in, and your saved Bluesky, Threads and notification credentials are unaffected either way.
 
+### Fixed
+- **The notification bell no longer nags you about things you already fixed** (#412) — every maintenance alert FediHome raised stayed there for good. Upgrade a package and it kept telling you to upgrade it; let a few upstream releases go by and you collected a separate permanent alert for each one. The worst case was security: once an advisory was fixed and `npm audit` came back clean, nothing noticed, so the bell went on reporting a vulnerability that no longer existed — and that's the alert you're most likely to act on. Docker users had it worst, with one permanent "update available" per release even while running the newest one. Alerts now clear themselves when the thing behind them goes away, and dismissing one still means dismissed. Anything that comes back is marked as a repeat (`×2`) rather than looking brand new, because a credential that breaks twice is telling you something different from one that broke once.
+
+### Schema
+- `MaintenanceItem` gains `resolvedAt` and `occurrences` (#412). Added automatically on upgrade; nothing to do.
+
 ## 1.23.1 (2026-07-30)
 
 ### Fixed
