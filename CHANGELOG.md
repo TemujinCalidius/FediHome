@@ -5,8 +5,10 @@
 ### Added
 - **You're now offered a real password instead of typing a 64-character key forever** (#411) — if you sign in with your `ADMIN_SECRET`, FediHome now says so and offers to set a proper password, rather than leaving you to discover the option buried in Site settings. It's an offer, not a wall: "Not now" gets you straight in, and your saved Bluesky, Threads and notification credentials are unaffected either way.
 
+## 1.23.1 (2026-07-30)
+
 ### Fixed
-- **Bluesky posts stayed hidden in the web timeline** — v1.23.0 announced them and they only appeared on the first paint of the page, disappearing again as soon as anything reloaded the feed. Holding them back from the macOS app (so its feed didn't go blank) accidentally held them back from the website too. The web timeline shows them again, and the app still doesn't get them until it's ready for them.
+- **Bluesky posts stayed hidden in the web timeline** — v1.23.0 announced them, and they only appeared on the first paint of the page, disappearing again as soon as anything reloaded the feed. Holding them back from the macOS app (so its feed didn't go blank) accidentally held them back from the website too. The web timeline shows them again, and the app still doesn't get them until it's ready for them.
 
 ## 1.23.0 (2026-07-30)
 
