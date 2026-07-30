@@ -2,10 +2,15 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 export default function TimelineLogin() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState(false);
+  // Signed in, but still using ADMIN_SECRET as the password (#411). The API has
+  // reported this since #356; nothing consumed it, so an owner could keep typing
+  // a 64-character key indefinitely and never learn there was an alternative.
+  const [needsPassword, setNeedsPassword] = useState(false);
   const router = useRouter();
 
   async function handleSubmit(e: React.FormEvent) {
@@ -18,10 +23,46 @@ export default function TimelineLogin() {
     });
 
     if (res.ok) {
+      const data = await res.json().catch(() => null);
+      if (data?.needsPassword) {
+        setNeedsPassword(true);
+        return;
+      }
       router.refresh();
     } else {
       setError(true);
     }
+  }
+
+  // Offered, never imposed. `needsPassword` is derived from a database read that
+  // returns null on failure, so a transient DB error reports it as true — this
+  // has to be dismissible and must never block getting in.
+  if (needsPassword) {
+    return (
+      <div className="max-w-sm mx-auto px-6 py-32">
+        <div className="glass-card p-8">
+          <h1 className="font-display text-xl font-bold text-white mb-4">You&apos;re in</h1>
+          <p className="text-sm text-gray-400 mb-3">
+            You signed in with <code>ADMIN_SECRET</code> — a 64-character key that was never
+            meant to be typed. You can set a real password instead, and it&apos;s safe to
+            change whenever you like: your saved Bluesky, Threads and notification
+            credentials aren&apos;t affected.
+          </p>
+          <div className="flex flex-col gap-2 mt-5">
+            <Link href="/admin/site#security" className="btn-primary w-full text-sm text-center">
+              Set a password
+            </Link>
+            <button
+              type="button"
+              onClick={() => router.refresh()}
+              className="text-xs text-gray-500 hover:text-gray-300 underline"
+            >
+              Not now
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (

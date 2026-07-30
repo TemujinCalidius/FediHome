@@ -573,8 +573,13 @@ export default function SiteSettingsClient({
       {label}
     </label>
   );
+  // The id makes each section deep-linkable — /admin/site#security is where the
+  // sign-in screen sends an owner still using ADMIN_SECRET (#411).
   const section = (title: string, children: React.ReactNode) => (
-    <section className="py-4 border-b border-surface-800 last:border-b-0">
+    <section
+      id={title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}
+      className="py-4 border-b border-surface-800 last:border-b-0 scroll-mt-6"
+    >
       <h2 className="text-sm font-semibold text-white mb-3">{title}</h2>
       <div className="flex flex-col gap-3">{children}</div>
     </section>
