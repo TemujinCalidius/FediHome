@@ -17,7 +17,13 @@ vi.mock("@/generated/prisma/client", () => ({
   },
 }));
 vi.mock("@prisma/adapter-pg", () => ({ PrismaPg: class {} }));
-vi.mock("@/lib/auth", () => ({ verifyAdmin: vi.fn(), safeCompare: (a: string, b: string) => a === b }));
+// The REAL verifySameOriginRequest, so the new CSRF gate is genuinely exercised
+// rather than stubbed to true — otherwise the two tests below prove nothing.
+vi.mock("@/lib/auth", async (orig) => ({
+  ...(await orig<Record<string, unknown>>()),
+  verifyAdmin: vi.fn(),
+  safeCompare: (a: string, b: string) => a === b,
+}));
 vi.mock("@/lib/site-settings", () => ({ applySiteConfig: vi.fn().mockResolvedValue({ ok: true }) }));
 
 const { writeFileSync, readFileSync } = vi.hoisted(() => ({
@@ -31,9 +37,19 @@ const OLD_ADMIN = process.env.ADMIN_SECRET;
 const OLD_TOKEN = process.env.SETUP_TOKEN;
 const SECRET = "a".repeat(64);
 
-const req = (body: Record<string, unknown>) =>
+// host + origin, because the route now carries a CSRF check (#430). It uses
+// verifySameOriginRequest rather than verifyOrigin, since SITE_URL isn't written
+// until the wizard finishes — so the pair simply has to agree with each other.
+const req = (body: Record<string, unknown>, over: Record<string, string> = {}) =>
   new Request("https://demo.example/api/setup", {
-    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      host: "demo.example",
+      origin: "https://demo.example",
+      ...over,
+    },
+    body: JSON.stringify(body),
   });
 
 const validBody = (over: Record<string, unknown> = {}) => ({
@@ -194,5 +210,28 @@ describe("/api/setup — unreachable site addresses need an explicit tick (#326)
 
   it("a public domain never needs the tick", async () => {
     expect((await POST(req(validBody({ siteUrl: "https://demo.example" })))).status).toBe(200);
+  });
+});
+
+describe("/api/setup — CSRF (#430)", () => {
+  it("rejects a cross-site origin before doing anything", async () => {
+    // The gap this closes: /api/setup was the only state-changing POST in the
+    // tree with no origin check. Not exploitable on a live instance — the atomic
+    // `setupDone: false` claim 409s first — but setupDone was doing the work an
+    // origin check should also have been doing.
+    process.env.SETUP_TOKEN = "tok";
+    delete process.env.ADMIN_SECRET;
+    const res = await POST(req(validBody(), { origin: "https://evil.example" }) as never);
+    expect(res.status).toBe(403);
+  });
+
+  it("accepts the serving host even though SITE_URL is not written yet", async () => {
+    // verifyOrigin would 403 here: getSiteUrl() is http://localhost:3000 on a
+    // fresh install, so every Docker and reverse-proxy setup would be bricked.
+    process.env.SETUP_TOKEN = "tok";
+    delete process.env.ADMIN_SECRET;
+    delete process.env.SITE_URL;
+    const res = await POST(req(validBody()) as never);
+    expect(res.status).not.toBe(403);
   });
 });

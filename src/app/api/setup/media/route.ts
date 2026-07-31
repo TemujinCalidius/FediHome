@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyAdmin } from "@/lib/auth";
+import { verifyAdmin, verifySameOriginRequest } from "@/lib/auth";
 import { verifySetupToken } from "@/lib/setup-token";
 import { saveUploadedImage } from "@/lib/media";
 
@@ -18,6 +18,13 @@ export async function POST(req: NextRequest) {
     }
   } else if (!(await verifySetupToken(req.headers.get("x-setup-token")))) {
     return NextResponse.json({ error: "setup token required" }, { status: 401 });
+  }
+
+  // CSRF, after the credential gates — same reasoning as /api/setup (#430).
+  // verifySameOriginRequest rather than verifyOrigin because SITE_URL isn't
+  // written yet during setup, so the configured origin is still localhost.
+  if (!verifySameOriginRequest(req)) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
   const form = await req.formData().catch(() => null);
