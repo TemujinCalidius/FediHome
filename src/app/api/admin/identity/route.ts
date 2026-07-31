@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyAdmin, verifyOrigin } from "@/lib/auth";
+import { verifyAdmin, verifySameOriginRequest } from "@/lib/auth";
 import { identityIsLocked, setIdentity, refreshIdentity } from "@/lib/identity-store";
 import { getIdentity } from "@/lib/identity";
 import { isLocalOrPrivateHost } from "@/lib/public-host";
@@ -67,11 +67,18 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  if (!verifyOrigin(req)) {
-    return NextResponse.json({ error: "forbidden" }, { status: 403 });
-  }
+  // Admin FIRST, origin second — the reverse of every other route, and deliberate.
+  // This route uses verifySameOriginRequest so a wrong SITE_URL can be repaired
+  // (#426); verifyOrigin would 403 here precisely when the value needs fixing,
+  // including on this route. That check is weaker — a hostname an attacker points
+  // at this server is same-origin to the browser — so the admin cookie, which is
+  // scoped to the real hostname and cannot travel to such a host, has to be
+  // established first. Ordering is what makes the relaxed check safe here.
   if (!(await verifyAdmin(req))) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+  if (!verifySameOriginRequest(req)) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
   // Checked before anything is written, and again by the UI on load. A 409 here

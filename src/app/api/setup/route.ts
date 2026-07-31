@@ -11,6 +11,7 @@ import { getConfiguredSiteUrl } from "@/lib/identity";
 // Shared with the boot guard and the wizard UI, so all three enforce one rule set (#357).
 import { isLocalOrPrivateHost } from "@/lib/public-host";
 import { isContainerised } from "@/lib/install-shape";
+import { verifySameOriginRequest } from "@/lib/auth";
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
@@ -102,6 +103,18 @@ export async function POST(request: Request) {
           { status: 401 }
         );
       }
+    }
+
+    // CSRF, AFTER the credential gates above (#430). This was the only
+    // state-changing POST in the tree without an origin check.
+    //
+    // verifySameOriginRequest, not verifyOrigin: during setup SITE_URL is by
+    // definition unset — writing it is the entire point of the wizard — so
+    // getSiteUrl() is http://localhost:3000 while the browser's Origin is the
+    // real hostname. verifyOrigin would 403 every Docker and reverse-proxy
+    // install, i.e. bricking setup for most people.
+    if (!verifySameOriginRequest(request)) {
+      return NextResponse.json({ error: "forbidden" }, { status: 403 });
     }
 
     const body = await request.json();
