@@ -109,3 +109,68 @@ describe("getConfiguredSiteUrl", () => {
     expect(getConfiguredSiteUrl()).toBe("https://example.com");
   });
 });
+
+/**
+ * Casing (#427).
+ *
+ * Hostnames are case-insensitive to DNS, so `Example.com` and `example.com` are the
+ * same server — but they are different STRINGS, and these strings become the actor
+ * id, the signing keyId, the WebFinger subject, and the `apId` stamped into every
+ * post. The WebFinger route compares byte-exact, and remote servers send the domain
+ * lowercased, so one stray capital in `.env.local` meant 404 to every remote lookup:
+ * an undiscoverable instance that looks perfectly healthy from the inside.
+ *
+ * The admin API already lowercased what it wrote. The environment path did not, and
+ * the environment path is how most people configure this.
+ */
+describe("hostnames are normalised whatever case they were typed in", () => {
+  it("lowercases an explicit FEDI_DOMAIN, so WebFinger answers what remotes ask", () => {
+    process.env.SITE_URL = "https://example.com";
+    process.env.FEDI_DOMAIN = "Example.com";
+    process.env.FEDI_HANDLE = "me";
+    const id = getIdentity();
+    // Exactly the string a remote server queries.
+    expect(id.webfingerSubject).toBe("acct:me@example.com");
+    expect(id.fediDomain).toBe("example.com");
+    expect(id.fediAddress).toBe("@me@example.com");
+  });
+
+  it("strips a trailing dot from the domain, as the admin API already did", () => {
+    process.env.FEDI_DOMAIN = "Example.com.";
+    expect(getIdentity().fediDomain).toBe("example.com");
+  });
+
+  it("lowercases the host in SITE_URL — the higher-stakes half", () => {
+    // actorId and keyId are @unique absolute URLs that remote servers cache
+    // forever, and every post's apId is built from this. A capital here cannot be
+    // corrected after the fact.
+    process.env.SITE_URL = "https://EXAMPLE.com";
+    const id = getIdentity();
+    expect(id.siteUrl).toBe("https://example.com");
+    expect(id.actorId).toBe("https://example.com/ap/actor");
+    expect(id.keyId).toBe("https://example.com/ap/actor#main-key");
+  });
+
+  it("leaves the PATH alone, because URL paths are case-sensitive", () => {
+    process.env.SITE_URL = "https://EXAMPLE.com/MyBlog";
+    expect(getIdentity().siteUrl).toBe("https://example.com/MyBlog");
+  });
+
+  it("keeps a non-default port while lowercasing the host", () => {
+    process.env.SITE_URL = "https://EXAMPLE.com:8443";
+    expect(getIdentity().siteUrl).toBe("https://example.com:8443");
+    expect(getIdentity().fediDomain).toBe("example.com:8443");
+  });
+
+  it("does not lowercase the HANDLE, which is not a hostname", () => {
+    // The admin route's HANDLE_RE permits mixed case deliberately.
+    process.env.SITE_URL = "https://example.com";
+    process.env.FEDI_HANDLE = "SamueL";
+    expect(getIdentity().webfingerSubject).toBe("acct:SamueL@example.com");
+  });
+
+  it("still doesn't throw on a malformed SITE_URL", () => {
+    process.env.SITE_URL = "not a url";
+    expect(() => getIdentity()).not.toThrow();
+  });
+});

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- **A capital letter in your domain no longer makes you invisible** (#427) — if you'd written your domain with any capitals in `.env.local`, nobody could find or follow you. Other servers always ask in lowercase, FediHome compared the two exactly, and every lookup came back "not found" — while your site looked perfectly healthy from the inside. Domains are now normalised wherever they're set, including in your site URL, which is the one that gets stamped into every post you publish and can't be corrected afterwards.
+- **Changing your address is now blocked if you follow anyone** (#428) — FediHome already refused to let you change your domain once you'd published something or gained a follower, because it would silently break them. It wasn't counting the people *you* follow, whose servers deliver to your current address — so that change could still quietly cut you off from everyone in your timeline, with nothing on either side to explain why.
+
 ## 1.24.0 (2026-07-31)
 
 ### Added
