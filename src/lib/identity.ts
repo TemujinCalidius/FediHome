@@ -95,7 +95,36 @@ function normalizeOrigin(raw: string): string {
   const s = raw.trim();
   let end = s.length;
   while (end > 0 && s.charCodeAt(end - 1) === 47 /* "/" */) end--;
-  return s.slice(0, end);
+  const trimmed = s.slice(0, end);
+
+  // Lowercase the HOST, and only the host (#427). Hostnames are case-insensitive,
+  // so `https://EXAMPLE.com` and `https://example.com` are the same server — but
+  // they are DIFFERENT strings, and this one becomes the actor id, the keyId, and
+  // the `apId` stamped into every post. Those are `@unique` absolute URLs that
+  // remote servers cache forever, so a stray capital is not cosmetic.
+  //
+  // The path is deliberately left alone: URL paths ARE case-sensitive.
+  try {
+    const u = new URL(trimmed);
+    return `${u.protocol}//${u.host.toLowerCase()}${u.pathname === "/" ? "" : u.pathname}`;
+  } catch {
+    return trimmed; // unparseable: hand it back untouched rather than mangle it
+  }
+}
+
+/**
+ * Normalise a domain the way DNS treats it, and the way every remote server will
+ * spell it when it comes asking.
+ *
+ * `FEDI_DOMAIN=Example.com` used to sail through unchanged, so `webfingerSubject`
+ * became `acct:me@Example.com` while Mastodon queries `acct:me@example.com` — and
+ * the WebFinger route compares byte-exact. Result: 404 to every remote lookup, an
+ * undiscoverable instance, and a site that looks perfectly healthy from the inside.
+ * The same failure the derivation comment below describes, arriving by a different
+ * road. The admin API already lowercased; the environment path did not.
+ */
+function normalizeDomainValue(raw: string): string {
+  return raw.trim().toLowerCase().replace(/\.+$/, "");
 }
 
 export function getIdentity(): Identity {
@@ -108,7 +137,8 @@ export function getIdentity(): Identity {
   // FEDI_DOMAIN advertised @me@example.com everywhere while WebFinger answered
   // only to acct:me@localhost — i.e. 404 to every remote lookup, undiscoverable,
   // with a perfectly healthy-looking site. One derivation, no disagreement.
-  let fediDomain = overrides.fediDomain || process.env.FEDI_DOMAIN;
+  const configuredDomain = overrides.fediDomain || process.env.FEDI_DOMAIN;
+  let fediDomain = configuredDomain ? normalizeDomainValue(configuredDomain) : undefined;
   if (!fediDomain) {
     try {
       fediDomain = new URL(siteUrl).host;

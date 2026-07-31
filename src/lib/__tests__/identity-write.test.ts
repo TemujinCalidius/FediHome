@@ -25,6 +25,7 @@ const counts = vi.hoisted(() => ({
   directMessage: vi.fn(),
   fediPost: vi.fn(),
   fediFollower: vi.fn(),
+  fediFollowing: vi.fn(),
 }));
 vi.mock("@/lib/db", () => ({
   prisma: {
@@ -35,6 +36,7 @@ vi.mock("@/lib/db", () => ({
     directMessage: { count: counts.directMessage },
     fediPost: { count: counts.fediPost },
     fediFollower: { count: counts.fediFollower },
+    fediFollowing: { count: counts.fediFollowing },
     siteSetting: { upsert: vi.fn(), deleteMany: vi.fn(), findMany: vi.fn(), findUnique: vi.fn() },
   },
 }));
@@ -79,6 +81,31 @@ describe("identityIsLocked", () => {
     expect(r.reason).toMatch(/follow/i);
   });
 
+  it("locks when YOU follow someone, even with nothing published (#428)", async () => {
+    // The outbound direction, which the lock missed entirely. Their server recorded
+    // our actor id as a follower when we sent the Follow, and /ap/following
+    // publishes the list under it — change the address and their posts simply stop
+    // arriving, with no Undo ever sent to explain it.
+    counts.fediFollowing.mockResolvedValue(3);
+    const r = await identityIsLocked();
+    expect(r.locked).toBe(true);
+    expect(r.reason).toMatch(/you follow 3 accounts/i);
+  });
+
+  it("distinguishes following-you from you-following in what it tells the owner", async () => {
+    // The reason string is user-facing — it comes back as the 409 body — and the
+    // two cases need different fixes, so a shared /follow/i message would be a
+    // regression even though it technically matches.
+    counts.fediFollower.mockResolvedValue(2);
+    const inbound = (await identityIsLocked()).reason ?? "";
+    allZero();
+    counts.fediFollowing.mockResolvedValue(2);
+    const outbound = (await identityIsLocked()).reason ?? "";
+    expect(inbound).not.toBe(outbound);
+    expect(inbound).toMatch(/follow you/i);
+    expect(outbound).toMatch(/you follow/i);
+  });
+
   it("locks when it cannot prove the instance is empty", async () => {
     // Fail closed: an identity change that turns out to have been unsafe cannot
     // be undone, because other servers have already cached the old id.
@@ -86,9 +113,10 @@ describe("identityIsLocked", () => {
     expect((await identityIsLocked()).locked).toBe(true);
   });
 
-  it("checks every model that carries an absolute apId", async () => {
-    // If a new content type gains an apId and isn't counted here, an instance
-    // holding one would read as unlocked and its content would be orphaned.
+  it("checks every model that would be stranded by an identity change", async () => {
+    // This test was SUPPOSED to catch #428 and didn't, because it iterates the mock
+    // bag above and the bag omitted fediFollowing — so the guard-rail was only ever
+    // as good as the fixture. Adding a model here now fails until it is counted.
     await identityIsLocked();
     for (const [name, fn] of Object.entries(counts)) {
       expect(fn, `${name}.count was never called`).toHaveBeenCalled();
