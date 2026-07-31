@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/db";
-import { hashToken } from "@/lib/auth";
+import { hasScope, verifyTokenValue, type TokenVerification } from "@/lib/auth";
+import { recordTokenUse } from "@/lib/audit";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { marked } from "marked";
 import { extractParam, extractStruct, between } from "@/lib/xmlrpc";
@@ -17,6 +18,13 @@ import { getSiteUrl } from "@/lib/identity";
  * Micropub token and looked up in AuthToken). The legacy ADMIN_SECRET
  * fallback was removed — a single high-entropy secret over an unrate-limited
  * XML-RPC endpoint is a brute-force liability.
+ *
+ * The token goes through `verifyTokenValue` — the SAME check every other bearer
+ * path uses. It used to have its own verifier here that returned `!!token`, which
+ * meant this route alone honoured neither `expiresAt` nor `scope`: an expired
+ * token kept working, and a token narrowed to `read` in /admin/apps could still
+ * create and delete posts. The admin UI tells owners "a reduced scope takes
+ * effect on the token's next request"; over XML-RPC that was simply untrue.
  *
  * Rate limit: per-bucket, same TRUSTED_PROXY model as the admin login route.
  */
@@ -74,13 +82,6 @@ function fault(code: number, message: string): string {
 </struct></value></fault></methodResponse>`;
 }
 
-async function verifyAuth(password: string): Promise<boolean> {
-  if (!password) return false;
-  const hash = hashToken(password);
-  const token = await prisma.authToken.findUnique({ where: { tokenHash: hash } });
-  return !!token;
-}
-
 function slugify(text: string): string {
   return text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80);
 }
@@ -96,12 +97,26 @@ export async function POST(req: NextRequest) {
   }
   const method = (between(body, "methodName") ?? "").trim();
 
+  // The two discovery methods are static and carry no data, so they stay open.
+  let auth: TokenVerification = { valid: false };
   if (!["system.listMethods", "mt.supportedMethods"].includes(method)) {
-    const password = extractParam(body, 2);
-    if (!(await verifyAuth(password))) {
+    auth = await verifyTokenValue(extractParam(body, 2));
+    if (!auth.valid) {
       return xmlResponse(fault(403, "Authentication failed"));
     }
+    void recordTokenUse(auth, req);
   }
+
+  /**
+   * Scope gate. Deliberately asymmetric, and the asymmetry is load-bearing:
+   * `AuthToken.scope` has defaulted to "create update delete media" since the
+   * first release, so every hand-issued token a micro.blog user pasted in years
+   * ago HAS create and delete but does NOT have `read`. Gating the writes breaks
+   * nobody; gating the reads would break every existing client — and /api/micropub
+   * doesn't gate reads either, so leaving them open is also parity, not laxity.
+   */
+  const refuseScope = (required: string) =>
+    xmlResponse(fault(403, `This token is not allowed to ${required} posts`));
 
   const siteUrl = getSiteUrl();
 
@@ -151,6 +166,7 @@ export async function POST(req: NextRequest) {
       </data></array></value></param>`));
 
     case "metaWeblog.newPost": {
+      if (!hasScope(auth.scope, "create")) return refuseScope("create");
       const struct = extractStruct(body);
       const title = struct.title || null;
       const content = struct.description || "";
@@ -213,7 +229,12 @@ export async function POST(req: NextRequest) {
 
     case "metaWeblog.getPost": {
       const postId = extractParam(body, 0);
-      const post = await prisma.post.findUnique({ where: { id: postId } });
+      // `published: true` to match getRecentPosts. Without it this returned the
+      // full body of an unpublished draft or a scheduled post to any token —
+      // findUnique by id, no visibility filter at all.
+      const post = postId
+        ? await prisma.post.findFirst({ where: { id: postId, published: true } })
+        : null;
       if (!post) return xmlResponse(fault(404, "Post not found"));
 
       return xmlResponse(methodResponse(`<param><value><struct>
@@ -225,12 +246,15 @@ export async function POST(req: NextRequest) {
     }
 
     case "metaWeblog.deletePost": {
+      if (!hasScope(auth.scope, "delete")) return refuseScope("delete");
       const postId = extractParam(body, 0);
       // Route through the shared helper so XML-RPC deletes federate + clean up
       // child rows exactly like Micropub does (#16), instead of the old naive
       // delete that silently failed on posts with replies/comments.
       const post = postId ? await prisma.post.findUnique({ where: { id: postId } }) : null;
-      if (post) await deletePostWithFederation(post);
+      // Was an unconditional `1`, so deleting a nonexistent id reported success.
+      if (!post) return xmlResponse(fault(404, "Post not found"));
+      await deletePostWithFederation(post);
       return xmlResponse(methodResponse(`<param><value><boolean>1</boolean></value></param>`));
     }
 

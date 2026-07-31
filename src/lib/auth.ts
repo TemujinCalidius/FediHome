@@ -39,14 +39,37 @@ export function hasScope(scope: string | undefined, required: string): boolean {
   return (scope ?? "").split(/\s+/).includes(required);
 }
 
-export async function verifyMicropubToken(
-  authHeader: string | null
-): Promise<{ valid: boolean; scope?: string; tokenId?: string; clientId?: string | null; label?: string }> {
-  if (!authHeader?.startsWith("Bearer ")) {
+export interface TokenVerification {
+  valid: boolean;
+  scope?: string;
+  tokenId?: string;
+  clientId?: string | null;
+  label?: string;
+}
+
+/**
+ * Verify a raw token value — everything about a token that has nothing to do
+ * with how it arrived.
+ *
+ * Split out from `verifyMicropubToken` because **not every caller gets a Bearer
+ * header**. XML-RPC passes the token as a positional parameter (the MetaWeblog
+ * `password` slot), and because this logic used to be reachable only through the
+ * header parser, `/xmlrpc` grew its own verifier that checked existence and
+ * nothing else — no expiry, no scope, no `lastUsedAt`. One transport quirk cost
+ * three controls. There is now one place that answers "is this token good?", and
+ * transports adapt to it rather than reimplementing it.
+ *
+ * Returns `scope` so the caller can gate with `hasScope`; this function
+ * deliberately makes no authorization decision of its own.
+ */
+export async function verifyTokenValue(token: string): Promise<TokenVerification> {
+  // Fail closed on an empty value: `hashToken("")` is a perfectly valid sha256,
+  // so without this a missing password would look up a real row if one ever
+  // hashed to it, and would in any case waste a query on every blank request.
+  if (!token) {
     return { valid: false };
   }
 
-  const token = authHeader.slice(7);
   const hash = hashToken(token);
 
   const authToken = await prisma.authToken.findUnique({
@@ -76,6 +99,16 @@ export async function verifyMicropubToken(
     clientId: authToken.clientId,
     label: authToken.label,
   };
+}
+
+/** `verifyTokenValue` for callers whose token arrives as an `Authorization` header. */
+export async function verifyMicropubToken(
+  authHeader: string | null
+): Promise<TokenVerification> {
+  if (!authHeader?.startsWith("Bearer ")) {
+    return { valid: false };
+  }
+  return verifyTokenValue(authHeader.slice(7));
 }
 
 export async function generateToken(
