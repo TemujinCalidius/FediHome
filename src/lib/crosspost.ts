@@ -7,6 +7,7 @@ import { isPrivateUrl } from "./url-guard";
 import { getSiteUrl } from "./identity";
 import { resolveUploadPath } from "./uploads-dir";
 import { getDayOneCredentials } from "./integrations";
+import { guardedFetch } from "./safe-fetch";
 
 export interface CrosspostImage {
   url: string; // full URL or local path
@@ -174,7 +175,16 @@ async function buildBlueskyEmbed(
         contentType = mimeMap[ext] || "image/jpeg";
       } else {
         // Fallback to HTTP fetch for external URLs
-        const res = await fetch(img.url);
+        // guardedFetch, not a bare fetch: this URL comes from the request body
+        // (`photos[].url` on POST /api/compose, which a create-scoped app token can
+        // set) and had NO guard at all — no host check, no timeout, no hop limit.
+        // The sibling below at least checked isPrivateUrl. See safe-fetch.ts.
+        const res = await guardedFetch(img.url, {
+          crossOrigin: true, // an image URL legitimately redirects to a CDN
+          label: "bluesky image",
+          timeoutMs: 10_000,
+          maxHops: 5,
+        });
         if (!res.ok) continue;
         buffer = new Uint8Array(await res.arrayBuffer());
         contentType = res.headers.get("content-type") || "image/jpeg";
@@ -216,7 +226,16 @@ async function buildBlueskyVideoEmbed(
   let thumb: any = undefined;
   if (video.thumbnailUrl && !isPrivateUrl(video.thumbnailUrl)) {
     try {
-      const res = await fetch(video.thumbnailUrl, { signal: AbortSignal.timeout(10000) });
+      // The isPrivateUrl check above is kept as a cheap string-only fast path, but
+      // it was never sufficient on its own: it does no DNS, so a public hostname
+      // resolving to 127.0.0.1 passed it, and it saw only the first hop.
+      // guardedFetch does both. See safe-fetch.ts.
+      const res = await guardedFetch(video.thumbnailUrl, {
+        crossOrigin: true,
+        label: "bluesky video thumbnail",
+        timeoutMs: 10_000,
+        maxHops: 5,
+      });
       if (res.ok) {
         const buffer = new Uint8Array(await res.arrayBuffer());
         const ctHeader = res.headers.get("content-type") || "";

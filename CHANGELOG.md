@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.24.0 (2026-07-31)
+
+### Added
+- **You're now offered a real password instead of typing a 64-character key forever** (#411) — if you sign in with your `ADMIN_SECRET`, FediHome now says so and offers to set a proper password, rather than leaving you to discover the option buried in Site settings. It's an offer, not a wall: "Not now" gets you straight in, and your saved Bluesky, Threads and notification credentials are unaffected either way.
+- **FediHome now tells you when there's an update — without you having to ask** (#399) — the update check has always existed, and nothing ever ran it. So the notification bell was wired to a source that only produced anything if you happened to run `npm run check-updates` by hand, which nothing tells you to do: an instance simply never heard about a new release or a security advisory. It now runs daily on its own, and **Admin → Instance settings** has a **Check now** button plus a toggle if you'd rather your instance didn't call out to the npm registry and GitHub. It remembers when it last ran, so restarting doesn't re-run it and a box that restarts every night doesn't skip it forever.
+
+### Changed
+- Dependency refresh: `@fedify/fedify` and `@fedify/next` 2.3.4, `postcss` 8.5.25. (`typescript` remains held at 6.x — see #234.)
+
+### Fixed
+- **Update instructions that actually work on your install** (#398) — the "FediHome update available" alert told everyone to run `npm run update`. In Docker that command **refuses**, because the image deliberately has no git history — so the advice looked like the update was broken when it was only the instructions. It now tells you what applies to your install: the updater for a git checkout, `docker compose pull && docker compose up -d` **on the host** for a container, and the manual steps for a release-archive install. `npm run update` inside a container now explains this instead of saying the folder doesn't look like FediHome. The README and deployment docs say the same thing.
+- **The notification bell no longer nags you about things you already fixed** (#412) — every maintenance alert FediHome raised stayed there for good. Upgrade a package and it kept telling you to upgrade it; let a few upstream releases go by and you collected a separate permanent alert for each one. The worst case was security: once an advisory was fixed and `npm audit` came back clean, nothing noticed, so the bell went on reporting a vulnerability that no longer existed — and that's the alert you're most likely to act on. Docker users had it worst, with one permanent "update available" per release even while running the newest one. Alerts now clear themselves when the thing behind them goes away, and dismissing one still means dismissed. Anything that comes back is marked as a repeat (`×2`) rather than looking brand new, because a credential that breaks twice is telling you something different from one that broke once.
+
+### Security
+- **App tokens are now checked properly when posting from a blog client.** The XML-RPC endpoint that MarsEdit, micro.blog and similar apps use was checking only that a token existed — not what it was allowed to do, and not whether it had expired. So a token you had deliberately limited to read-only could still publish and delete posts, and a token past its expiry date kept working. Both are now enforced the same way they already were everywhere else. Tokens you have not restricted keep working exactly as before. Blog-client activity also shows up in **Admin → Apps** now, where it previously always read "never used" — so a token you rely on no longer looks abandoned, and one being used without your knowledge is visible. Also stops that endpoint returning the contents of an unpublished draft.
+- **Another server could point your instance at things on your own network** (#433) — before connecting to a remote address, FediHome checks it's a real public one. That check had two holes. It could be walked straight past using an unusual but perfectly valid way of writing a local address, so no trickery was needed at all. And where it did work, it only checked the *first* address: a server could answer "it moved over there" and send the request somewhere private instead — a database on the same machine, or the metadata service your hosting provider runs. Both are fixed, every redirect is now re-checked, and sending a post refuses to follow a redirect to a different server at all, since nothing legitimate needs that. As far as we can tell nothing could be read back out this way, and there's no evidence of it being used. Found during an internal audit.
+
+### Schema
+- `MaintenanceItem` gains `resolvedAt` and `occurrences` (#412). Added automatically on upgrade; nothing to do.
+
 ## 1.23.1 (2026-07-30)
 
 ### Fixed

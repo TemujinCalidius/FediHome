@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { verifyAdmin } from "@/lib/auth";
+import { verifyAdmin, verifyOrigin } from "@/lib/auth";
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  // Origin first, as everywhere else: a session cookie is sent on cross-site
+  // requests too, so admin alone doesn't make a mutation same-origin.
+  if (!verifyOrigin(req)) {
+    return NextResponse.json({ error: "bad origin" }, { status: 403 });
+  }
   if (!(await verifyAdmin(req))) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }

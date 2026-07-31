@@ -13,9 +13,14 @@ import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
  * database backup doesn't contain it. Restore onto a fresh host and you're here.
  */
 
-const { findMany, upsert } = vi.hoisted(() => ({ findMany: vi.fn(), upsert: vi.fn() }));
+const { findMany, item } = vi.hoisted(() => ({
+  findMany: vi.fn(),
+  // The alert now goes through src/lib/maintenance, which reads before it writes
+  // so it can tell "still outstanding" from "this has come back" (#412).
+  item: { findUnique: vi.fn(), create: vi.fn(), update: vi.fn(), updateMany: vi.fn() },
+}));
 vi.mock("@/lib/db", () => ({
-  prisma: { siteSetting: { findMany }, maintenanceItem: { upsert } },
+  prisma: { siteSetting: { findMany }, maintenanceItem: item },
 }));
 
 import { checkStoredCredentials, findUndecryptableCredentials } from "@/lib/secret-health";
@@ -42,7 +47,10 @@ beforeEach(() => {
   vi.clearAllMocks();
   setSecret(KEY_A);
   findMany.mockResolvedValue([]);
-  upsert.mockResolvedValue({});
+  item.findUnique.mockResolvedValue(null);
+  item.create.mockResolvedValue({});
+  item.update.mockResolvedValue({});
+  item.updateMany.mockResolvedValue({ count: 0 });
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 
@@ -97,37 +105,33 @@ describe("findUndecryptableCredentials", () => {
 });
 
 describe("checkStoredCredentials raises the alert", () => {
-  it("upserts a high-severity item naming the credentials", async () => {
+  /** The fields the alert was created with. */
+  const created = () => item.create.mock.calls[0][0].data as Record<string, string>;
+
+  it("raises a high-severity item naming the credentials", async () => {
     const ct = cipherUnderA("x");
     findMany.mockResolvedValue([{ key: "integration.threads.accessToken", value: ct }]);
     setSecret(KEY_B);
 
     await checkStoredCredentials();
 
-    expect(upsert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {
-          kind_packageName_latest: {
-            kind: "security",
-            packageName: "stored-credentials",
-            latest: "undecryptable",
-          },
-        },
-        // The #310 idiom: an empty update, so a dismissed alert never returns.
-        update: {},
-        create: expect.objectContaining({ severity: "high" }),
+    expect(item.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        kind: "security",
+        packageName: "stored-credentials",
+        latest: "undecryptable",
+        severity: "high",
       }),
-    );
-    const created = upsert.mock.calls[0][0].create;
-    expect(created.description).toContain("Threads access token");
-    expect(created.description).toContain(".env.local"); // says why a DB backup won't save you
+    });
+    expect(created().description).toContain("Threads access token");
+    expect(created().description).toContain(".env.local"); // says why a DB backup won't save you
   });
 
   it("says the key CHANGED when one is present", async () => {
     findMany.mockResolvedValue([{ key: "integration.push.privateKey", value: cipherUnderA("x") }]);
     setSecret(KEY_B);
     await checkStoredCredentials();
-    expect(upsert.mock.calls[0][0].create.description).toContain("has changed");
+    expect(created().description).toContain("has changed");
   });
 
   it("says the key is MISSING when ADMIN_SECRET is unset", async () => {
@@ -135,19 +139,67 @@ describe("checkStoredCredentials raises the alert", () => {
     findMany.mockResolvedValue([{ key: "integration.push.privateKey", value: cipherUnderA("x") }]);
     setSecret(undefined);
     await checkStoredCredentials();
-    expect(upsert.mock.calls[0][0].create.description).toContain("isn't set");
+    expect(created().description).toContain("isn't set");
   });
 
-  it("raises nothing when everything decrypts", async () => {
+  it("does NOT resurrect a dismissed alert on the next boot", async () => {
+    // Boot checks run on every start; without this, Dismiss would be meaningless.
+    item.findUnique.mockResolvedValue({ dismissed: true, resolvedAt: null, occurrences: 1 });
+    findMany.mockResolvedValue([{ key: "integration.push.privateKey", value: cipherUnderA("x") }]);
+    setSecret(KEY_B);
+    await checkStoredCredentials();
+    expect(item.create).not.toHaveBeenCalled();
+    expect(item.update).not.toHaveBeenCalled();
+  });
+
+  it("counts a SECOND occurrence when the fault returns after being resolved", async () => {
+    // Credentials that break, get re-entered, then break again is a different
+    // story from a one-off — usually a host that isn't persisting ADMIN_SECRET.
+    item.findUnique.mockResolvedValue({
+      dismissed: true,
+      resolvedAt: new Date("2026-07-01"),
+      occurrences: 1,
+    });
+    findMany.mockResolvedValue([{ key: "integration.push.privateKey", value: cipherUnderA("x") }]);
+    setSecret(KEY_B);
+    await checkStoredCredentials();
+    expect(item.update.mock.calls[0][0].data).toMatchObject({
+      occurrences: 2,
+      resolvedAt: null,
+      dismissed: false,
+    });
+  });
+});
+
+describe("checkStoredCredentials clears the alert (#412)", () => {
+  it("RESOLVES the alert when everything decrypts again", async () => {
+    // This early-returned before, writing nothing — so re-entering the
+    // credentials fixed the problem and the bell went on reporting it forever.
     findMany.mockResolvedValue([{ key: "integration.push.privateKey", value: cipherUnderA("x") }]);
     setSecret(KEY_A);
     await checkStoredCredentials();
-    expect(upsert).not.toHaveBeenCalled();
+
+    expect(item.create).not.toHaveBeenCalled();
+    expect(item.updateMany).toHaveBeenCalledWith({
+      where: {
+        kind: "security",
+        packageName: "stored-credentials",
+        latest: "undecryptable",
+        resolvedAt: null,
+      },
+      data: { resolvedAt: expect.any(Date) },
+    });
   });
 
   it("never throws when the database is unavailable", async () => {
     // It runs at boot; a diagnostic must not be why a boot fails.
     findMany.mockRejectedValue(new Error("db down"));
+    await expect(checkStoredCredentials()).resolves.toBeUndefined();
+  });
+
+  it("still doesn't throw when only the resolve write fails", async () => {
+    findMany.mockResolvedValue([]);
+    item.updateMany.mockRejectedValue(new Error("db down"));
     await expect(checkStoredCredentials()).resolves.toBeUndefined();
   });
 });

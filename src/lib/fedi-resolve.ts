@@ -1,5 +1,8 @@
 import { assertPublicHost } from "./url-guard";
 import { prisma } from "./db";
+import { guardedFetch } from "./safe-fetch";
+
+const FETCH_TIMEOUT_MS = 10_000;
 
 export interface ResolvedFediActor {
   actorUri: string;
@@ -38,12 +41,16 @@ export async function resolveFediActorByHandle(
   if (!username || !domain) return null;
 
   const wfUrl = `https://${domain}/.well-known/webfinger?resource=acct:${username}@${domain}`;
-  if (!(await assertPublicHost(wfUrl))) return null;
+
 
   try {
-    const wfRes = await fetch(wfUrl, {
-      headers: { Accept: "application/jrd+json" },
-      signal: AbortSignal.timeout(10000),
+    // guardedFetch: the handle is user-supplied, so the WebFinger host is too, and
+    // a single up-front check is bypassed by a redirect (see safe-fetch.ts).
+    const wfRes = await guardedFetch(wfUrl, {
+      crossOrigin: true,
+      label: "webfinger",
+      timeoutMs: FETCH_TIMEOUT_MS,
+      init: { headers: { Accept: "application/jrd+json" } },
     });
     if (!wfRes.ok) return null;
     const wfData = await wfRes.json();
@@ -62,11 +69,13 @@ export async function resolveFediActorByHandle(
 export async function resolveFediActorByUri(
   actorUri: string
 ): Promise<ResolvedFediActor | null> {
-  if (!(await assertPublicHost(actorUri))) return null;
+
   try {
-    const res = await fetch(actorUri, {
-      headers: { Accept: "application/activity+json" },
-      signal: AbortSignal.timeout(10000),
+    const res = await guardedFetch(actorUri, {
+      crossOrigin: true,
+      label: "resolve actor",
+      timeoutMs: FETCH_TIMEOUT_MS,
+      init: { headers: { Accept: "application/activity+json" } },
     });
     if (!res.ok) return null;
     const actor = await res.json();

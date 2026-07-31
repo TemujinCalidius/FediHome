@@ -147,13 +147,21 @@ The `ecosystem.config.cjs` file is included in the repo and configures PM2 with:
 - 5-second restart delay
 
 **Background jobs need no extra process.** FediHome's scheduler — publishing
-**scheduled posts** at their time and running the Bluesky sync — runs *inside*
-the app itself and starts automatically with it (any deployment: PM2, plain
-`npm start`, or Docker). No cron entry is needed; the old
-`scripts/scheduled-bluesky-sync.ts` cron is obsolete — if you had it in
-crontab/PM2, remove it. Cadences/toggles are configurable via the
-`SCHEDULER_*` env vars (see `.env.example`); look for a
-`scheduler: starting (in-app)` line in the app log at boot.
+**scheduled posts** at their time, running the Bluesky sync, and checking daily
+for updates and security advisories — runs *inside* the app itself and starts
+automatically with it (any deployment: PM2, plain `npm start`, or Docker). No
+cron entry is needed; the old `scripts/scheduled-bluesky-sync.ts` cron is
+obsolete — if you had it in crontab/PM2, remove it. Cadences/toggles are
+configurable in **Admin → Instance settings** and via the `SCHEDULER_*` env vars
+(see `.env.example`); look for a `scheduler: starting (in-app)` line in the app
+log at boot.
+
+The update check makes outbound requests to the npm registry and the GitHub API
+and reports what it finds in your notifications. It's on daily by default,
+remembers when it last ran (so restarting doesn't re-run it and doesn't skip a
+due one), and can be turned off entirely with
+`SCHEDULER_UPDATE_CHECK_ENABLED=false` or the toggle in Instance settings, which
+also has a **Check now** button.
 
 Check status:
 
@@ -346,7 +354,22 @@ If using Cloudflare Tunnel, see [Cloudflare Tunnel](cloudflare-tunnel.md) instea
 
 ## Updating FediHome
 
-The simplest way is the bundled updater, which handles git pull, dependency install, schema migration, rebuild, and restart in one command:
+How you update depends on how you installed, and the bundled updater only covers
+one of the three:
+
+| Install | Update with |
+| --- | --- |
+| `git clone` (Options 1 and 2 above) | `npm run update` |
+| Docker | `docker compose pull && docker compose up -d`, **on the host** |
+| Release archive (no git history) | unpack the new release, then the manual steps below |
+
+A container **cannot** update itself: the image has no git history, no `src/`, no
+Docker socket, and runs unprivileged. `npm run update` inside one refuses and
+tells you this. FediHome's own update alerts name the command that applies to
+your install rather than assuming a git checkout.
+
+For a git checkout, the bundled updater handles git pull, dependency install,
+schema migration, rebuild, and restart in one command:
 
 ```bash
 cd /opt/fedihome    # or wherever you installed it

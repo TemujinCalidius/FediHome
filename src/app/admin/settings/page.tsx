@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { prisma } from "@/lib/db";
 import { verifyAdminSession } from "@/lib/auth";
 import { getSchedulerConfig, getEffectiveSchedulerConfig, SCHEDULER_SETTING_KEYS } from "@/lib/scheduler-config";
+import { lastUpdateCheckAt } from "@/lib/update-check";
 import TimelineLogin from "../../timeline/TimelineLogin";
 import SettingsClient from "./SettingsClient";
 
@@ -24,11 +25,18 @@ export default async function AdminSettingsPage() {
     where: { key: { in: [...SCHEDULER_SETTING_KEYS] } },
   });
 
+  // Read here rather than fetching it from the client on mount (#399): this page
+  // is already a server component doing a database read, and an effect that only
+  // exists to populate state is the thing react-hooks/set-state-in-effect warns
+  // about. The client refreshes it after a manual check.
+  const lastChecked = await lastUpdateCheckAt();
+
   return (
     <SettingsClient
       defaults={getSchedulerConfig()}
       effective={await getEffectiveSchedulerConfig()}
       overrides={Object.fromEntries(rows.map((r) => [r.key, r.value]))}
+      lastCheckedAt={lastChecked && lastChecked > 0 ? new Date(lastChecked).toISOString() : null}
     />
   );
 }

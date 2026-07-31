@@ -89,7 +89,7 @@ Both render natively as ActivityPub attachments — Mastodon, Pleroma, and Missk
 
 ## Updating
 
-To update to the latest version:
+If you installed with `git clone`:
 
 ```bash
 cd /path/to/fedihome
@@ -98,7 +98,15 @@ npm run update
 
 This runs `update.sh`, which fetches new code, shows you what's new, asks for confirmation, installs dependencies, applies any schema changes (Prisma refuses if data would be lost), rebuilds, and restarts the server (pm2 / systemd / docker compose — whichever it finds).
 
-Want passive notifications when there's a new version? Run `npm run check-updates` and a "FediHome update available" item will appear in your admin notification bell whenever upstream `main` is ahead of your checkout. The same command also scans for outdated dependencies, security advisories, and new releases of key libraries (Fedify, Next.js, Prisma, atproto, React).
+**If you run FediHome in Docker**, do this on the **host** instead — a container can't update itself, since the image has no git history and no source tree:
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+(Use `docker compose build && docker compose up -d` if you build the image yourself.)
+
+FediHome checks for updates and security advisories **once a day on its own** and puts what it finds in your admin notification bell — including the command that applies to your install. There's a "Check now" button and a toggle in **Admin → Instance settings**, and `npm run check-updates` runs the same check by hand. It also scans for outdated dependencies, security advisories, and new releases of key libraries (Fedify, Next.js, Prisma, atproto, React).
 
 ```bash
 npm run check-updates

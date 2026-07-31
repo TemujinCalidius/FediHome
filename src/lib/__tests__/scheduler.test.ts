@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 const {
   getSchedulerConfig, getEffectiveSchedulerConfig,
   publishDueScheduledPosts, syncBlueskyGraph, pollBlueskyDMs, syncBlueskyNotifications, retryFailedDeliveries, retryFailedCrossposts, pruneStaleFediPosts,
-  measureStorageUsage, trimFediStorage, syncBlueskyFeed,
+  measureStorageUsage, trimFediStorage, syncBlueskyFeed, startUpdateCheck,
 } = vi.hoisted(() => ({
   getSchedulerConfig: vi.fn(),
   getEffectiveSchedulerConfig: vi.fn(),
@@ -17,6 +17,7 @@ const {
   measureStorageUsage: vi.fn(),
   trimFediStorage: vi.fn(),
   syncBlueskyFeed: vi.fn(),
+  startUpdateCheck: vi.fn(),
 }));
 vi.mock("@/lib/scheduler-config", () => ({ getSchedulerConfig, getEffectiveSchedulerConfig }));
 vi.mock("@/lib/publish-post", () => ({ publishDueScheduledPosts }));
@@ -32,8 +33,11 @@ vi.mock("@/lib/storage-usage", () => ({ measureStorageUsage }));
 // The Bluesky sync now imports the following feed too (#393).
 vi.mock("@/lib/bluesky-feed", () => ({ syncBlueskyFeed }));
 vi.mock("@/lib/fedi-media", () => ({ trimFediStorage }));
+// The update check spawns a child process and reads the persisted watermark (#399);
+// without this it would do real I/O inside the tick.
+vi.mock("@/lib/update-check", () => ({ startUpdateCheck }));
 
-import { startScheduler, runPublishTick, runBlueskySyncTick, runDeliveryRetryTick, runCrosspostRetryTick, runRetentionSweepTick, runStorageScanTick } from "@/lib/scheduler";
+import { startScheduler, runPublishTick, runBlueskySyncTick, runDeliveryRetryTick, runCrosspostRetryTick, runRetentionSweepTick, runStorageScanTick, runUpdateCheckTick } from "@/lib/scheduler";
 
 const cfg = (over: Record<string, unknown> = {}) => ({
   publishScheduled: { enabled: true, intervalSec: 60 },
@@ -41,6 +45,7 @@ const cfg = (over: Record<string, unknown> = {}) => ({
   deliveryRetry: { enabled: false, intervalSec: 60 },
   crosspostRetry: { enabled: false, intervalSec: 60 },
   storageScan: { enabled: false, intervalSec: 3600 },
+  updateCheck: { enabled: false, intervalSec: 86_400 },
   retentionSweep: { enabled: false, intervalSec: 86_400, retentionDays: 90 },
   ...over,
 });
@@ -59,6 +64,7 @@ beforeEach(() => {
   retryFailedDeliveries.mockResolvedValue({ claimed: 0, delivered: 0, gaveUp: 0, pruned: 0 });
   retryFailedCrossposts.mockResolvedValue({ claimed: 0, delivered: 0, gaveUp: 0, pruned: 0 });
   pruneStaleFediPosts.mockResolvedValue({ scanned: 0, pruned: 0, filesRemoved: 0, capped: false });
+  startUpdateCheck.mockResolvedValue({ started: false, reason: "not-due" });
 });
 
 afterEach(() => {
@@ -294,3 +300,42 @@ describe("storage scan (#385)", () => {
   });
 });
 
+
+describe("the update check job (#399)", () => {
+  it("attempts a check at startup, and lets the watermark decide", async () => {
+    // Deliberately attempted on boot: an instance that has been switched off for a
+    // week should find out about a security advisory when it comes back, not 24
+    // hours later. The persisted watermark inside startUpdateCheck is what makes
+    // that safe — this call is one indexed lookup when nothing is due.
+    getEffectiveSchedulerConfig.mockResolvedValue(cfg({ updateCheck: { enabled: true, intervalSec: 86_400 } }));
+    startScheduler();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(startUpdateCheck).toHaveBeenCalledWith({ intervalSec: 86_400 });
+  });
+
+  it("passes the CONFIGURED interval, so an admin override actually changes the cadence", async () => {
+    getEffectiveSchedulerConfig.mockResolvedValue(cfg({ updateCheck: { enabled: true, intervalSec: 43_200 } }));
+    await runUpdateCheckTick();
+    expect(startUpdateCheck).toHaveBeenCalledWith({ intervalSec: 43_200 });
+  });
+
+  it("never forces — only the admin button does that", async () => {
+    // A forced scheduled run would bypass the watermark and check on every tick.
+    getEffectiveSchedulerConfig.mockResolvedValue(cfg({ updateCheck: { enabled: true, intervalSec: 86_400 } }));
+    await runUpdateCheckTick();
+    expect(startUpdateCheck.mock.calls[0][0]).not.toHaveProperty("force", true);
+  });
+
+  it("does nothing at all when the job is disabled", async () => {
+    getEffectiveSchedulerConfig.mockResolvedValue(cfg({ updateCheck: { enabled: false, intervalSec: 86_400 } }));
+    await runUpdateCheckTick();
+    expect(startUpdateCheck).not.toHaveBeenCalled();
+  });
+
+  it("a failure never throws out of the tick", async () => {
+    getEffectiveSchedulerConfig.mockResolvedValue(cfg({ updateCheck: { enabled: true, intervalSec: 86_400 } }));
+    startUpdateCheck.mockRejectedValue(new Error("boom"));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    await expect(runUpdateCheckTick()).resolves.toBeUndefined();
+  });
+});

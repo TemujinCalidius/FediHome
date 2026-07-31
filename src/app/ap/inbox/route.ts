@@ -9,6 +9,7 @@ import { resolveOwnedTarget } from "@/lib/notifications";
 import { htmlToText } from "@/lib/html-text";
 import { getSiteUrl } from "@/lib/identity";
 import { isBlockedSender } from "@/lib/blocks";
+import { guardedFetch } from "@/lib/safe-fetch";
 
 const ACTOR_FETCH_TIMEOUT_MS = 8000;
 const DEBUG = process.env.FEDIHOME_DEBUG === "true";
@@ -156,11 +157,15 @@ export async function POST(req: NextRequest) {
 }
 
 async function fetchActorInfo(actorUri: string) {
-  if (!(await assertPublicHost(actorUri))) return null;
   try {
-    const res = await fetch(actorUri, {
-      headers: { Accept: "application/activity+json" },
-      signal: AbortSignal.timeout(ACTOR_FETCH_TIMEOUT_MS),
+    // guardedFetch re-checks every redirect hop. A bare assertPublicHost + fetch
+    // validated only the first, and `actorUri` comes straight out of an inbound
+    // activity — see safe-fetch.ts.
+    const res = await guardedFetch(actorUri, {
+      crossOrigin: true,
+      label: "fetchActorInfo",
+      timeoutMs: ACTOR_FETCH_TIMEOUT_MS,
+      init: { headers: { Accept: "application/activity+json" } },
     });
     if (!res.ok) return null;
     const actor = await res.json();
@@ -653,12 +658,15 @@ async function handleBoost(actorUri: string, activity: Record<string, unknown>) 
   const existing = await prisma.fediPost.findUnique({ where: { apId: boostApId } });
   if (existing) return;
 
-  // Fetch the original post from the remote server
-  if (!(await assertPublicHost(targetApId))) return;
+  // Fetch the original post from the remote server. guardedFetch, not fetch:
+  // targetApId comes from the boost activity, so a remote picks it, and the old
+  // single assertPublicHost() call was bypassed by a redirect (see safe-fetch.ts).
   try {
-    const res = await fetch(targetApId, {
-      headers: { Accept: "application/activity+json, application/ld+json" },
-      signal: AbortSignal.timeout(10000),
+    const res = await guardedFetch(targetApId, {
+      crossOrigin: true,
+      label: "boosted object fetch",
+      timeoutMs: 10000,
+      init: { headers: { Accept: "application/activity+json, application/ld+json" } },
     });
     if (!res.ok) return;
     const note = await res.json();

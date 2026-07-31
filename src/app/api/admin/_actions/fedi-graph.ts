@@ -7,6 +7,7 @@ import { assertPublicHost, isPrivateUrl } from "@/lib/url-guard";
 import { sanitizeHtml } from "@/lib/sanitize";
 import type { AdminBody } from "./types";
 import { getSiteUrl, getIdentity } from "@/lib/identity";
+import { guardedFetch } from "@/lib/safe-fetch";
 
 const REMOTE_FETCH_TIMEOUT_MS = 8000;
 
@@ -111,10 +112,14 @@ export async function follow(body: AdminBody): Promise<NextResponse> {
       }
       const wfUrl = `https://${domain}/.well-known/webfinger?resource=acct:${encodeURIComponent(username)}@${encodeURIComponent(domain)}`;
       if (isPrivateUrl(wfUrl)) throw new Error("blocked: private host");
-      const wfRes = await fetch(wfUrl, {
+      const wfRes = await guardedFetch(wfUrl, {
+        crossOrigin: true,
+        label: "fedi-graph webfinger",
+        timeoutMs: REMOTE_FETCH_TIMEOUT_MS,
+        init: {
         headers: { Accept: "application/jrd+json" },
-        signal: AbortSignal.timeout(REMOTE_FETCH_TIMEOUT_MS),
-      });
+      },
+    });
       if (!wfRes.ok) throw new Error("WebFinger failed");
 
       const wfData = await wfRes.json();
@@ -161,10 +166,14 @@ export async function follow(body: AdminBody): Promise<NextResponse> {
     }
 
     // Fetch actor profile
-    const actorRes = await fetch(actorLink.href, {
+    const actorRes = await guardedFetch(actorLink.href, {
+      crossOrigin: true,
+      label: "fedi-graph actor",
+      timeoutMs: REMOTE_FETCH_TIMEOUT_MS,
+      init: {
       headers: { Accept: "application/activity+json" },
-      signal: AbortSignal.timeout(REMOTE_FETCH_TIMEOUT_MS),
-    });
+    },
+  });
     if (!actorRes.ok) throw new Error("Actor fetch failed");
 
     const actor = await actorRes.json();
@@ -199,10 +208,14 @@ export async function follow(body: AdminBody): Promise<NextResponse> {
     // Pull recent posts from their outbox
     if (actor.outbox) {
       try {
-        const outboxRes = await fetch(actor.outbox, {
+        const outboxRes = await guardedFetch(actor.outbox, {
+          crossOrigin: true,
+          label: "fedi-graph outbox",
+          timeoutMs: REMOTE_FETCH_TIMEOUT_MS,
+          init: {
           headers: { Accept: "application/activity+json" },
-          signal: AbortSignal.timeout(REMOTE_FETCH_TIMEOUT_MS),
-        });
+        },
+      });
         if (outboxRes.ok) {
           const outbox = await outboxRes.json();
           const items = outbox.orderedItems || outbox.items || [];

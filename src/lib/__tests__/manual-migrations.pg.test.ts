@@ -55,6 +55,12 @@ const TABLES = [
   `CREATE TABLE "FediFollowing" ("id" TEXT PRIMARY KEY)`,
   `CREATE TABLE "AuthToken" ("id" TEXT PRIMARY KEY)`,
   `CREATE TABLE "SiteSettings" ("id" TEXT PRIMARY KEY)`,
+  // 2026-07-30-maintenanceitem-resolved adds resolvedAt/occurrences to this.
+  `CREATE TABLE "MaintenanceItem" (
+     "id" TEXT PRIMARY KEY, "kind" TEXT NOT NULL, "packageName" TEXT NOT NULL,
+     "latest" TEXT, "dismissed" BOOLEAN NOT NULL DEFAULT false,
+     "applied" BOOLEAN NOT NULL DEFAULT false,
+     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
 ];
 
 /** Everything the migrations themselves create, plus the ledger. */
@@ -164,6 +170,20 @@ describe.skipIf(!URL)("manual migrations against real Postgres", () => {
       expect(out).not.toMatch(/could not be applied/);
       expect(out).not.toMatch(/not applicable yet/);
       expect(out).toMatch(new RegExp(`Applied ${fileCount()} migration\\(s\\)\\.`));
+    });
+
+    it("adds the resolvable-alert columns with usable defaults (#412)", async () => {
+      // Pure ADD COLUMN IF NOT EXISTS, no backfill: every pre-existing row is by
+      // definition still outstanding, so NULL and 1 are already correct for it —
+      // which is exactly what the column defaults supply at ALTER time.
+      await client.query(
+        `INSERT INTO "MaintenanceItem" ("id","kind","packageName","latest")
+         VALUES ('m1','update','next','16.1.0')`,
+      );
+      const { rows } = await client.query(
+        `SELECT "resolvedAt","occurrences" FROM "MaintenanceItem" WHERE "id" = 'm1'`,
+      );
+      expect(rows[0]).toEqual({ resolvedAt: null, occurrences: 1 });
     });
 
     it("runs the creation-guarded backfill for real", async () => {
