@@ -633,6 +633,19 @@ export default function SiteSettingsClient({
                     the first one they ever saw.
                   </p>
                   {text("Site URL", ident.siteUrl, (v) => setIdent((c) => (c ? { ...c, siteUrl: v } : c)), "https://yourdomain.com")}
+                  {/* Honest about the limit rather than implying validation we
+                      don't do (#431). We check the shape and that the address is
+                      reachable from the internet at all — we cannot check that
+                      you control it, and a legitimate operator behind a reverse
+                      proxy or a tunnel routinely serves a domain nothing here
+                      can see locally, so a hard check would be wrong. */}
+                  <p className="text-xs text-gray-600 m-0">
+                    We can&apos;t check that you actually control this domain. If it&apos;s wrong,
+                    federation stops working silently — other servers look for you at that address
+                    and find nothing — and you may lose access to this panel until you put it right.
+                    Getting it wrong is recoverable before you publish; afterwards it needs{" "}
+                    <code>scripts/set-identity.ts</code>.
+                  </p>
                   {text("Handle", ident.fediHandle, (v) => setIdent((c) => (c ? { ...c, fediHandle: v } : c)), "me")}
                   {text("Domain", ident.fediDomain, (v) => setIdent((c) => (c ? { ...c, fediDomain: v } : c)), "yourdomain.com")}
                   <div>
