@@ -363,10 +363,26 @@ one of the three:
 | Docker | `docker compose pull && docker compose up -d`, **on the host** |
 | Release archive (no git history) | unpack the new release, then the manual steps below |
 
-A container **cannot** update itself: the image has no git history, no `src/`, no
-Docker socket, and runs unprivileged. `npm run update` inside one refuses and
-tells you this. FediHome's own update alerts name the command that applies to
-your install rather than assuming a git checkout.
+A container **cannot** update itself: the image has no git history, no Docker
+socket, and runs unprivileged. `npm run update` inside one refuses and tells you
+this. FediHome's own update alerts link you to the release rather than assuming a
+git checkout.
+
+**If your image is rolled by a platform or orchestrator** — Kubernetes, Nomad,
+Swarm, Fly, Render, any PaaS — neither of those instructions fits: there is no
+host to run `docker compose` on. Two environment variables let you say what
+should happen instead, and no detection can work this out for you:
+
+| Variable | Effect |
+| --- | --- |
+| `FEDIHOME_UPDATE_TEXT` | Replaces the "to apply it, run…" sentence with your own. |
+| `FEDIHOME_UPDATE_URL` | Points the update alert's link at your deploy pipeline, runbook or control plane instead of the GitHub compare view. |
+
+`FEDIHOME_UPDATE_URL` is the more useful of the two today, because the alert in
+the notification bell is a link — clicking it is the action. It applies only to
+FediHome's own update alerts; dependency and security-advisory alerts keep
+pointing at npm and the advisory, since those links are the evidence rather than
+the action.
 
 For a git checkout, the bundled updater handles git pull, dependency install,
 schema migration, rebuild, and restart in one command:

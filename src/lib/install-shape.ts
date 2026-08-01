@@ -65,6 +65,15 @@ export function installShape(cwd = process.cwd()): InstallShape {
  * being wrong wastes the most time.
  */
 export function updateInstruction(shape: InstallShape = installShape()): string {
+  // The operator always beats detection (#438). No amount of probing enumerates
+  // every deployment topology — Kubernetes, Nomad, Swarm, Fly, Render, any PaaS
+  // — and the failure is not subtle: an orchestrated install is detected as
+  // `container` and told to run compose on a host it does not have, while a
+  // platform that writes neither /.dockerenv nor a matching cgroup falls through
+  // to `tarball` and is told to unpack a release over an immutable filesystem.
+  const override = process.env.FEDIHOME_UPDATE_TEXT?.trim();
+  if (override) return override;
+
   switch (shape) {
     case "container":
       return (
@@ -85,6 +94,9 @@ export function updateInstruction(shape: InstallShape = installShape()): string 
 
 /** The same thing as a bare command, for a log line with no room for a sentence. */
 export function updateCommand(shape: InstallShape = installShape()): string {
+  const override = process.env.FEDIHOME_UPDATE_TEXT?.trim();
+  if (override) return override;
+
   switch (shape) {
     case "container":
       return "docker compose pull && docker compose up -d (on the host)";
@@ -92,5 +104,39 @@ export function updateCommand(shape: InstallShape = installShape()): string {
       return "unpack the new release, then npm install && npm run build";
     case "git":
       return "npm run update";
+  }
+}
+
+/**
+ * Where an update alert should send the operator (#438).
+ *
+ * The cheap half of the same problem, and the reason it is worth doing first:
+ * `MaintenanceItem.url` is ALREADY rendered — src/lib/notifications.ts maps it
+ * to `targetUrl`, and NotificationBell opens it. `description`, where
+ * updateInstruction() writes, is never mapped. So making the URL settable is a
+ * config change with a working render path, whereas surfacing the text needs a
+ * UI change as well.
+ *
+ * A URL is also the better fit for the case that prompted this. An orchestrated
+ * install's instruction is rarely a command that can be typed into the box the
+ * operator is looking at — it is "go and do this somewhere else", which a link
+ * expresses natively and which survives the operator changing their process
+ * without waiting for a core release.
+ *
+ * ONLY for FediHome's own update rows. npm package rows and security advisories
+ * must keep pointing at npmjs and the advisory: those links are the evidence,
+ * not the action, and redirecting them would hide what an alert is actually
+ * about.
+ */
+export function updateUrl(fallback: string): string {
+  const override = process.env.FEDIHOME_UPDATE_URL?.trim();
+  if (!override) return fallback;
+  try {
+    const u = new URL(override);
+    // Rendered as a link the operator clicks, so refuse anything that isn't a
+    // plain web address — javascript: and data: are the obvious ones.
+    return u.protocol === "https:" || u.protocol === "http:" ? u.toString() : fallback;
+  } catch {
+    return fallback;
   }
 }
