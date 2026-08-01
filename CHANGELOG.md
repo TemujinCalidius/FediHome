@@ -19,6 +19,9 @@
 - **An update check that fails now says so** (#437) — if the background check died, nothing reported it: its output was discarded and its exit code ignored, so a check that crashed looked exactly like one that ran and found nothing. Your update and security alerts would quietly go stale. It now logs the failure and how to run it by hand, and the check's own output reaches your logs.
 - **The update checker can no longer tell you to downgrade** (#465) — it flagged a package whenever the available version merely *differed* from yours, so on the occasions the registry reported an older version it raised an update alert pointing backwards, helpfully labelled "(major)". It now checks the version is actually newer.
 
+### Security
+- **Closed a timing gap where a hostile server could still reach your local network.** FediHome checks that a remote address is public before fetching from it, but the connection then looked the address up a second time — and whoever controls that domain's DNS can answer the two lookups differently, sending the connection somewhere the check never saw. The check and the connection now use the same lookup, so there is nothing in between to change. Found by internal review, with no evidence of use.
+
 ## 1.24.1 (2026-08-01)
 
 ### Changed

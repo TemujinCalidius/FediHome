@@ -1,4 +1,5 @@
 import { assertPublicHost } from "./url-guard";
+import { guardedDispatcher } from "./pinned-dispatcher";
 
 /**
  * The one place outbound requests to remote-controlled URLs follow redirects.
@@ -153,7 +154,12 @@ export async function guardedFetch(url: string, opts: GuardedFetchOptions): Prom
       ...init,
       redirect: "manual", // we follow, so we can re-check and re-sign
       signal: deadline,
-    });
+      // The check above and the socket below must agree about which address
+      // this hostname means (#434). Without the dispatcher they are two separate
+      // DNS lookups, and the attacker owns the zone between them. `dispatcher`
+      // is undici's own extension to RequestInit, hence the cast.
+      dispatcher: guardedDispatcher(),
+    } as RequestInit & { dispatcher: unknown });
 
     if (res.status < 300 || res.status >= 400) return res;
 
