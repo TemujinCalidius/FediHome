@@ -11,7 +11,7 @@ export async function pollBlueskyDMs(): Promise<{ convos: number; messages: numb
   const { handle, password } = creds;
 
   const agent = new BskyAgent({ service: "https://bsky.social" });
-  await agent.login({ identifier: handle, password });
+  await agent.login({ identifier: creds.did ?? handle, password });
   const myDid = agent.session!.did;
 
   // Chat endpoints live on a separate service; route via the proxy header.

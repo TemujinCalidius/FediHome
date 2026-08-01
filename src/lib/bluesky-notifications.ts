@@ -71,7 +71,7 @@ export async function syncBlueskyNotifications(): Promise<{
   const { handle, password } = creds;
 
   const agent = new BskyAgent({ service: "https://bsky.social" });
-  await agent.login({ identifier: handle, password });
+  await agent.login({ identifier: creds.did ?? handle, password });
 
   // Map our crossposted posts' at:// URIs → where to link / label them. The
   // subject of a like/repost (and a reply's parent) is one of these.

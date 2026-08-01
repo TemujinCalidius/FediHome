@@ -21,7 +21,7 @@ export async function syncBlueskyGraph(): Promise<{ followers: number; following
   const { handle, password } = creds;
 
   const agent = new BskyAgent({ service: "https://bsky.social" });
-  await agent.login({ identifier: handle, password });
+  await agent.login({ identifier: creds.did ?? handle, password });
   const actor = agent.session!.did;
 
   const seenFollowerDids = new Set<string>();
@@ -98,7 +98,7 @@ export async function followBlueskyAccount(did: string): Promise<void> {
   const { handle, password } = creds;
 
   const agent = new BskyAgent({ service: "https://bsky.social" });
-  await agent.login({ identifier: handle, password });
+  await agent.login({ identifier: creds.did ?? handle, password });
 
   const result = await agent.follow(did);
   const profile = await agent.getProfile({ actor: did });
@@ -137,7 +137,7 @@ export async function unfollowBlueskyAccount(followingId: string): Promise<void>
   const { handle, password } = creds;
 
   const agent = new BskyAgent({ service: "https://bsky.social" });
-  await agent.login({ identifier: handle, password });
+  await agent.login({ identifier: creds.did ?? handle, password });
 
   await agent.deleteFollow(row.followUri);
   await prisma.blueskyFollowing.delete({ where: { id: followingId } });
@@ -156,7 +156,7 @@ export async function resolveBlueskyActor(handleOrDid: string): Promise<string> 
   const { handle, password } = creds;
 
   const agent = new BskyAgent({ service: "https://bsky.social" });
-  await agent.login({ identifier: handle, password });
+  await agent.login({ identifier: creds.did ?? handle, password });
   const res = await agent.resolveHandle({ handle: trimmed });
   return res.data.did;
 }

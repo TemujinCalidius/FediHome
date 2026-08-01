@@ -1,5 +1,10 @@
 import { BskyAgent } from "@atproto/api";
-import { getBlueskyCredentials, normalizeBlueskyHandle } from "./integrations";
+import {
+  BLUESKY_SERVICE,
+  getBlueskyCredentials,
+  normalizeBlueskyHandle,
+  rememberBlueskyDid,
+} from "./integrations";
 
 /**
  * One place to get a logged-in Bluesky agent.
@@ -18,8 +23,6 @@ import { getBlueskyCredentials, normalizeBlueskyHandle } from "./integrations";
  * fallback (#326). Reading the env directly would ignore anything set from the
  * admin panel.
  */
-
-const SERVICE = "https://bsky.social";
 
 /**
  * How long a cached session is reused. Access tokens last ~2h, so this is a
@@ -50,7 +53,11 @@ export async function getBlueskyAgent(): Promise<BskyAgent | null> {
 
   // Keyed on the credentials themselves, so rotating them invalidates the
   // session rather than silently reusing the old identity.
-  const key = `${handle}:${creds.password}`;
+  // The DID is the stable identifier; the handle is a mutable alias that stops
+  // resolving the moment the owner points it at their own domain (#448).
+  const identifier = creds.did ?? handle;
+
+  const key = `${identifier}:${creds.password}`;
   if (cached && cached.key === key && Date.now() - cached.at < SESSION_TTL_MS) {
     return cached.agent;
   }
@@ -58,8 +65,11 @@ export async function getBlueskyAgent(): Promise<BskyAgent | null> {
   // Collapse concurrent callers onto one login instead of racing several.
   if (!inFlight) {
     inFlight = (async () => {
-      const agent = new BskyAgent({ service: SERVICE });
-      await agent.login({ identifier: handle, password: creds.password });
+      const agent = new BskyAgent({ service: BLUESKY_SERVICE });
+      await agent.login({ identifier, password: creds.password });
+      // Capture it lazily, so an instance configured entirely by environment
+      // still gains the safety net without ever visiting the admin panel.
+      if (!creds.did && agent.session?.did) void rememberBlueskyDid(agent.session.did);
       cached = { key, at: Date.now(), agent };
       return agent;
     })().finally(() => {

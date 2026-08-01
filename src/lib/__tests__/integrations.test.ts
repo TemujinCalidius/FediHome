@@ -131,10 +131,21 @@ describe("integrations — Bluesky credentials", () => {
     });
   });
 
-  it("clear deletes both rows", async () => {
+  it("clear deletes every row, including the captured DID", async () => {
+    // The DID has to go with the credentials. Leaving it behind means the next
+    // account configured here would be logged into by the PREVIOUS account's
+    // identifier — the DID outranks the handle, so it would win silently.
     await clearBlueskyCredentials();
     expect(prisma.siteSetting.deleteMany).toHaveBeenCalledWith({
-      where: { key: { in: ["integration.bluesky.handle", "integration.bluesky.password"] } },
+      where: {
+        key: {
+          in: [
+            "integration.bluesky.handle",
+            "integration.bluesky.password",
+            "integration.bluesky.did",
+          ],
+        },
+      },
     });
   });
 });

@@ -39,7 +39,7 @@ export async function crosspostToBluesky(
 
   try {
     const agent = new BskyAgent({ service: "https://bsky.social" });
-    await agent.login({ identifier: handle, password });
+    await agent.login({ identifier: creds.did ?? handle, password });
 
     const text = truncateForBluesky(content, url);
 
@@ -88,7 +88,7 @@ export async function crosspostReplyToBluesky(
 
   try {
     const agent = new BskyAgent({ service: "https://bsky.social" });
-    await agent.login({ identifier: handle, password });
+    await agent.login({ identifier: creds.did ?? handle, password });
 
     const uriParts = parentBlueskyUri.replace("at://", "").split("/");
     const repo = uriParts[0];
