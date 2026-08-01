@@ -2,7 +2,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { NextRequest } from "next/server";
 
 const { verifyAdmin } = vi.hoisted(() => ({ verifyAdmin: vi.fn() }));
-vi.mock("@/lib/auth", () => ({ verifyAdmin }));
+// Real verifySameOriginRequest — the route's CSRF gate should be exercised, not
+// stubbed. The request factory supplies matching host/origin headers.
+vi.mock("@/lib/auth", async (orig) => ({
+  ...(await orig<Record<string, unknown>>()),
+  verifyAdmin,
+}));
 const { verifySetupToken } = vi.hoisted(() => ({ verifySetupToken: vi.fn() }));
 vi.mock("@/lib/setup-token", () => ({ verifySetupToken }));
 const { saveUploadedImage } = vi.hoisted(() => ({ saveUploadedImage: vi.fn() }));
@@ -17,7 +22,9 @@ function req(token: string | null, withFile = true): NextRequest {
   if (withFile) fd.append("file", new File([new Uint8Array([1, 2, 3])], "a.png", { type: "image/png" }));
   return new Request("https://x/api/setup/media", {
     method: "POST",
-    headers: token ? { "x-setup-token": token } : {},
+    // host + origin: the route now has a CSRF check after its credential gate
+    // (#430), using verifySameOriginRequest since SITE_URL isn't written yet.
+    headers: { host: "x", origin: "https://x", ...(token ? { "x-setup-token": token } : {}) },
     body: fd,
   }) as unknown as NextRequest;
 }

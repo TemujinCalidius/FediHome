@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.24.1 (2026-08-01)
+
+### Changed
+- Dependency refresh: `@atproto/api` 0.20.35, `@types/react` 19.2.18, `@types/react-dom` 19.2.4. (`typescript` remains held at 6.x — see #234.)
+
+### Fixed
+- **A wrong site URL no longer locks you out of your own admin panel** (#426) — if you set your site URL to an address you don't actually serve, every admin action started refusing you, *including the page that would let you change it back*. The only way out was editing the database or `.env.local` by hand. The security check behind that now also accepts the address you're genuinely browsing from, so you can always fix a typo from the panel itself. Note this only helps before you've published anything — after that, changing your address is refused for a different and deliberate reason.
+- **A capital letter in your domain no longer makes you invisible** (#427) — if you'd written your domain with any capitals in `.env.local`, nobody could find or follow you. Other servers always ask in lowercase, FediHome compared the two exactly, and every lookup came back "not found" — while your site looked perfectly healthy from the inside. Domains are now normalised wherever they're set, including in your site URL, which is the one that gets stamped into every post you publish and can't be corrected afterwards.
+- **The setup wizard now has the same cross-site protection as everything else** (#430) — it was the one place that could be submitted from another site. Not something an attacker could have used on a working instance, since setup refuses to run twice, but it was the odd one out.
+- **Changing your address is now blocked if you follow anyone** (#428) — FediHome already refused to let you change your domain once you'd published something or gained a follower, because it would silently break them. It wasn't counting the people *you* follow, whose servers deliver to your current address — so that change could still quietly cut you off from everyone in your timeline, with nothing on either side to explain why.
+
+### Security
+- **Closed the last way another server could point your instance at your own network.** The check that stops FediHome connecting to private addresses understood most of the ways an IPv4 address can be hidden inside an IPv6 one — but not all of them, so a handful of spellings still slipped through. It now covers the remaining transition formats, plus several address ranges that are reserved or local by definition and are never a legitimate place to fetch from. Completes the fix released in 1.24.0; found by internal review, with no evidence of use.
+
 ## 1.24.0 (2026-07-31)
 
 ### Added

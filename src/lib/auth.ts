@@ -313,8 +313,15 @@ export async function verifyAdmin(req: {
 export function verifyOrigin(req: { headers: { get(name: string): string | null } }): boolean {
   const origin = req.headers.get("origin");
   const referer = req.headers.get("referer");
-  const siteUrl = getSiteUrl();
-  const expected = new URL(siteUrl);
+  // Fail CLOSED on a malformed SITE_URL rather than throwing. This was outside
+  // the try/catch below, so `SITE_URL=example.com` (no scheme) turned every
+  // mutation into a 500 with a stack trace instead of a 403.
+  let expected: URL;
+  try {
+    expected = new URL(getSiteUrl());
+  } catch {
+    return false;
+  }
 
   const matches = (urlStr: string): boolean => {
     try {
@@ -333,6 +340,95 @@ export function verifyOrigin(req: { headers: { get(name: string): string | null 
   };
 
   if (origin) return matches(origin);
+  if (referer) return matches(referer);
+  return false;
+}
+
+/**
+ * Same-origin check for the **only** routes that must work before `getSiteUrl()`
+ * can be trusted: the setup wizard (#430) and the identity route that repairs a
+ * wrong `SITE_URL` (#426).
+ *
+ * Everything else uses `verifyOrigin`. There are exactly three call sites and a
+ * test asserts it stays that way.
+ *
+ * **The problem.** `verifyOrigin` compares against the *configured* origin. Set
+ * `SITE_URL` to a host you don't serve and every mutation 403s — including the
+ * one route that would set it back. On a fresh install it's worse: `getSiteUrl()`
+ * is `http://localhost:3000` while the browser's Origin is the real hostname, so
+ * adding a CSRF check to setup at all would 403 every Docker and proxy install.
+ *
+ * **The mechanism.** Compare Origin/Referer against the request's OWN host.
+ * `Origin`, `Referer` and `Host` are all forbidden header names, so page
+ * JavaScript cannot set any of them; a cross-site page gets `Origin: <its own>`
+ * and `Host: <ours>`, which cannot agree.
+ *
+ * **Where this is WEAKER than `verifyOrigin`, and why that's affordable here.**
+ * It asks "is this same-origin?", not "is this to the address I think I am". A
+ * hostname an attacker owns, pointed at this server's IP and served by our
+ * catch-all vhost, is same-origin to the browser and passes. The shipped nginx
+ * has no `default_server` rejection, so that is reachable. It is affordable on
+ * these three routes ONLY because each is separately gated by a credential such
+ * an origin cannot carry — the admin cookie is scoped to the real hostname, the
+ * setup token is out-of-band. **Call the credential check FIRST.** On an
+ * unauthenticated route (`/api/comments`, `/api/kudos`) this would be a genuine
+ * widening. Do not reuse it there.
+ *
+ * **Neither `host` nor `x-forwarded-host` is trusted.** Both are client-supplied
+ * under the nginx config we ship (`proxy_set_header Host $host`), and Next
+ * normalises `x-forwarded-host ??= host`. Soundness comes from Origin/Host
+ * AGREEMENT, not from either being authentic. The `TRUSTED_PROXY` gate here is
+ * for COMPATIBILITY with proxies that rewrite Host to a backend name — unlike
+ * `client-ip.ts`, where the same gate genuinely is the trust boundary.
+ */
+export function verifySameOriginRequest(req: {
+  headers: { get(name: string): string | null };
+}): boolean {
+  const trustProxy = process.env.TRUSTED_PROXY === "true";
+  const rawHost = (
+    trustProxy ? (req.headers.get("x-forwarded-host") ?? req.headers.get("host")) : req.headers.get("host")
+  )
+    ?.split(",")[0]
+    .trim()
+    .toLowerCase();
+  if (!rawHost || !/^[a-z0-9.\-[\]:]+$/.test(rawHost)) return false;
+
+  let self: URL;
+  try {
+    self = new URL(`http://${rawHost}`); // parses "[::1]:3000" correctly too
+  } catch {
+    return false;
+  }
+  if (!self.hostname) return false;
+
+  const fwdProto = trustProxy
+    ? req.headers.get("x-forwarded-proto")?.split(",")[0].trim().toLowerCase()
+    : undefined;
+
+  const matches = (urlStr: string): boolean => {
+    let u: URL;
+    try {
+      u = new URL(urlStr); // "null", "" and opaque origins all land here
+    } catch {
+      return false;
+    }
+    if (u.protocol !== "http:" && u.protocol !== "https:") return false;
+    if (u.hostname.toLowerCase() !== self.hostname) return false;
+    // nginx's `Host $host` DROPS the port, so only compare it when it survived.
+    // The residual looseness costs nothing: cookies ignore port, so a service on
+    // another port of this same hostname can already read the admin cookie.
+    if (self.port && self.port !== u.port) return false;
+    if (fwdProto && `${fwdProto}:` !== u.protocol) return false;
+    return true;
+  };
+
+  const origin = req.headers.get("origin");
+  if (origin) return matches(origin);
+  // Referer is a forbidden header too, so it is no more forgeable than Origin.
+  // The difference is that a Referrer-Policy can SUPPRESS it — which causes a
+  // false 403, never a bypass. Accepting it costs nothing and buys recovery in
+  // exactly the misconfigured case this function exists for.
+  const referer = req.headers.get("referer");
   if (referer) return matches(referer);
   return false;
 }

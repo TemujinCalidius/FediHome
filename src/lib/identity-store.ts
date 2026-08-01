@@ -178,7 +178,7 @@ export async function refreshIdentity(): Promise<void> {
  */
 export async function identityIsLocked(): Promise<{ locked: boolean; reason?: string }> {
   try {
-    const [posts, photos, videos, audio, dms, outgoing, followers] = await Promise.all([
+    const [posts, photos, videos, audio, dms, outgoing, followers, following] = await Promise.all([
       prisma.post.count({ where: { apId: { not: null } } }),
       prisma.photo.count({ where: { apId: { not: null } } }),
       prisma.video.count({ where: { apId: { not: null } } }),
@@ -186,6 +186,7 @@ export async function identityIsLocked(): Promise<{ locked: boolean; reason?: st
       prisma.directMessage.count({ where: { isOutgoing: true } }),
       prisma.fediPost.count({ where: { isOutgoing: true } }),
       prisma.fediFollower.count(),
+      prisma.fediFollowing.count(),
     ]);
 
     const published = posts + photos + videos + audio + outgoing + dms;
@@ -204,6 +205,21 @@ export async function identityIsLocked(): Promise<{ locked: boolean; reason?: st
         reason:
           `${followers} account${followers === 1 ? " follows" : "s follow"} you at the current address. ` +
           "Changing it would silently break those follows, with nothing on their side to explain why your posts stopped.",
+      };
+    }
+    // The OUTBOUND direction, which this check missed entirely (#428). Their
+    // servers recorded our current actor id as a follower the moment we sent the
+    // Follow, and we publish the list at /ap/following under that same id. Change
+    // it and every one of them keeps delivering to an address that no longer
+    // resolves — we simply stop receiving, with nothing on either side to say why,
+    // while our own Following list still insists the follows are fine.
+    if (following > 0) {
+      return {
+        locked: true,
+        reason:
+          `You follow ${following} account${following === 1 ? "" : "s"} from the current address. ` +
+          "Their servers deliver to that address, so changing it would silently stop everything they post " +
+          "from reaching you — and no Undo was ever sent, so nothing on their side would explain it either.",
       };
     }
     return { locked: false };

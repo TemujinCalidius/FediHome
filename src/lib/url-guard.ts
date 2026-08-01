@@ -104,20 +104,61 @@ function expandIPv6(bare: string): number[] | null {
   return [...head, ...new Array(fill).fill(0), ...tail];
 }
 
-/** The IPv4 address an IPv6 group array embeds, if it embeds one. */
+/**
+ * The IPv4 address an IPv6 group array embeds, if it embeds one.
+ *
+ * IPv6 has several transition mechanisms that carry an IPv4 address inside the
+ * address, at different offsets. Each one is a way to reach an IPv4 host through
+ * an IPv6 literal, so each one has to be unwrapped and judged as IPv4 — otherwise
+ * `[2002:7f00:1::]` sails past every range check below and dials 127.0.0.1.
+ */
 function embeddedIPv4(g: number[]): string | null {
   const zeros = (upTo: number) => g.slice(0, upTo).every((x) => x === 0);
-  const quad = () => `${g[6] >> 8}.${g[6] & 0xff}.${g[7] >> 8}.${g[7] & 0xff}`;
+  /** Two 16-bit groups, high then low, as a dotted quad. */
+  const quad = (hi: number, lo: number) =>
+    `${hi >> 8}.${hi & 0xff}.${lo >> 8}.${lo & 0xff}`;
 
   // ::ffff:0:0/96 — IPv4-mapped. The one URL normalisation rewrites.
-  if (zeros(5) && g[5] === 0xffff) return quad();
+  if (zeros(5) && g[5] === 0xffff) return quad(g[6], g[7]);
   // ::/96 — deprecated IPv4-compatible. Covers `::7f00:1` and `::0:0`.
-  if (zeros(6)) return quad();
-  // 64:ff9b::/96 — NAT64. A translator will happily forward to a private v4.
+  if (zeros(6)) return quad(g[6], g[7]);
+  // 64:ff9b::/96 — NAT64 well-known. A translator forwards to the embedded v4.
   if (g[0] === 0x0064 && g[1] === 0xff9b && g[2] === 0 && g[3] === 0 && g[4] === 0 && g[5] === 0) {
-    return quad();
+    return quad(g[6], g[7]);
   }
+  // 2002::/16 — 6to4. The IPv4 sits in groups 1-2, NOT 6-7, which is why the
+  // three cases above all missed it: `2002:7f00:1::` is 127.0.0.1 wearing a hat.
+  // Extracted rather than blanket-blocked on purpose — a 6to4 address wrapping a
+  // genuinely public IPv4 is legitimately routable, and refusing those would be
+  // the same mistake in the opposite direction.
+  if (g[0] === 0x2002) return quad(g[1], g[2]);
   return null;
+}
+
+/**
+ * Prefixes that are never a legitimate destination, whatever they wrap.
+ *
+ * Distinct from `embeddedIPv4` on purpose: these either hide the address behind a
+ * transform we can't reverse, or are local/reserved by definition, so there is no
+ * embedded value worth extracting and judging.
+ */
+function isReservedIPv6Prefix(g: number[]): boolean {
+  // 64:ff9b:1::/48 — NAT64 LOCAL-USE (RFC 8215). The embedding is operator-chosen
+  // and RFC 6052 splits the quad around a reserved octet for /48, so there is no
+  // single correct extraction. "Local-use" is the entire point of the prefix.
+  if (g[0] === 0x0064 && g[1] === 0xff9b && g[2] === 0x0001) return true;
+  // 2001::/32 — Teredo. The embedded client IPv4 is XOR-obfuscated, and Teredo is
+  // deprecated. Note this needs g[1] === 0 exactly, so it does NOT catch ordinary
+  // 2001:xxxx:: space — 2001:4860:4860::8888 (Google DNS) stays reachable.
+  if (g[0] === 0x2001 && g[1] === 0x0000) return true;
+  // 2001:20::/28 — ORCHIDv2. Cryptographic identifiers, not routable hosts.
+  if (g[0] === 0x2001 && (g[1] & 0xfff0) === 0x0020) return true;
+  // 2001:db8::/32 and 3fff::/20 — documentation ranges (RFC 3849, RFC 9637).
+  if (g[0] === 0x2001 && g[1] === 0x0db8) return true;
+  if (g[0] === 0x3fff && (g[1] & 0xf000) === 0x0000) return true;
+  // 100::/64 — discard-only (RFC 6666).
+  if (g[0] === 0x0100 && g[1] === 0 && g[2] === 0 && g[3] === 0) return true;
+  return false;
 }
 
 /**
@@ -138,6 +179,7 @@ function isPrivateIPv6(ip: string): boolean {
 
   const v4 = embeddedIPv4(g);
   if (v4 !== null) return isPrivateIPv4(v4);
+  if (isReservedIPv6Prefix(g)) return true;
 
   if (g.every((x) => x === 0)) return true; //                       ::  unspecified
   if (g.slice(0, 7).every((x) => x === 0) && g[7] === 1) return true; // ::1 loopback
