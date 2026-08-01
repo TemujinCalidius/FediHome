@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.24.1 (2026-08-01)
 
 ### Changed
 - Dependency refresh: `@atproto/api` 0.20.35, `@types/react` 19.2.18, `@types/react-dom` 19.2.4. (`typescript` remains held at 6.x — see #234.)
