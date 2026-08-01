@@ -81,15 +81,20 @@ export async function GET(req: NextRequest) {
     const threadApIds = [...ancestors.map((p) => p.apId), startApId].filter(
       (a): a is string => a !== null,
     );
+    // The same filter the Bluesky branch above applies (#459). Without it, this
+    // ActivityPub path returned a blocked actor's replies while the Bluesky path
+    // hid them — the same thread answering differently depending on which network
+    // the post arrived from.
+    const blockFilter = await blockedPostFilter();
     const replies = await prisma.fediPost.findMany({
-      where: { inReplyTo: { in: threadApIds } },
+      where: { inReplyTo: { in: threadApIds }, ...blockFilter },
       orderBy: { publishedAt: "asc" },
     });
     const replyApIds = replies.map((r) => r.apId).filter((a): a is string => a !== null);
     const deepReplies =
       replyApIds.length > 0
         ? await prisma.fediPost.findMany({
-            where: { inReplyTo: { in: replyApIds } },
+            where: { inReplyTo: { in: replyApIds }, ...blockFilter },
             orderBy: { publishedAt: "asc" },
           })
         : [];

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { authenticateApiRequest } from "@/lib/auth";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { parseCursor, cursorWhere, encodeCursor, CURSOR_ORDER } from "@/lib/cursor";
+import { blockedPostFilter } from "@/lib/blocks";
 
 const PAGE_SIZE = 20;
 
@@ -50,6 +51,17 @@ export async function GET(req: NextRequest) {
   if (!showBluesky) {
     where.source = "fedi";
   }
+
+  // Blocked actors, filtered on the way OUT as well as at ingest (#459).
+  // /timeline and /fediverse both did this; this route did not — so the SSR first
+  // paint hid a blocked account and every client refetch brought it back. Load
+  // more, a filter toggle, the silent periodic refresh: all of them come through
+  // here, so blocking held for the length of one screen. Native app clients read
+  // this route exclusively, so they never filtered at all.
+  //
+  // Assign rather than spread into the literal: `where` may already carry `OR`
+  // from the cursor, and this contributes `NOT`. Different keys, no collision.
+  Object.assign(where, await blockedPostFilter());
 
   const posts = await prisma.fediPost.findMany({
     where,
