@@ -167,7 +167,14 @@ async function fetchThreadViaMastodon(
   if (!anc && !desc) return null;
 
   // Map each status's local id → AP uri so we can thread replies correctly.
-  const all = [...(anc || []), ...(desc || [])].slice(0, MAX_CONTEXT);
+  //
+  // Sliced the SAME way as the ingest below, and no longer over the concatenation
+  // (#460). It used to take the first MAX_CONTEXT of anc+desc while ingest took
+  // MAX_CONTEXT of EACH, so a big thread ingested up to 2x what the map covered.
+  // Every status past the end of the map failed its idToUri lookup and fell back
+  // to `null` — landing as a TOP-LEVEL row rather than a reply, which is exactly
+  // the row shape that reaches the public page.
+  const all = [...(anc || []).slice(0, MAX_CONTEXT), ...(desc || []).slice(0, MAX_CONTEXT)];
   const idToUri = new Map<string, string>();
   for (const s of all) if (s?.id && s?.uri) idToUri.set(String(s.id), s.uri);
   // The queried status isn't in its own context — map it so direct replies link.
@@ -213,7 +220,11 @@ async function fetchThreadViaMastodon(
           displayName: s.account.display_name || null,
           avatarUrl: s.account.avatar || null,
           publishedAt: s.created_at ? new Date(s.created_at) : new Date(),
+          // Thread expansion, not the owner's feed (#460).
+          viaLookup: true,
         },
+        // Deliberately not in `update`: a row already here from delivery keeps
+        // its feed provenance rather than being demoted by someone opening it.
         update: { contentHtml: safe, inReplyTo, avatarUrl: s.account.avatar || null },
       });
     } catch {
@@ -304,6 +315,8 @@ async function fetchRemoteNote(apId: string) {
         displayName: actor.name || null,
         avatarUrl: actor.icon?.url || null,
         publishedAt: note.published ? new Date(note.published) : new Date(),
+        // Ancestor walk — same on-demand fetch as the Mastodon path (#460).
+        viaLookup: true,
       },
       update: {},
     });

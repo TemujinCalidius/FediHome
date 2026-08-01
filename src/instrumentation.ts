@@ -42,6 +42,13 @@ export async function register() {
     const { checkStoredCredentials } = await import("@/lib/secret-health");
     void checkStoredCredentials();
 
+    // One-shot, self-recording (#460). Awaited: it decides what the PUBLIC feed
+    // shows, and serving one request with the pre-backfill answer is the leak
+    // this is here to close. Cheap — a single indexed updateMany that matches
+    // nothing on every boot after the first.
+    const { backfillViaLookup } = await import("@/lib/lookup-backfill");
+    await backfillViaLookup().catch((e) => console.error("[fedihome] #460 backfill failed", e));
+
     const { startScheduler } = await import("@/lib/scheduler");
     startScheduler();
   }

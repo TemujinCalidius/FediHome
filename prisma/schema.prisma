@@ -341,6 +341,16 @@ model FediPost {
 
   isOutgoing  Boolean  @default(false) // true for posts/replies WE sent
 
+  /// How this row arrived (#460). False = the owner's own feed: delivered to the
+  /// inbox, or pulled from a network they're connected to. True = fetched
+  /// on demand because the owner LOOKED at something — expanding a thread, or
+  /// opening a stranger's profile. Both write FediPost rows, but only the first
+  /// belongs on a timeline; a thread root has no inReplyTo, so without this
+  /// column it is indistinguishable from a post someone you follow made.
+  /// Set on create only: a row later delivered for real is promoted back to
+  /// false, because delivery is proof it belongs in the feed.
+  viaLookup   Boolean  @default(false)
+
   // Boost/repost tracking
   boostedBy     String?  // actorUri of the person who boosted this into our feed
   boostedByName String?  // display name of the booster
