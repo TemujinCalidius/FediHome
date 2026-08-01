@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAdmin, verifySameOriginRequest } from "@/lib/auth";
-import { identityIsLocked, setIdentity, refreshIdentity } from "@/lib/identity-store";
+import {
+  identityIsLocked,
+  setIdentity,
+  refreshIdentity,
+  siteUrlShape,
+  HANDLE_RE,
+  DOMAIN_RE,
+} from "@/lib/identity-store";
 import { getIdentity } from "@/lib/identity";
 import { isLocalOrPrivateHost } from "@/lib/public-host";
 
@@ -38,6 +45,13 @@ function validateSiteUrl(input: string): { ok: true; value: string } | { ok: fal
   if (u.pathname !== "/" || u.search || u.hash) {
     return { ok: false, error: "Use just the origin — no path, query or fragment." };
   }
+  // Shape is decided by identity-store, which is also what the LOAD path uses
+  // (#431). Same rule set, so the two can't drift; the reachability check below
+  // stays here, because it applies to what an operator may set rather than to
+  // what we are willing to load.
+  if (!siteUrlShape(input)) {
+    return { ok: false, error: "Use just the origin — no path, query or fragment." };
+  }
   if (isLocalOrPrivateHost(u.hostname)) {
     return {
       ok: false,
@@ -47,8 +61,7 @@ function validateSiteUrl(input: string): { ok: true; value: string } | { ok: fal
   return { ok: true, value: u.origin };
 }
 
-const HANDLE_RE = /^[a-zA-Z0-9_]{1,30}$/;
-const DOMAIN_RE = /^[a-z0-9.-]+\.[a-z]{2,}$/;
+
 
 export async function GET(req: NextRequest) {
   if (!(await verifyAdmin(req))) {
