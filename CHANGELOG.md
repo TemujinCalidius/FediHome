@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- **Installing FediHome from source without a lockfile no longer fails** (#451) — `npm install` died with `Unable to resolve reference $postcss` before installing anything. It only affected fresh installs that regenerate the dependency list, which is why normal installs and upgrades were unaffected — but that's exactly the path a dependency update takes, so it had quietly blocked routine maintenance.
+
 ## 1.24.1 (2026-08-01)
 
 ### Changed
