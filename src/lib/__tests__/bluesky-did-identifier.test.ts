@@ -28,6 +28,9 @@ vi.mock("@/lib/integrations", () => ({
   rememberBlueskyDid,
   normalizeBlueskyHandle,
   BLUESKY_SERVICE: "https://bsky.social",
+  // The agent resolves the PDS per login now (#449) — the service is part of the
+  // session cache key, so this mock has to supply it.
+  blueskyService: async () => "https://bsky.social",
 }));
 
 const login = vi.fn();

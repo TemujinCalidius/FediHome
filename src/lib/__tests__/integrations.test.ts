@@ -131,10 +131,14 @@ describe("integrations — Bluesky credentials", () => {
     });
   });
 
-  it("clear deletes every row, including the captured DID", async () => {
+  it("clear deletes every row, including the captured DID and the PDS", async () => {
     // The DID has to go with the credentials. Leaving it behind means the next
     // account configured here would be logged into by the PREVIOUS account's
     // identifier — the DID outranks the handle, so it would win silently.
+    //
+    // The service row goes for the same reason (#449): a stale PDS origin would
+    // point the next set of credentials at the previous account's host, and a
+    // login against the wrong PDS fails in a way that looks like a bad password.
     await clearBlueskyCredentials();
     expect(prisma.siteSetting.deleteMany).toHaveBeenCalledWith({
       where: {
@@ -143,6 +147,7 @@ describe("integrations — Bluesky credentials", () => {
             "integration.bluesky.handle",
             "integration.bluesky.password",
             "integration.bluesky.did",
+            "integration.bluesky.service",
           ],
         },
       },
