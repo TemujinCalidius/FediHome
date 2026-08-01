@@ -38,7 +38,7 @@ function ipv4FromAnyForm(host: string): string | null {
   return null;
 }
 
-function isPrivateIPv4(ip: string): boolean {
+export function isPrivateIPv4(ip: string): boolean {
   if (/^127\./.test(ip)) return true;
   if (/^10\./.test(ip)) return true;
   if (/^192\.168\./.test(ip)) return true;
@@ -172,7 +172,7 @@ function isReservedIPv6Prefix(g: number[]): boolean {
  * Unparseable is treated as private: if we cannot tell what an address is, we do not
  * connect to it.
  */
-function isPrivateIPv6(ip: string): boolean {
+export function isPrivateIPv6(ip: string): boolean {
   const bare = ip.replace(/^\[|\]$/g, "").toLowerCase();
   const g = expandIPv6(bare);
   if (!g) return true; // can't parse it → don't reach it
