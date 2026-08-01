@@ -3,7 +3,7 @@
 ## Unreleased
 
 ### Added
-- **Your own domain can now be your Bluesky handle** (#448) — `@yourdomain.com` instead of `@yourname.bsky.social`. Normally that means adding a DNS record; FediHome already serves your domain, so it hands Bluesky the proof itself and you never touch DNS. Turn it on in **Admin → Integrations**, change your handle in the Bluesky app, and press **Check with Bluesky** to confirm. Nothing is lost in the change — your followers, follows and posts belong to your account rather than its name, and Bluesky reserves your old handle. This doesn't move your account off Bluesky; it relabels it.
+- **Your own domain can now be your Bluesky handle** (#448) — `@yourdomain.com` instead of `@yourname.bsky.social`. Normally that means adding a DNS record; FediHome already serves your domain, so it hands Bluesky the proof itself and you never touch DNS. Turn it on in **Admin → Integrations** — it starts serving straight away — then change your handle in the Bluesky app and press **Check with Bluesky** to confirm. Nothing is lost in the change — your followers, follows and posts belong to your account rather than its name, and Bluesky reserves your old handle. This doesn't move your account off Bluesky; it relabels it.
 
 ### Changed
 - Dependency refresh: `@atproto/api` 0.20.36, `@types/pg` 8.20.2. (`typescript` remains held at 6.x — see #234; `typescript-eslint` remains held at 8.61.1 by `eslint-config-next`.)

@@ -71,10 +71,13 @@ export default function IntegrationsClient({
     setResult(null);
     setDomainCheck(null);
     try {
-      const res = await fetch("/api/admin/site-config", {
+      // Goes through the integrations route rather than site-config, because
+      // enabling has to capture the account's DID first — the endpoint must be
+      // live before the owner changes their handle in the Bluesky app.
+      const res = await fetch("/api/admin/integrations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ settings: { "bluesky.domainHandle": next ? "true" : "false" } }),
+        body: JSON.stringify({ provider: "bluesky", action: "set-domain-handle", enabled: next }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
