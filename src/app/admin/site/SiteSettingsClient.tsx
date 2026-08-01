@@ -345,17 +345,30 @@ export default function SiteSettingsClient({
     setAccentHex(s ?? themeOwnAccent(id));
   };
 
-  async function post(settings: Record<string, string | null>): Promise<boolean> {
+  async function post(
+    settings: Record<string, string | null>,
+    acknowledgeEphemeral = false,
+  ): Promise<boolean> {
     setSaving(true);
     setResult(null);
     try {
       const res = await fetch("/api/admin/site-config", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ settings }),
+        body: JSON.stringify({ settings, acknowledgeEphemeral }),
       });
       const data = await res.json();
       if (!res.ok) {
+        // 409 = the path works but isn't durable (#387). Ask once, then honour
+        // the answer — the operator may well have a reason, and the point is to
+        // remove the surprise rather than the freedom.
+        if (res.status === 409 && data.confirm === "acknowledgeEphemeral") {
+          setSaving(false);
+          const proceed = window.confirm(
+            `${data.error}\n\nSave this location anyway?`,
+          );
+          return proceed ? post(settings, true) : false;
+        }
         setResult({ ok: false, msg: data.error || "Save failed" });
         return false;
       }
@@ -1035,7 +1048,9 @@ export default function SiteSettingsClient({
             <span className="text-gray-600">
               An absolute path on a bigger disk or a mounted volume. It must already exist
               and be writable by FediHome — we check both before saving, and tell you which
-              one failed.
+              one failed. In Docker we also check it&apos;s on a mounted volume: a directory
+              inside the container is deleted on the next rebuild, and you wouldn&apos;t find
+              out until then.
             </span>
           </label>
           <div className="rounded-lg border border-surface-700 p-3 flex flex-col gap-1.5">

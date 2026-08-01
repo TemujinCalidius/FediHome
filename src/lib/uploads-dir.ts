@@ -1,5 +1,7 @@
 import path from "path";
+import fsSync from "fs";
 import { access, constants, mkdir, stat, unlink, writeFile } from "fs/promises";
+import { isContainerised } from "./install-shape";
 
 /**
  * Where uploaded media lives on disk (#363).
@@ -118,7 +120,78 @@ export async function ensureUploadDir(...segments: string[]): Promise<string> {
   return dir;
 }
 
-export type PathCheck = { ok: true; path: string } | { ok: false; error: string };
+export type PathCheck =
+  | { ok: true; path: string; ephemeral?: string }
+  | { ok: false; error: string };
+
+/**
+ * Filesystems whose contents do not survive the container being recreated.
+ * `overlay` is the container's own root; `tmpfs`/`ramfs` are memory-backed, and
+ * matter because a path under a tmpfs mount IS on a mount point and would
+ * otherwise pass a naive "is it mounted?" test while living in RAM.
+ */
+const EPHEMERAL_FS = new Set(["overlay", "overlayfs", "aufs", "tmpfs", "ramfs"]);
+
+/**
+ * Parse /proc/self/mountinfo into [mountPoint, fsType] pairs.
+ *
+ * Format is `id parent maj:min root MOUNTPOINT opts [optional...] - FSTYPE src`.
+ * The optional fields are variable-length, which is exactly why the ` - `
+ * separator exists — split on it rather than counting columns.
+ */
+function readMounts(): { point: string; fs: string }[] {
+  const raw = fsSync.readFileSync("/proc/self/mountinfo", "utf-8");
+  const out: { point: string; fs: string }[] = [];
+  for (const line of raw.split("\n")) {
+    const sep = line.indexOf(" - ");
+    if (sep === -1) continue;
+    const left = line.slice(0, sep).split(" ");
+    const right = line.slice(sep + 3).split(" ");
+    // mountinfo octal-escapes spaces and a few other characters in the path.
+    const point = left[4]?.replace(/\\(\d{3})/g, (_, o) => String.fromCharCode(parseInt(o, 8)));
+    if (point && right[0]) out.push({ point, fs: right[0] });
+  }
+  return out;
+}
+
+/**
+ * Would files written to `dir` be lost when the container is recreated (#387)?
+ * Returns an explanation, or null when the path is durable / the question does
+ * not apply.
+ *
+ * Only asked inside a container. On a normal host every path is as durable as
+ * the disk under it, and `/proc/self/mountinfo` may not exist at all (macOS),
+ * so this answers "no concern" rather than guessing.
+ *
+ * The test is which mount the path actually lands on: take the LONGEST mount
+ * point that is a prefix of it, and judge that mount. A bind mount or named
+ * volume gives its own entry and is durable; a path with nothing but `/` above
+ * it is on the container's overlay and is not.
+ *
+ * Fails OPEN — any parsing or read problem returns null. A false warning on a
+ * correctly-configured instance would teach operators to click through the one
+ * that matters.
+ */
+export function ephemeralReason(dir: string): string | null {
+  try {
+    if (!isContainerised()) return null;
+    const target = path.resolve(dir);
+    let best: { point: string; fs: string } | null = null;
+    for (const m of readMounts()) {
+      const rel = path.relative(m.point, target);
+      if (rel.startsWith("..") || path.isAbsolute(rel)) continue; // not an ancestor
+      if (!best || m.point.length > best.point.length) best = m;
+    }
+    if (!best) return null;
+    if (!EPHEMERAL_FS.has(best.fs.toLowerCase())) return null;
+
+    return best.point === "/"
+      ? "Nothing between this directory and the container root is a mounted volume, so it lives on the container's own filesystem. Files written here are deleted when the container is recreated — which `docker compose up --build` does routinely."
+      : `This directory is on a ${best.fs} mount (${best.point}), which is held in memory. Files written here are lost when the container stops.`;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Validate an operator-supplied directory before we agree to store media in it.
@@ -155,5 +228,12 @@ export async function checkUploadsDir(input: string): Promise<PathCheck> {
     };
   }
 
-  return { ok: true, path: resolved };
+  // Writable is not the same question as durable (#387). A container path can
+  // pass every check above and still be deleted on the next rebuild, and the
+  // read fallback actively HIDES that until it is far too late — old uploads
+  // keep serving from the legacy root, so the loss looks like a bug in one
+  // specific upload rather than what it is. Reported, not refused: the operator
+  // may genuinely mean it, and only they know their deployment.
+  const ephemeral = ephemeralReason(resolved);
+  return ephemeral ? { ok: true, path: resolved, ephemeral } : { ok: true, path: resolved };
 }
