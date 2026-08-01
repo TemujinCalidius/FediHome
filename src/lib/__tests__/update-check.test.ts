@@ -200,3 +200,61 @@ describe("a child that can't be started", () => {
     expect(child.unref).toHaveBeenCalled();
   });
 });
+
+describe("a failed update check is visible (#437)", () => {
+  /**
+   * The issue's headline — "the runner image has no src/" — does not hold: the
+   * Dockerfile copies .next/standalone (which carries src/ and tsconfig.json),
+   * scripts/ explicitly, and the whole node_modules. Verified against a built
+   * tree. What IS real is the second half of the title: the failure was
+   * unobservable, because the exit code was dropped and stdout discarded.
+   */
+  it("reports a non-zero exit instead of silently clearing the lease", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    await startUpdateCheck({ force: true });
+    child.emit("exit", 1, null);
+    const msg = err.mock.calls.at(-1)?.[0] ?? "";
+    expect(msg).toContain("exit 1");
+    expect(msg).toContain("scripts/check-updates.ts");
+    err.mockRestore();
+  });
+
+  it("names the signal when the child was killed", async () => {
+    // An OOM-killed check exits with a null code — "exit null" alone would be
+    // baffling, and OOM is a plausible way for this to die in a container.
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    await startUpdateCheck({ force: true });
+    child.emit("exit", null, "SIGKILL");
+    expect(err.mock.calls.at(-1)?.[0]).toContain("SIGKILL");
+    err.mockRestore();
+  });
+
+  it("says nothing on a clean exit", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    await startUpdateCheck({ force: true });
+    child.emit("exit", 0, null);
+    expect(err).not.toHaveBeenCalled();
+    err.mockRestore();
+  });
+
+  it("still clears the lease when the check failed", async () => {
+    // Reporting must not cost us the un-wedging — a failed check that also
+    // wedged the lease would be strictly worse than the silent version.
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    await startUpdateCheck({ force: true });
+    child.emit("exit", 1, null);
+    err.mockRestore();
+    expect((await startUpdateCheck({ force: true })).started).toBe(true);
+  });
+
+  it("lets the child's own output reach the log", async () => {
+    // stdio "ignore" discarded the script's report, which is the only evidence
+    // it ran at all. Piping would make the unref'd parent hold a buffer.
+    await startUpdateCheck({ force: true });
+    expect(spawn).toHaveBeenCalledWith(
+      "npx",
+      expect.anything(),
+      expect.objectContaining({ stdio: ["ignore", "inherit", "inherit"] }),
+    );
+  });
+});
