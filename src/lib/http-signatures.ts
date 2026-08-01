@@ -1,7 +1,6 @@
 import crypto from "crypto";
 import { prisma } from "./db";
 import { blockedRecipient, partitionBlockedRecipients } from "./blocks";
-import { assertPublicHost } from "./url-guard";
 import { guardedFetch, isPolicyRefusal } from "./safe-fetch";
 import { getIdentity } from "./identity";
 

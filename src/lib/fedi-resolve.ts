@@ -1,4 +1,3 @@
-import { assertPublicHost } from "./url-guard";
 import { prisma } from "./db";
 import { guardedFetch } from "./safe-fetch";
 

@@ -55,15 +55,30 @@ export function proxy(req: NextRequest) {
     }
   }
 
-  // Content negotiation for /users/samuel — redirect AP requests to actor endpoint
+  // Content negotiation for /users/<handle> — AP requests get the actor document.
+  //
+  // The requested handle is carried through rather than compared here (#429).
+  // Comparing in the proxy looks obvious and is a trap: identity overrides are
+  // process-local, populated only by instrumentation's register() and never
+  // re-read per request, so this module would see `process.env` alone. An
+  // instance whose handle comes from the DB would then 404 its own actor — worse
+  // than the bug being fixed. /ap/actor already reads the live identity, so it
+  // is the honest place to decide.
+  //
+  // Exactly one segment: /users/<handle>/followers used to rewrite here too, and
+  // the actor is the wrong document for it — collections live under /ap/*.
   if (pathname.startsWith("/users/")) {
     const accept = req.headers.get("accept") || "";
+    const handle = pathname.slice("/users/".length);
     if (
-      accept.includes("application/activity+json") ||
-      accept.includes("application/ld+json")
+      handle.length > 0 &&
+      !handle.includes("/") &&
+      (accept.includes("application/activity+json") ||
+        accept.includes("application/ld+json"))
     ) {
       const url = req.nextUrl.clone();
       url.pathname = "/ap/actor";
+      url.searchParams.set("handle", handle);
       return NextResponse.rewrite(url);
     }
   }

@@ -6,6 +6,7 @@
 - Dependency refresh: `@atproto/api` 0.20.36, `@types/pg` 8.20.2. (`typescript` remains held at 6.x — see #234; `typescript-eslint` remains held at 8.61.1 by `eslint-config-next`.)
 
 ### Fixed
+- **Your instance no longer answers for usernames it doesn't have** (#429) — a Fediverse request to `/users/anything-at-all` returned your profile, so anyone crawling for accounts got a valid-looking answer for every guess. The same address correctly showed "not found" in a browser, which is how the mismatch went unnoticed. It now checks the name, and sub-paths like `/users/you/followers` no longer return the wrong document.
 - **Installing FediHome from source without a lockfile no longer fails** (#451) — `npm install` died with `Unable to resolve reference $postcss` before installing anything. It only affected fresh installs that regenerate the dependency list, which is why normal installs and upgrades were unaffected — but that's exactly the path a dependency update takes, so it had quietly blocked routine maintenance.
 
 ## 1.24.1 (2026-08-01)
