@@ -12,7 +12,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { prisma } from "../src/lib/db";
 import { raiseMaintenanceItem, seenKey, sweepResolved } from "../src/lib/maintenance";
-import { installShape, updateInstruction } from "../src/lib/install-shape";
+import { installShape, updateInstruction, updateUrl } from "../src/lib/install-shape";
 import { isUpgrade, isMajorUpgrade } from "../src/lib/version-compare";
 
 interface OutdatedEntry {
@@ -365,7 +365,7 @@ async function checkFediHomeSelf(): Promise<CheckResult> {
         latest: shortSha,
         title: `FediHome update available (${shortSha})`,
         description: description || `New commits on ${FEDIHOME_BRANCH}. ${updateInstruction(shape)}`,
-        url: `https://github.com/${FEDIHOME_REPO}/compare/${localSha}...${remoteSha}`,
+        url: updateUrl(`https://github.com/${FEDIHOME_REPO}/compare/${localSha}...${remoteSha}`),
       },
       { refresh: true }, // the commit list grows while you stay on the same tip
     );
@@ -487,7 +487,7 @@ async function checkFediHomeByReleaseTag(): Promise<CheckResult> {
         `This check compared release versions rather than commits, because this install ` +
         `has no commit SHA available (a container built without a build SHA, or a tarball ` +
         `install), so it only notices tagged releases.`,
-      url: rel.html_url || `https://github.com/${FEDIHOME_REPO}/releases/latest`,
+      url: updateUrl(rel.html_url || `https://github.com/${FEDIHOME_REPO}/releases/latest`),
     });
 
     // Every older release we flagged is superseded by this one.
