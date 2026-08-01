@@ -4,8 +4,13 @@
  *
  * Starts FediHome's in-app scheduler (scheduled-post publishing, Bluesky
  * sync). The NEXT_RUNTIME guard + dynamic import keep the scheduler (and its
- * Prisma/@atproto imports) out of the Edge runtime, where register() is also
- * invoked because src/proxy.ts exists.
+ * Prisma/@atproto imports) off any runtime that can't carry them.
+ *
+ * The guard is cheap insurance rather than a live constraint on Next 16: the
+ * build manifest now reports `"/_middleware": { "runtime": "nodejs" }`, and the
+ * compiled proxy lands in the Node server bundle, not the Edge one. It used to
+ * be an Edge concern because src/proxy.ts existing caused register() to be
+ * invoked there too.
  */
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
