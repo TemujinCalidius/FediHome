@@ -62,3 +62,27 @@ describe("when it should not answer", () => {
     expect((await GET()).status).toBe(404);
   });
 });
+
+/**
+ * Turning the toggle on has to leave the endpoint immediately usable.
+ *
+ * The owner's very next step is changing their handle in the Bluesky app, and
+ * Bluesky verifies the record at that moment. An instance configured before this
+ * feature existed has no DID stored, so the route correctly 404s — and left to
+ * the lazy capture on the next Bluesky sync, that gap can last fifteen minutes,
+ * during which the feature simply looks broken.
+ *
+ * The capture deliberately uses the STORED credentials. Persisting a DID proved
+ * by some other handle would pair it with the saved password and break every
+ * login, because the DID outranks the handle and would win silently — which is
+ * why this is not simply bolted onto the "Test" button.
+ */
+describe("the endpoint is usable the moment it is enabled", () => {
+  it("serves as soon as a DID exists, with no sync in between", async () => {
+    getRuntimeSiteConfig.mockResolvedValue({ blueskyDomainHandle: true });
+    getBlueskyCredentials.mockResolvedValue({ handle: "me.bsky.social", password: "p", did: DID });
+    const res = await GET();
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe(DID);
+  });
+});
