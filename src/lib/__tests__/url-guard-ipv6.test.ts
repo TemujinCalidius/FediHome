@@ -44,6 +44,27 @@ const MUST_BE_PRIVATE = [
   "http://[febf::1]/x",                // top of fe80::/10 — the old regex missed this
   "http://[ff02::1]/x",                // multicast
   "http://[64:ff9b::7f00:1]/x",        // NAT64 onto loopback
+
+  // 6to4 (2002::/16) carries its IPv4 in groups 1-2, not 6-7 — which is exactly
+  // why the three extraction branches above all missed it. Every one of these is
+  // a private IPv4 wearing an IPv6 hat.
+  "http://[2002:7f00:1::]/x",          // 127.0.0.1
+  "http://[2002:a9fe:a9fe::]/x",       // 169.254.169.254 — cloud metadata
+  "http://[2002:c0a8:1::]/x",          // 192.168.0.1
+  "http://[2002:a00:1::]/x",           // 10.0.0.1
+  "http://[2002:ac10:1::]/x",          // 172.16.0.1
+  "http://[2002:6440:1::]/x",          // 100.64.0.1 — CGNAT
+
+  // Prefixes with nothing worth extracting: the address is hidden behind a
+  // transform we can't reverse, or the range is local/reserved by definition.
+  "http://[64:ff9b:1::7f00:1]/x",      // NAT64 LOCAL-USE (RFC 8215)
+  "http://[64:ff9b:1:ffff::1]/x",      // ...anywhere in that /48
+  "http://[2001::1]/x",                // Teredo (2001::/32)
+  "http://[2001:0:1234::1]/x",         // ...also Teredo
+  "http://[2001:20::1]/x",             // ORCHIDv2 (2001:20::/28)
+  "http://[2001:db8::1]/x",            // documentation (RFC 3849)
+  "http://[3fff::1]/x",                // documentation (RFC 9637)
+  "http://[100::1]/x",                 // discard-only (RFC 6666)
 ];
 
 /** Genuinely routable, and must stay usable — federation depends on it. */
@@ -51,6 +72,17 @@ const MUST_BE_PUBLIC = [
   "http://[2606:4700:4700::1111]/x", // Cloudflare DNS
   "http://[2001:4860:4860::8888]/x", // Google DNS
   "http://[fec0::1]/x",              // site-local: deprecated, but not private space
+
+  // THE over-correction guard. 6to4 is unwrapped and judged as IPv4, not blanket
+  // -blocked — a 6to4 address wrapping a genuinely public IPv4 is legitimately
+  // routable, and refusing it would be the same mistake in the other direction.
+  "http://[2002:0808:0808::]/x",     // 8.8.8.8 via 6to4
+  "http://[2002:5db8:d822::]/x",     // 93.184.216.34 via 6to4
+
+  // Teredo is 2001::/32 exactly — ordinary 2001: space must stay reachable, and
+  // 3ffe:: is not the 3fff::/20 documentation range.
+  "http://[2001:1::1]/x",
+  "http://[3ffe::1]/x",
 ];
 
 describe("IPv4-mapped and special IPv6 literals are refused", () => {

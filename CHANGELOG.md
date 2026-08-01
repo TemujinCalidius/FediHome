@@ -11,6 +11,9 @@
 - **The setup wizard now has the same cross-site protection as everything else** (#430) — it was the one place that could be submitted from another site. Not something an attacker could have used on a working instance, since setup refuses to run twice, but it was the odd one out.
 - **Changing your address is now blocked if you follow anyone** (#428) — FediHome already refused to let you change your domain once you'd published something or gained a follower, because it would silently break them. It wasn't counting the people *you* follow, whose servers deliver to your current address — so that change could still quietly cut you off from everyone in your timeline, with nothing on either side to explain why.
 
+### Security
+- **Closed the last way another server could point your instance at your own network.** The check that stops FediHome connecting to private addresses understood most of the ways an IPv4 address can be hidden inside an IPv6 one — but not all of them, so a handful of spellings still slipped through. It now covers the remaining transition formats, plus several address ranges that are reserved or local by definition and are never a legitimate place to fetch from. Completes the fix released in 1.24.0; found by internal review, with no evidence of use.
+
 ## 1.24.0 (2026-07-31)
 
 ### Added
