@@ -17,6 +17,12 @@ vi.mock("@/lib/site-settings", async (orig) => {
   };
 });
 
+const { checkUploadsDir } = vi.hoisted(() => ({ checkUploadsDir: vi.fn() }));
+vi.mock("@/lib/uploads-dir", async (orig) => {
+  const actual = await orig<typeof import("@/lib/uploads-dir")>();
+  return { ...actual, checkUploadsDir, invalidateUploadsDirCache: vi.fn() };
+});
+
 import { GET, POST } from "@/app/api/admin/site-config/route";
 import { prisma } from "@/lib/db";
 
@@ -76,5 +82,54 @@ describe("/api/admin/site-config (#59)", () => {
 
   it("allows an empty string to clear a url/text field", async () => {
     expect((await POST(postReq({ settings: { "footer.fundingUrl": "" } }))).status).toBe(200);
+  });
+});
+
+describe("uploads directory durability gate (#387)", () => {
+  const save = (extra: Record<string, unknown> = {}) =>
+    POST(postReq({ settings: { "storage.uploadsDir": "/app/data" }, ...extra }));
+
+  it("saves without ceremony when the path is durable", async () => {
+    checkUploadsDir.mockResolvedValue({ ok: true, path: "/data/uploads" });
+    expect((await save()).status).toBe(200);
+  });
+
+  it("409s rather than 400s when the path works but isn't durable", async () => {
+    // 400 would read as "you got it wrong". The path is fine — we want the
+    // operator to say they meant it.
+    checkUploadsDir.mockResolvedValue({ ok: true, path: "/app/data", ephemeral: "gone on rebuild" });
+    const res = await save();
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error).toBe("gone on rebuild");
+    expect(body.confirm).toBe("acknowledgeEphemeral");
+  });
+
+  it("does not write the setting when it 409s", async () => {
+    // The whole point: the save must not half-apply while asking.
+    checkUploadsDir.mockResolvedValue({ ok: true, path: "/app/data", ephemeral: "gone on rebuild" });
+    await save();
+    expect(prisma.siteSetting.upsert).not.toHaveBeenCalled();
+  });
+
+  it("proceeds once the operator acknowledges", async () => {
+    // It asks, it does not refuse — only the operator knows their deployment.
+    checkUploadsDir.mockResolvedValue({ ok: true, path: "/app/data", ephemeral: "gone on rebuild" });
+    expect((await save({ acknowledgeEphemeral: true })).status).toBe(200);
+  });
+
+  it("is not satisfied by a truthy non-true acknowledgement", async () => {
+    // Strict === true, so a stray "false" string or 1 from a hand-rolled client
+    // can't wave it through.
+    checkUploadsDir.mockResolvedValue({ ok: true, path: "/app/data", ephemeral: "gone on rebuild" });
+    expect((await save({ acknowledgeEphemeral: "false" })).status).toBe(409);
+    expect((await save({ acknowledgeEphemeral: 1 })).status).toBe(409);
+  });
+
+  it("still 400s an unusable path, acknowledged or not", async () => {
+    // The acknowledgement covers durability only. It must not become a way to
+    // bypass the existence and writability probes.
+    checkUploadsDir.mockResolvedValue({ ok: false, error: "not writable" });
+    expect((await save({ acknowledgeEphemeral: true })).status).toBe(400);
   });
 });
