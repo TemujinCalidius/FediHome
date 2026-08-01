@@ -205,6 +205,37 @@ Note that setting `FEDIHOME_UPLOADS_DIR` does **not** protect you here. The
 database setting outranks it, so a change in the panel wins regardless of the
 environment.
 
+### Repairing a wrong site address after you've published
+
+Changing your site address is refused once you've published anything, gained a
+follower, or followed anyone — because the address is written inside every post
+you've sent and other servers keep the first one they saw. Changing it then
+*orphans* that content rather than moving it.
+
+If you set the wrong address early and are now stuck, and losing those few items
+is acceptable:
+
+```
+npx tsx scripts/set-identity.ts                    # show what's currently set
+npx tsx scripts/set-identity.ts --site-url https://example.com --orphan-published
+```
+
+It prints exactly what you'd be orphaning — how many published items, followers
+and follows — and refuses without the flag. Restart the app afterwards; the
+address is read once at boot.
+
+**On a PaaS, use this rather than editing `.env.local`.** That file is rebuilt on
+every deploy, so the edit silently reverts. The script writes to the database,
+which persists. Most platforms give you a one-off command runner (`railway run`,
+`fly ssh console`, `heroku run`) even when there's no persistent shell.
+
+If every change in the admin panel is being refused with "forbidden", that's the
+same problem, and the app now says so in its logs — naming both the address
+you're browsing and the one it's configured with.
+
+Migrating properly, keeping your followers, needs an account move rather than a
+setting change. That's tracked separately.
+
 ## Blocking People and Servers
 
 Everything here is **local and private**. Nothing is sent to the person or server

@@ -339,8 +339,43 @@ export function verifyOrigin(req: { headers: { get(name: string): string | null 
     }
   };
 
-  if (origin) return matches(origin);
-  if (referer) return matches(referer);
+  if (origin) return matches(origin) || reportMismatch(origin, expected);
+  if (referer) return matches(referer) || reportMismatch(referer, expected);
+  return false;
+}
+
+/**
+ * Say WHY a CSRF check failed, once per distinct pair (#447).
+ *
+ * A wrong SITE_URL 403s every mutation in the panel, and the body is a bare
+ * `{"error":"forbidden"}` — which reads like a permissions problem, not a typo
+ * in a setting. Owners have reported it as broken auth.
+ *
+ * The log is the right channel rather than the response body, and specifically
+ * for the population that gets stuck: a PaaS owner rarely has a persistent
+ * shell, but they always have logs. It also keeps the diagnosis out of a reply
+ * sent to whoever triggered it.
+ *
+ * Deduped because a 403'd panel retries, and a line repeated on every click is
+ * one an operator learns to scroll past. Always returns false — it reports, it
+ * never decides.
+ */
+const reportedMismatches = new Set<string>();
+function reportMismatch(actual: string, expected: URL): false {
+  try {
+    const seen = `${new URL(actual).origin} ${expected.origin}`;
+    if (!reportedMismatches.has(seen)) {
+      reportedMismatches.add(seen);
+      console.warn(
+        `[fedihome] Refused a request from ${new URL(actual).origin} because SITE_URL says this ` +
+          `site is ${expected.origin}. If you are browsing the first address, that setting is wrong ` +
+          `and every change you make in the panel will be refused until it is corrected. ` +
+          `See docs/configuration.md, or scripts/set-identity.ts if the panel already refuses you.`,
+      );
+    }
+  } catch {
+    /* unparseable header — nothing useful to say */
+  }
   return false;
 }
 
