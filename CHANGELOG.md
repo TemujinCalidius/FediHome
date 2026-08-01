@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Changed
+- Dependency refresh: `@atproto/api` 0.20.36, `@types/pg` 8.20.2. (`typescript` remains held at 6.x — see #234; `typescript-eslint` remains held at 8.61.1 by `eslint-config-next`.)
+
 ### Fixed
 - **Installing FediHome from source without a lockfile no longer fails** (#451) — `npm install` died with `Unable to resolve reference $postcss` before installing anything. It only affected fresh installs that regenerate the dependency list, which is why normal installs and upgrades were unaffected — but that's exactly the path a dependency update takes, so it had quietly blocked routine maintenance.
 
