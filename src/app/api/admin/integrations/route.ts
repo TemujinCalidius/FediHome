@@ -5,6 +5,8 @@ import {
   setBlueskyCredentials,
   clearBlueskyCredentials,
   testBlueskyLogin,
+  rememberBlueskyDid,
+  checkDomainHandle,
   setThreadsCredentials,
   clearThreadsCredentials,
   testThreadsToken,
@@ -12,6 +14,7 @@ import {
   clearDayOneCredentials,
 } from "@/lib/integrations";
 import { secretBoxAvailable } from "@/lib/secret-box";
+import { getIdentity } from "@/lib/identity";
 
 /**
  * Admin crosspost integrations (#59): configure Bluesky + Threads credentials
@@ -68,6 +71,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, status: await getIntegrationStatus() });
   }
 
+  // Ahead of the allowlist and the handle/password guard below: this action needs
+  // neither, because it reads the identity and credentials already stored (#448).
+  if (provider === "bluesky" && action === "verify-domain") {
+    // The configured identity, never a client-supplied domain — taking it from the
+    // request body would make this a handle-lookup proxy for anyone with admin.
+    const { fediDomain } = getIdentity();
+    return NextResponse.json({ domain: fediDomain, ...(await checkDomainHandle(fediDomain)) });
+  }
+
   if (action !== "test" && action !== "save") {
     return NextResponse.json({ error: "unknown action" }, { status: 400 });
   }
@@ -88,6 +100,11 @@ export async function POST(req: NextRequest) {
     }
     const r = await setBlueskyCredentials(handle, password);
     if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
+    // Persist the DID the login just proved. It is the identifier every later
+    // login uses, so that a handle change — including pointing it at this very
+    // domain (#448) — doesn't quietly break crossposting. After
+    // setBlueskyCredentials, which clears any DID belonging to the old account.
+    if (t.did) await rememberBlueskyDid(t.did);
     return NextResponse.json({ success: true, status: await getIntegrationStatus() });
   }
 

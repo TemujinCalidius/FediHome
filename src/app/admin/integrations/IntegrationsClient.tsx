@@ -16,9 +16,13 @@ type Provider = "bluesky" | "threads" | "dayone";
 
 export default function IntegrationsClient({
   initialStatus,
+  initialDomainHandle,
+  fediDomain,
   encryptionAvailable,
 }: {
   initialStatus: IntegrationStatus;
+  initialDomainHandle: boolean;
+  fediDomain: string;
   encryptionAvailable: boolean;
 }) {
   const [status, setStatus] = useState<IntegrationStatus>(initialStatus);
@@ -27,6 +31,12 @@ export default function IntegrationsClient({
 
   const [bskyHandle, setBskyHandle] = useState(initialStatus.bluesky.handle ?? "");
   const [bskyPassword, setBskyPassword] = useState("");
+  // Domain handle (#448). `domainHandle` is the toggle; `domainCheck` is what
+  // Bluesky last told us, fetched on demand rather than on every page load.
+  const [domainHandle, setDomainHandle] = useState(initialDomainHandle);
+  const [domainCheck, setDomainCheck] = useState<
+    { domain: string; resolved: boolean; matches: boolean; error?: string } | null
+  >(null);
   const [threadsUserId, setThreadsUserId] = useState(initialStatus.threads.userId ?? "");
   const [threadsToken, setThreadsToken] = useState("");
   // Journal by email (#326) — the last credential that needed file access.
@@ -54,6 +64,54 @@ export default function IntegrationsClient({
   };
 
   const label = (p: Provider) => (p === "bluesky" ? "Bluesky" : p === "dayone" ? "Journal email" : "Threads");
+
+  /** Flip the toggle. Goes through the site-config route, which owns these keys. */
+  async function saveDomainHandle(next: boolean) {
+    setBusy("bluesky:domain-handle");
+    setResult(null);
+    setDomainCheck(null);
+    try {
+      const res = await fetch("/api/admin/site-config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ settings: { "bluesky.domainHandle": next ? "true" : "false" } }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setResult({ ok: false, msg: data.error || "Couldn't save that." });
+        return;
+      }
+      setDomainHandle(next);
+      setResult({
+        ok: true,
+        msg: next
+          ? `Now serving your proof at ${fediDomain}/.well-known/atproto-did — change your handle in the Bluesky app, then check below.`
+          : "Stopped serving the proof. If your Bluesky handle still points here, change it back in the Bluesky app or it will show as invalid.",
+      });
+    } catch {
+      setResult({ ok: false, msg: "Couldn't save that." });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /** Ask Bluesky what the domain resolves to right now. */
+  async function verifyDomain() {
+    setBusy("bluesky:verify-domain");
+    setResult(null);
+    try {
+      const res = await fetch("/api/admin/integrations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: "bluesky", action: "verify-domain" }),
+      });
+      setDomainCheck(await res.json());
+    } catch {
+      setDomainCheck({ domain: fediDomain, resolved: false, matches: false, error: "network error" });
+    } finally {
+      setBusy(null);
+    }
+  }
 
   async function run(provider: Provider, action: "save" | "test" | "disconnect") {
     setBusy(`${provider}:${action}`);
@@ -157,6 +215,67 @@ export default function IntegrationsClient({
                 <button onClick={() => run("bluesky", "disconnect")} disabled={!!busy}
                   className="text-xs text-gray-400 hover:text-red-400 underline disabled:opacity-40">Disconnect</button>
               )}
+            </div>
+
+            {/* ── Use this domain as the Bluesky handle (#448) ── */}
+            <div className="mt-4 pt-4 border-t border-surface-800">
+              <label className="flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  checked={domainHandle}
+                  disabled={!!busy || !status.bluesky.configured}
+                  onChange={(e) => void saveDomainHandle(e.target.checked)}
+                  className="mt-0.5"
+                />
+                <span>
+                  <span className="text-sm text-white">
+                    Use <code className="text-accent-400">{fediDomain}</code> as your Bluesky handle
+                  </span>
+                  <span className="block text-xs text-gray-500 mt-1">
+                    Your site proves the domain is yours, so Bluesky will accept it as your handle
+                    instead of <code>{status.bluesky.handle || "yourname"}.bsky.social</code>. Nothing
+                    is lost — followers, follows and posts all stay, because they belong to your
+                    account rather than its name, and Bluesky reserves your old handle.
+                  </span>
+                </span>
+              </label>
+
+              {domainHandle && (
+                <div className="mt-3 flex flex-wrap items-center gap-3">
+                  <button
+                    onClick={() => void verifyDomain()}
+                    disabled={!!busy}
+                    className="btn-outlined text-xs disabled:opacity-50"
+                  >
+                    {busy === "bluesky:verify-domain" ? "Checking…" : "Check with Bluesky"}
+                  </button>
+                  {domainCheck && (
+                    <span className="text-xs">
+                      {domainCheck.matches ? (
+                        <span className="text-green-400">
+                          ✓ Bluesky resolves {domainCheck.domain} to this account
+                        </span>
+                      ) : domainCheck.error ? (
+                        <span className="text-gray-400">Couldn&apos;t check — {domainCheck.error}</span>
+                      ) : domainCheck.resolved ? (
+                        <span className="text-red-400">
+                          {domainCheck.domain} resolves to a different account
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">
+                          Not claimed yet — change your handle to {domainCheck.domain} in the Bluesky
+                          app, then check again.
+                        </span>
+                      )}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              <p className="text-xs text-gray-600 mt-2 mb-0">
+                This doesn&apos;t move your account — it stays on Bluesky. FediHome just serves the
+                proof, so you never have to touch DNS.
+              </p>
             </div>
           </div>
         </section>

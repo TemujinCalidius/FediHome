@@ -19,9 +19,23 @@ import { encryptSecret, decryptSecret } from "./secret-box";
  * precedence over the env var.
  */
 
+/**
+ * The AT Protocol host FediHome talks to.
+ *
+ * One constant rather than the string repeated across a dozen call sites — it was
+ * copy-pasted into every module that builds a `BskyAgent`. AT Protocol is
+ * deliberately multi-host, so this becomes configurable in #449; collapsing it
+ * here first means that change is one edit rather than twelve.
+ *
+ * Lives in this module because it sits at the bottom of the import graph:
+ * `bluesky-agent.ts` imports from here, not the other way round.
+ */
+export const BLUESKY_SERVICE = "https://bsky.social";
+
 const KEYS = {
   bskyHandle: "integration.bluesky.handle",
   bskyPassword: "integration.bluesky.password", // encrypted
+  bskyDid: "integration.bluesky.did", //           captured at login, not a secret
   threadsUserId: "integration.threads.userId",
   threadsToken: "integration.threads.accessToken", // encrypted
   smtpHost: "integration.smtp.host",
@@ -50,6 +64,22 @@ async function drop(keys: string[]): Promise<void> {
 export interface BlueskyCredentials {
   handle: string;
   password: string;
+  /**
+   * The account's DID, captured at login — the stable identifier.
+   *
+   * The handle is a MUTABLE ALIAS in AT Protocol; the DID is what follows,
+   * followers and posts are actually recorded against. So the moment an owner
+   * points their Bluesky handle at their own domain (#448), the stored handle
+   * stops being a working login identifier — while the DID keeps working
+   * forever. Logging in by DID is what stops a handle change quietly breaking
+   * crossposting, and the breakage would otherwise surface half an hour later,
+   * when the cached session expires, looking entirely unrelated.
+   *
+   * Optional because an env-configured instance has never logged in through the
+   * admin panel. Every call site falls back to the handle, so those behave
+   * exactly as before until the DID is captured lazily on first login.
+   */
+  did?: string;
 }
 
 /**
@@ -73,14 +103,24 @@ export function normalizeBlueskyHandle(handle: string): string {
  * migration to backfill them. Normalizing here covers every call site at once.
  */
 export async function getBlueskyCredentials(): Promise<BlueskyCredentials | null> {
-  const o = await readRows([KEYS.bskyHandle, KEYS.bskyPassword]);
+  const o = await readRows([KEYS.bskyHandle, KEYS.bskyPassword, KEYS.bskyDid]);
   if (o[KEYS.bskyHandle] && o[KEYS.bskyPassword]) {
     const password = decryptSecret(o[KEYS.bskyPassword]);
-    if (password) return { handle: normalizeBlueskyHandle(o[KEYS.bskyHandle]), password };
+    if (password) {
+      return {
+        handle: normalizeBlueskyHandle(o[KEYS.bskyHandle]),
+        password,
+        did: o[KEYS.bskyDid] || undefined,
+      };
+    }
   }
   const eh = process.env.BLUESKY_HANDLE;
   const ep = process.env.BLUESKY_APP_PASSWORD;
-  return eh && ep ? { handle: normalizeBlueskyHandle(eh), password: ep } : null;
+  // The DID row is read even on the env path: it is captured lazily at login, so
+  // an instance configured entirely by environment still gains the safety net.
+  return eh && ep
+    ? { handle: normalizeBlueskyHandle(eh), password: ep, did: o[KEYS.bskyDid] || undefined }
+    : null;
 }
 
 export async function setBlueskyCredentials(
@@ -91,25 +131,39 @@ export async function setBlueskyCredentials(
   if (!enc) return { ok: false, error: "Encryption unavailable — ADMIN_SECRET is not set." };
   await put(KEYS.bskyHandle, normalizeBlueskyHandle(handle));
   await put(KEYS.bskyPassword, enc);
+  // Any previously captured DID belongs to the account we just replaced.
+  await drop([KEYS.bskyDid]);
   return { ok: true };
 }
 
 export async function clearBlueskyCredentials(): Promise<void> {
-  await drop([KEYS.bskyHandle, KEYS.bskyPassword]);
+  await drop([KEYS.bskyHandle, KEYS.bskyPassword, KEYS.bskyDid]);
 }
 
 /** Try an app-password login without storing anything — for the "Test" button. */
 export async function testBlueskyLogin(
   handle: string,
   password: string,
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; error?: string; did?: string }> {
   try {
     const { BskyAgent } = await import("@atproto/api");
-    const agent = new BskyAgent({ service: "https://bsky.social" });
+    const agent = new BskyAgent({ service: BLUESKY_SERVICE });
     await agent.login({ identifier: normalizeBlueskyHandle(handle), password });
-    return { ok: true };
+    // The session carries the DID. Returned so the caller can persist it —
+    // it is the only identifier that survives a handle change (#448).
+    return { ok: true, did: agent.session?.did };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "login failed" };
+  }
+}
+
+/** Persist the DID captured at login. Best-effort — never breaks a working login. */
+export async function rememberBlueskyDid(did: string): Promise<void> {
+  if (!did.startsWith("did:")) return;
+  try {
+    await put(KEYS.bskyDid, did);
+  } catch {
+    /* the handle still works as an identifier; this is the safety net, not the path */
   }
 }
 
@@ -294,4 +348,49 @@ export async function getIntegrationStatus(): Promise<IntegrationStatus> {
       };
     })(),
   };
+}
+
+/**
+ * Ask Bluesky what a domain currently resolves to, and say whether it is us (#448).
+ *
+ * `com.atproto.identity.resolveHandle` is public and unauthenticated — it is the
+ * same lookup any client performs when someone types the handle, so this answers
+ * the only question that matters: *would a real user find this account?*
+ *
+ * Deliberately its OWN action rather than part of `getIntegrationStatus()`, which
+ * is a pure database read hit on every admin page load. A network call there
+ * would make the settings page exactly as available as bsky.social.
+ *
+ * Note this does not check that our own endpoint is reachable. A Docker or
+ * tunnelled instance frequently cannot fetch its own public hostname, so a
+ * self-fetch would paint healthy sites red — and Bluesky's answer is the
+ * authoritative one anyway.
+ */
+export async function checkDomainHandle(
+  domain: string,
+): Promise<{ resolved: boolean; matches: boolean; did?: string; error?: string }> {
+  const creds = await getBlueskyCredentials();
+  if (!creds?.did) {
+    return { resolved: false, matches: false, error: "No Bluesky account connected yet." };
+  }
+  try {
+    const url = `${BLUESKY_SERVICE}/xrpc/com.atproto.identity.resolveHandle?handle=${encodeURIComponent(domain)}`;
+    const res = await fetch(url, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) {
+      // A 400 here is the normal "this handle doesn't resolve" answer, which is
+      // what an owner sees before they change it in the Bluesky app.
+      return { resolved: false, matches: false };
+    }
+    const data = (await res.json()) as { did?: string };
+    return { resolved: !!data.did, matches: data.did === creds.did, did: data.did };
+  } catch (e) {
+    return {
+      resolved: false,
+      matches: false,
+      error: e instanceof Error ? e.message : "lookup failed",
+    };
+  }
 }

@@ -34,7 +34,7 @@ export async function pollBlueskyReplies(postId: string, blueskyUri: string): Pr
   lastPolledAt.set(postId, Date.now());
 
   const agent = new BskyAgent({ service: "https://bsky.social" });
-  await withTimeout(agent.login({ identifier: handle, password }), POLL_TIMEOUT_MS, "Bluesky login");
+  await withTimeout(agent.login({ identifier: creds.did ?? handle, password }), POLL_TIMEOUT_MS, "Bluesky login");
 
   const threadRes = await withTimeout(
     agent.getPostThread({ uri: blueskyUri, depth: 10 }),

@@ -127,3 +127,46 @@ The `BLUESKY_HANDLE` or `BLUESKY_APP_PASSWORD` env var is missing or empty. Chec
 ### Posts appearing on Bluesky without link cards
 
 Bluesky does not automatically generate link card previews from URLs in post text. FediHome sends the URL as plain text with a link facet. The link is clickable but may not show a rich card preview.
+
+## Using your own domain as your Bluesky handle
+
+Bluesky lets you use a domain you control as your handle — `@yourdomain.com` instead
+of `@yourname.bsky.social`. It normally means adding a DNS record. FediHome already
+serves your domain, so it can supply the proof directly and you never touch DNS.
+
+**This does not move your account.** It stays on Bluesky; you are relabelling it.
+FediHome is not a Bluesky host and this does not make it one.
+
+### Turning it on
+
+1. Connect Bluesky in **Admin → Integrations** if you haven't already.
+2. Tick **"Use `<yourdomain>` as your Bluesky handle"**. FediHome starts serving
+   `/.well-known/atproto-did`.
+3. In the **Bluesky app**, go to Settings → Handle → "I have my own domain", enter
+   your domain, and verify.
+4. Back in Integrations, press **Check with Bluesky** to confirm it resolves to your
+   account.
+
+The order matters: Bluesky verifies the record at the moment you change the handle,
+so step 2 has to come before step 3.
+
+### Nothing is lost
+
+Follows, followers and posts are recorded against your account's **DID**, not its
+handle — the handle is a mutable alias. Changing it keeps everything, mentions of
+your old handle still point at you, and Bluesky reserves your old
+`*.bsky.social` name rather than releasing it to someone else.
+
+### Which domain you get
+
+The proof works for **the domain FediHome is served from**, because that is what it
+can prove. If FediHome runs at `blog.example.com`, the handle you can claim is
+`blog.example.com` — not the apex `example.com`. Claiming an apex from a subdomain
+install needs the DNS route instead (a TXT record at `_atproto.example.com`), which
+FediHome cannot do for you.
+
+### Turning it off
+
+Untick the box and FediHome stops serving the proof. **Change your Bluesky handle
+back first** — if the handle still points at a domain that no longer serves the
+record, Bluesky shows your account as having an invalid handle.

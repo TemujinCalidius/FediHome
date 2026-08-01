@@ -27,7 +27,7 @@ export async function bskyReply(body: AdminBody): Promise<NextResponse> {
   try {
     const { BskyAgent } = await import("@atproto/api");
     const agent = new BskyAgent({ service: "https://bsky.social" });
-    await agent.login({ identifier: bskyHandle, password: bskyPassword });
+    await agent.login({ identifier: creds.did ?? bskyHandle, password: bskyPassword });
     const uriParts = parentUri.replace("at://", "").split("/");
     const repo = uriParts[0];
     const rkey = uriParts[uriParts.length - 1];
