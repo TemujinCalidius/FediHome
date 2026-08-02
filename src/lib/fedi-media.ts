@@ -3,7 +3,13 @@ import path from "path";
 import sharp from "sharp";
 import { isPrivateUrl, assertPublicHost } from "./url-guard";
 import { guardedFetch } from "./safe-fetch";
-import { ensureUploadDir, uploadsDir, resolveUploadPath } from "./uploads-dir";
+import {
+  ensureUploadDir,
+  uploadsDir,
+  resolveUploadPath,
+  fediCacheBudgetBytes,
+  remoteMediaCachingEnabled,
+} from "./uploads-dir";
 
 export { isPrivateUrl, assertPublicHost };
 
@@ -104,6 +110,10 @@ export interface EmbedData {
  * Returns the local URL path or null on failure.
  */
 export async function proxyImage(remoteUrl: string): Promise<string | null> {
+  // Budget 0 means cache nothing (#364). Refused HERE, at the one entry point,
+  // rather than at each caller: returning null makes every caller fall back to
+  // the remote URL, which is the behaviour they already have for a proxy failure.
+  if (!(await remoteMediaCachingEnabled())) return null;
   const result = await safeFetch(remoteUrl, {
     maxBytes: MAX_IMAGE_BYTES,
     accept: "image/*",
@@ -194,9 +204,6 @@ export async function proxyVideo(remoteUrl: string): Promise<string | null> {
   return `/uploads/fedi/${year}/${month}/${filename}`;
 }
 
-// 2GB of other people's media. Hardcoded for now (#364 tracks making it
-// configurable); the admin panel at least shows what it's actually using.
-const STORAGE_LIMIT_BYTES = 2 * 1024 * 1024 * 1024; // 2GB
 
 async function getAllFiles(dir: string): Promise<{ path: string; mtimeMs: number; size: number }[]> {
   const files: { path: string; mtimeMs: number; size: number }[] = [];
@@ -221,9 +228,18 @@ export async function trimFediStorage(): Promise<{ deleted: number; freedBytes: 
   const baseDir = path.join(await uploadsDir(), "fedi");
   const files = await getAllFiles(baseDir);
 
+  // Operator-set since #364; 2GB was hardcoded before that, and remains the
+  // default so an upgrade changes nothing. A budget of 0 means "cache nothing",
+  // and the comparison below reads correctly for it — everything is over budget,
+  // so everything goes.
+  const limit = await fediCacheBudgetBytes();
   const totalSize = files.reduce((sum, f) => sum + f.size, 0);
-  if (totalSize <= STORAGE_LIMIT_BYTES) return { deleted: 0, freedBytes: 0 };
+  if (totalSize <= limit) return { deleted: 0, freedBytes: 0 };
 
+  // Oldest-WRITTEN first, not least-recently-USED. Nothing in the codebase ever
+  // touches atime on a read, so there is no access information to sort by — a
+  // file fetched every day is evicted at the same age as one never seen again.
+  // Called out because the eviction is routinely described as LRU and is not.
   files.sort((a, b) => a.mtimeMs - b.mtimeMs);
 
   let currentSize = totalSize;
@@ -231,7 +247,7 @@ export async function trimFediStorage(): Promise<{ deleted: number; freedBytes: 
   let freedBytes = 0;
 
   for (const file of files) {
-    if (currentSize <= STORAGE_LIMIT_BYTES) break;
+    if (currentSize <= limit) break;
     try {
       await unlink(file.path);
       currentSize -= file.size;

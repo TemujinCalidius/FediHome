@@ -8,7 +8,12 @@ import {
   SITE_CONFIG_KEYS,
 } from "@/lib/site-settings";
 import { resolveTinylyticsEmbed } from "@/lib/tinylytics";
-import { checkUploadsDir, invalidateUploadsDirCache, legacyUploadsDir } from "@/lib/uploads-dir";
+import {
+  checkUploadsDir,
+  invalidateUploadsDirCache,
+  invalidateFediCacheBudgetCache,
+  legacyUploadsDir,
+} from "@/lib/uploads-dir";
 
 /** Whether the current analytics config actually resolves a collecting embed (#288). */
 async function analyticsStatus(analytics: { siteId: string; embedId: string }) {
@@ -78,6 +83,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: result.error }, { status: 400 });
   }
   invalidateUploadsDirCache();
+  // The trim sweep and the storage panel both cache the budget for 60s (#364);
+  // without this a saved change appears not to have applied.
+  invalidateFediCacheBudgetCache();
   const effective = await getRuntimeSiteConfig();
   return NextResponse.json({
     success: true,
