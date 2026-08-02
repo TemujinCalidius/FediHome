@@ -24,6 +24,13 @@ const SENTINELS = {
   THREADS_ACCESS_TOKEN: "SENTINEL-threads-token",
 };
 
+/**
+ * A credential that exists ONLY in the database, with nothing in `process.env`
+ * (#490). This is the sentinel an env-based redactor cannot see — the shape of a
+ * real Bluesky app password, on the documented configuration path.
+ */
+const DB_ONLY = "wxyz-1234-abcd-5678";
+
 const load = async () => {
   vi.resetModules();
   vi.doMock("@/lib/db", () => ({
@@ -49,7 +56,14 @@ const load = async () => {
       threads: { configured: false, userId: null, source: null },
       dayOne: { configured: false, dayOneEmail: null, host: null, port: null, user: null, source: null },
     }),
+    // The resolvers the log-tail redactor calls (#490). Answering from the
+    // DATABASE with the environment empty is the whole point — see DB_ONLY.
+    getBlueskyCredentials: vi.fn().mockResolvedValue({ handle: "me.example", password: DB_ONLY }),
+    getThreadsCredentials: vi.fn().mockResolvedValue(null),
+    getDayOneCredentials: vi.fn().mockResolvedValue(null),
   }));
+  vi.doMock("@/lib/push-config", () => ({ getVapidConfig: vi.fn().mockResolvedValue(null) }));
+  vi.doMock("@/lib/analytics-secret", () => ({ getTinylyticsApiKey: vi.fn().mockResolvedValue(null) }));
   vi.doMock("@/lib/scheduler", () => ({
     schedulerStarted: () => true,
     schedulerLastTickAgoMs: () => 4000,
@@ -102,7 +116,14 @@ describe("the bundle never carries a secret (#395)", () => {
       },
     }));
     vi.doMock("@/lib/storage-usage", () => ({ storageReport: vi.fn().mockRejectedValue(new Error("x")) }));
-    vi.doMock("@/lib/integrations", () => ({ getIntegrationStatus: vi.fn().mockRejectedValue(new Error("x")) }));
+    // Every credential resolver down too (#490) — the redaction refresh must
+    // survive that, and the bundle must still be emitted.
+    vi.doMock("@/lib/integrations", () => ({
+      getIntegrationStatus: vi.fn().mockRejectedValue(new Error("x")),
+      getBlueskyCredentials: vi.fn().mockRejectedValue(new Error("x")),
+      getThreadsCredentials: vi.fn().mockRejectedValue(new Error("x")),
+      getDayOneCredentials: vi.fn().mockRejectedValue(new Error("x")),
+    }));
     vi.doMock("@/lib/scheduler", () => ({ schedulerStarted: () => false, schedulerLastTickAgoMs: () => null }));
     const { collectDiagnostics } = await import("@/lib/diagnostics");
     const text = await collectDiagnostics();
@@ -127,12 +148,52 @@ describe("the bundle never carries a secret (#395)", () => {
       },
     }));
     vi.doMock("@/lib/storage-usage", () => ({ storageReport: vi.fn().mockRejectedValue(new Error("down")) }));
-    vi.doMock("@/lib/integrations", () => ({ getIntegrationStatus: vi.fn().mockRejectedValue(new Error("down")) }));
+    vi.doMock("@/lib/integrations", () => ({
+      getIntegrationStatus: vi.fn().mockRejectedValue(new Error("down")),
+      getBlueskyCredentials: vi.fn().mockRejectedValue(new Error("down")),
+      getThreadsCredentials: vi.fn().mockRejectedValue(new Error("down")),
+      getDayOneCredentials: vi.fn().mockRejectedValue(new Error("down")),
+    }));
     vi.doMock("@/lib/scheduler", () => ({ schedulerStarted: () => false, schedulerLastTickAgoMs: () => null }));
     const { collectDiagnostics } = await import("@/lib/diagnostics");
     const text = await collectDiagnostics();
     expect(text).toContain("## Version and install");
     expect(text).toContain("## Environment (names only — no values)");
+  });
+});
+
+describe("the log tail cannot carry a DB-stored credential (#490)", () => {
+  it("redacts a credential that exists ONLY in the database", async () => {
+    // THE test the issue asks for, end to end. `process.env` has no Bluesky
+    // password here — the credential lives only in the DB, which is the
+    // documented configuration path. An env-based redactor scrubs nothing and
+    // this assertion is the one that catches it.
+    delete process.env.BLUESKY_APP_PASSWORD;
+    vi.resetModules();
+    const { recordLine, resetLogBuffer, setSecrets, REDACTED } = await import("@/lib/log-buffer");
+    resetLogBuffer();
+    // Capture-time redaction deliberately DISARMED, so this proves the bundle's
+    // own final pass — not the buffer's. The two defences are independent and
+    // the second is the one a future section relies on.
+    setSecrets([]);
+    recordLine("error", `bsky agent cache: https://bsky.social|me.example:${DB_ONLY}`);
+
+    const text = await load();
+    expect(text, "the DB-only credential reached the bundle").not.toContain(DB_ONLY);
+    expect(text).toContain(REDACTED);
+  });
+
+  it("includes the tail, and says so when the boot hook never ran", async () => {
+    vi.resetModules();
+    const { resetLogBuffer } = await import("@/lib/log-buffer");
+    resetLogBuffer();
+    delete (globalThis as { __fedihomeLogTeeInstalled?: boolean }).__fedihomeLogTeeInstalled;
+    const text = await load();
+    expect(text).toContain("## Recent log");
+    // Distinguishable from "nothing has been logged" — the tee is installed by
+    // instrumentation.ts, so its absence means the boot hook didn't run, which
+    // is itself worth knowing since the scheduler starts from the same place.
+    expect(text).toContain("the boot hook didn't run");
   });
 });
 
@@ -171,11 +232,26 @@ describe("the route is admin-gated and uncacheable (#395)", () => {
   });
 });
 
-describe("the omission is deliberate and recorded", () => {
-  it("says why there is no log tail", () => {
-    // It is the most useful thing a bundle could carry and the only part that
-    // can contain arbitrary strings. Making it safe needs redaction against
-    // RESOLVED credentials, which is separate work.
-    expect(read("src/lib/diagnostics.ts")).toMatch(/DELIBERATELY OMITTED/);
+describe("the log tail carries its own rule with it (#490)", () => {
+  // The tail was deliberately absent when the bundle shipped (#395), because it
+  // is the one part that can contain arbitrary strings. It is in now, and these
+  // pin the two things that make that safe. Behaviour is covered in
+  // log-buffer.test.ts; this is the wiring.
+  const src = read("src/lib/diagnostics.ts");
+
+  it("redacts the WHOLE assembled bundle, as the last thing it does", () => {
+    // Per-section redaction would mean a section added later has to remember the
+    // rule. One pass over the finished string means it doesn't.
+    expect(src).toMatch(/return redactSecrets\(text, secrets\);/);
+    const body = src.slice(src.indexOf("export async function collectDiagnostics"));
+    expect(body.trimEnd().endsWith("return redactSecrets(text, secrets);\n}")).toBe(true);
+  });
+
+  it("re-resolves the credentials rather than trusting the capture snapshot", () => {
+    // A credential changed since boot is not in the capture snapshot. And
+    // resolveSecrets reads the DATABASE, which is the whole point — an
+    // env-derived set is a no-op on an admin-panel-configured instance.
+    expect(src).toContain("await resolveSecrets()");
+    expect(src).not.toMatch(/currentSecrets\(\)/);
   });
 });
