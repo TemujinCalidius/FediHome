@@ -62,6 +62,7 @@ export default function SiteSettingsClient({
 }) {
   const [cfg, setCfg] = useState<RuntimeSiteConfig>(effective);
   const [saving, setSaving] = useState(false);
+  const [diagCopied, setDiagCopied] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [hasOverrides, setHasOverrides] = useState(Object.keys(overrides).length > 0);
   // Live analytics-embed status (#288) — refreshed from each save response.
@@ -344,6 +345,19 @@ export default function SiteSettingsClient({
     setAccentInherit(s === null);
     setAccentHex(s ?? themeOwnAccent(id));
   };
+
+  /** Fetch the support bundle and put it on the clipboard (#395). */
+  async function copyDiagnostics() {
+    try {
+      const res = await fetch("/api/admin/diagnostics");
+      if (!res.ok) throw new Error("failed");
+      await navigator.clipboard.writeText(await res.text());
+      setDiagCopied(true);
+      setTimeout(() => setDiagCopied(false), 2000);
+    } catch {
+      setResult({ ok: false, msg: "Couldn't build the support bundle." });
+    }
+  }
 
   async function post(
     settings: Record<string, string | null>,
@@ -693,6 +707,27 @@ export default function SiteSettingsClient({
               repeat them here.
             </span>
           </label>
+        </>)}
+
+        {section("Support bundle", <>
+          <p className="text-xs text-gray-600 m-0">
+            A plain-text summary of this instance — version, install shape, whether the
+            scheduler is running, disk space, which integrations are set up. Useful to paste
+            into a bug report when something isn&apos;t working.
+          </p>
+          <p className="text-xs text-gray-600 m-0">
+            It contains <strong>no passwords, tokens or keys</strong>. Environment variables are
+            listed by name with whether they&apos;re set, never by value. Nothing is sent
+            anywhere — you get the text and decide what to do with it.
+          </p>
+          <div className="flex items-center gap-3">
+            <button type="button" onClick={copyDiagnostics} className="btn-outlined text-xs !py-1.5">
+              {diagCopied ? "Copied ✓" : "Copy support bundle"}
+            </button>
+            <a href="/api/admin/diagnostics" download="fedihome-support.txt" className="text-xs text-gray-400 hover:text-white">
+              Download
+            </a>
+          </div>
         </>)}
 
         {section("Your profile", <>
