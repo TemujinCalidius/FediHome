@@ -71,12 +71,14 @@ function readParams(get: (k: string) => string | null): AuthzParams {
  * caller knows an error page is mandatory vs. a redirect would be safe).
  */
 async function validate(
-  p: AuthzParams
+  p: AuthzParams,
+  /** Rate-limit key, spent only if the id is a URL we have to go and fetch (#494). */
+  rateKey: string,
 ): Promise<{ ok: true; client: OAuthClient; scope: string } | { ok: false; error: string }> {
   // resolveClient, not getClient (#366): first-party ids resolve with no query,
   // and only an id that is neither first-party nor cached-as-missing reaches the
-  // database.
-  const client = await resolveClient(p.clientId);
+  // database. A URL id is fetched and read instead (#494), under its own budget.
+  const client = await resolveClient(p.clientId, rateKey);
   if (!client) {
     // Name the actual constraint (#486). The site advertises the IndieAuth
     // discovery contract on every page — authorization_endpoint, token_endpoint,
@@ -87,9 +89,11 @@ async function validate(
     return {
       ok: false,
       error:
-        "This app isn't registered with this instance. If you own this site, you can " +
-        "register it in Admin → Connected apps — you'll need its client ID and redirect " +
-        "URI — or generate a scoped token by hand and paste it into the app instead.",
+        "This app couldn't be verified. A web app is checked by fetching its client ID, " +
+        "so that address has to be reachable and has to list this redirect; an app with a " +
+        "custom link scheme can't be checked that way at all and has to be registered by " +
+        "hand. If you own this site, add it in Admin → Connected apps — you'll need its " +
+        "client ID and redirect URI — or generate a scoped token and paste it into the app.",
     };
   }
   if (!validateRedirectUri(client, p.redirectUri)) {
@@ -185,6 +189,33 @@ function hidden(name: string, value: string): string {
   return `<input type="hidden" name="${name}" value="${escapeHtml(value)}">`;
 }
 
+/**
+ * Say WHICH KIND of app this is, and therefore what the owner is trusting (#494).
+ *
+ * The three are not interchangeable, and the screen used to render all three
+ * identically as a label:
+ *
+ *  - first-party  — ships in FediHome.
+ *  - registered   — the owner vouched for it themselves, because nothing about a
+ *                   custom link scheme can be verified.
+ *  - indieauth    — the client id is a URL, and its DOCUMENT is what vouched for
+ *                   the redirect. So the URL is shown, because it is the only
+ *                   part of that claim the owner can check with their own eyes —
+ *                   the name came from a page a stranger controls.
+ */
+function provenanceNote(client: OAuthClient): string {
+  if (client.kind === "first-party") {
+    return `<p class="muted">A FediHome app.</p>`;
+  }
+  if (client.kind === "registered") {
+    return `<p class="muted">You registered this app yourself in Connected apps.</p>`;
+  }
+  return (
+    `<p class="muted">Verified by fetching <strong>${escapeHtml(client.id)}</strong>. ` +
+    `The name above comes from that page — check the address is one you recognise.</p>`
+  );
+}
+
 function consentPage(p: AuthzParams, client: OAuthClient, scope: string): NextResponse {
   const items = scope
     .split(" ")
@@ -193,6 +224,7 @@ function consentPage(p: AuthzParams, client: OAuthClient, scope: string): NextRe
   return shell(
     "Authorize app",
     `<h1>Authorize <span class="app">${escapeHtml(client.label)}</span></h1>
+     ${provenanceNote(client)}
      <p class="sub">This app is asking to:</p>
      <ul class="scopes">${items}</ul>
      <form method="POST" action="/api/oauth/authorize">
@@ -241,7 +273,11 @@ function returnToApp(target: string, label: string): NextResponse {
 
 export async function GET(req: NextRequest) {
   const p = readParams((k) => req.nextUrl.searchParams.get(k));
-  const v = await validate(p);
+  // This handler has no rate limit of its own — `authorizeLimiter` guards POST
+  // only — which was safe while an unknown id cost zero queries. A URL id costs
+  // an outbound fetch, so the key is threaded through and spent inside
+  // resolveClient, on cache misses alone (#494).
+  const v = await validate(p, rateLimitKey(req));
   if (!v.ok) return errorPage(v.error);
 
   if (!(await verifyAdmin(req))) {
@@ -274,7 +310,7 @@ export async function POST(req: NextRequest) {
   });
   const decision = form.get("decision");
 
-  const v = await validate(p);
+  const v = await validate(p, rateLimitKey(req));
   if (!v.ok) return errorPage(v.error);
 
   // Deny → hand an OAuth error back to the app (redirect URI is validated now).

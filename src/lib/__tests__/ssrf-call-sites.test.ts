@@ -33,6 +33,9 @@ const REMOTE_URL_FETCHERS = [
   // The Explore resolver fetches an apId that came out of a *stranger's*
   // inReplyTo — nobody in the chain is someone we chose (#386).
   "src/lib/explore.ts",
+  // A URL client_id, chosen by whoever is signing in, fetched PRE-AUTH on an
+  // endpoint advertised to the whole web (#494).
+  "src/lib/indieauth-client.ts",
   "src/lib/peertube.ts",
   "src/app/ap/inbox/route.ts",
   "src/app/api/conversation/route.ts",

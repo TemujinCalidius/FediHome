@@ -57,7 +57,7 @@ describe("GET /api/oauth/authorize — validation & rendering", () => {
     expect(res.headers.get("content-type")).toMatch(/text\/html/);
     // The message now names the constraint rather than implying a malformed
     // client_id (#486) — this instance only accepts its own apps.
-    expect(await res.text()).toContain("registered with this instance");
+    expect(await res.text()).toContain("couldn&#39;t be verified");
   });
 
   it("error page for an unregistered redirect URI", async () => {
@@ -131,7 +131,7 @@ describe("POST /api/oauth/authorize — consent decision", () => {
     verifyOrigin.mockReturnValue(true);
     verifyAdmin.mockResolvedValue(true);
     const html = await (await POST(postReq({ ...VALID, client_id: "evil", decision: "approve" }))).text();
-    expect(html).toContain("registered with this instance");
+    expect(html).toContain("couldn&#39;t be verified");
     expect(prisma.authorizationCode.create).not.toHaveBeenCalled();
   });
 });

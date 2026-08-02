@@ -45,8 +45,19 @@ export function sanitizeScope(requested: string | null | undefined): string {
 export interface OAuthClient {
   id: string;
   label: string;
-  /** First-party ships in the app; registered was added by the owner (#366). */
-  kind: "first-party" | "registered";
+  /**
+   * How this client came to be trusted, and it is not cosmetic — the consent
+   * screen has to say which, because the three mean genuinely different things
+   * to the person approving:
+   *
+   *  - `first-party`  ships in FediHome; the owner is trusting us.
+   *  - `registered`   the OWNER added it by hand (#366); nothing about a custom
+   *                   scheme proves ownership, so their registration IS the check.
+   *  - `indieauth`    the client id is a URL we fetched (#494); the document at
+   *                   that URL is what vouches for the redirect, and the URL is
+   *                   shown so the owner can judge it themselves.
+   */
+  kind: "first-party" | "registered" | "indieauth";
   /** Exact-match custom-scheme redirect URIs. */
   redirectSchemes: string[];
   /** Allow `http://127.0.0.1:<any-port><loopbackPath>` (and ::1). */
@@ -116,12 +127,41 @@ export function isSafeRedirectScheme(redirectUri: string): boolean {
   return !FORBIDDEN_SCHEMES.has(m[0]);
 }
 
+/**
+ * Same origin as the client id, compared by parsed origin rather than by string
+ * prefix (#494).
+ *
+ * A prefix test is the bug here, not a shortcut: `https://quill.p3k.io` is a
+ * prefix of `https://quill.p3k.io.evil.example`, so prefix-matching a redirect
+ * against a client id hands the code to whoever owns the longer domain.
+ */
+function sameRedirectOrigin(clientId: string, redirectUri: string): boolean {
+  try {
+    return new URL(clientId).origin === new URL(redirectUri).origin;
+  } catch {
+    return false;
+  }
+}
+
 export function validateRedirectUri(client: OAuthClient, redirectUri: string): boolean {
   if (!redirectUri) return false;
   // Before anything else, including the exact-match fast path — a registration
   // that stored a javascript: URI must not pass by matching itself.
   if (!isSafeRedirectScheme(redirectUri)) return false;
   if (client.redirectSchemes.includes(redirectUri)) return true;
+
+  // The third matching mode (#494): a URL client_id vouches for anything on its
+  // OWN origin without having to enumerate it. That is the spec's rule, and it
+  // is the whole reason a web client needs no registration — the document at the
+  // client id is what proves the redirect belongs to it.
+  //
+  // Scoped to `kind === "indieauth"` deliberately. Applying it to a registered
+  // client would silently widen every registration from "these exact URIs" to
+  // "this whole origin", which is more than the owner was asked to assert.
+  // Cross-origin redirects still require an exact match against the
+  // `rel="redirect_uri"` list, handled by the check above.
+  if (client.kind === "indieauth") return sameRedirectOrigin(client.id, redirectUri);
+
   if (!client.allowLoopback) return false;
   let u: URL;
   try {
