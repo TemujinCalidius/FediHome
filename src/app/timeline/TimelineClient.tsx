@@ -299,6 +299,7 @@ function PostCard({
   onViewThread,
   counts,
   onLoadCounts,
+  compact = false,
 }: {
   post: FediPostItem;
   replyTo: { apId: string | null; inbox: string; bskyUri?: string | null } | null;
@@ -309,6 +310,17 @@ function PostCard({
   onViewThread: (postId: string) => void;
   counts: FediCountsState | undefined;
   onLoadCounts: (postId: string) => void;
+  /**
+   * The `list` feed variant (#269). Tightens the row and drops the heavy media
+   * and link-preview blocks — NOT the actions.
+   *
+   * Keeping like/boost/reply is the whole point: this is the owner's
+   * interactive feed, and a denser view that silently removed the ability to
+   * act on a post would make the setting a trap rather than a preference. The
+   * issue left that open; this is the only reading that doesn't degrade the
+   * surface it is applied to.
+   */
+  compact?: boolean;
 }) {
   const [showUserPopup, setShowUserPopup] = useState(false);
   const [liked, setLiked] = useState(post.likedByMe ?? false);
@@ -358,7 +370,7 @@ function PostCard({
   };
 
   return (
-    <div className="glass-card p-5">
+    <div className={compact ? "glass-card px-4 py-3" : "glass-card p-5"}>
       {/* Reply context indicator */}
       {post.inReplyTo && (
         <div className="flex items-center gap-1.5 mb-2 text-xs text-gray-600">
@@ -430,14 +442,16 @@ function PostCard({
         }}
       />
 
-      {/* Media (images + videos) */}
-      {post.mediaUrls.length > 0 && (
+      {/* Media (images + videos). Dropped in the compact variant (#269) — it is
+          what makes a card tall, and density is the entire reason someone picks
+          `list`. Opening the thread still shows everything. */}
+      {!compact && post.mediaUrls.length > 0 && (
         <PostMedia urls={post.mediaUrls} types={post.mediaTypes || []} maxH="max-h-80" />
 
       )}
 
-      {/* Link preview embed */}
-      {post.embedUrl && (post.embedTitle || post.embedDescription) && (
+      {/* Link preview embed — same reasoning */}
+      {!compact && post.embedUrl && (post.embedTitle || post.embedDescription) && (
         <a
           href={post.embedUrl}
           target="_blank"
@@ -1809,6 +1823,7 @@ export default function TimelineClient({
   dmReadState: initialDmReadState = {},
   analyticsData,
   fediAddress,
+  feedVariant = "cards",
 }: {
   initialPosts: FediPostItem[];
   initialCursor: string | null;
@@ -1821,6 +1836,12 @@ export default function TimelineClient({
   dmReadState?: Record<string, string>;
   analyticsData?: AnalyticsData | null;
   fediAddress: string;
+  /**
+   * The same `layout.feed` key the public feeds honour (#267, #269). Defaults to
+   * `cards`, and the cards path is untouched — the variant only ever adds a
+   * branch, never changes the existing one.
+   */
+  feedVariant?: "cards" | "list";
 }) {
   const [tab, setTab] = useState<"feed" | "replies" | "moderation" | "followers" | "following" | "messages" | "analytics">("feed");
   const [showReplies, setShowReplies] = useState(false);
@@ -2242,6 +2263,7 @@ export default function TimelineClient({
                   onViewThread={handleViewThread}
                   counts={postCounts.get(post.id)}
                   onLoadCounts={handleLoadCounts}
+                  compact={feedVariant === "list"}
                 />
               ))
             )}
