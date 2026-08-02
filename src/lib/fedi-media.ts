@@ -252,10 +252,12 @@ export async function trimFediStorage(): Promise<{ deleted: number; freedBytes: 
   let deleted = 0;
   let freedBytes = 0;
 
+  const evicted: string[] = [];
   for (const file of files) {
     if (currentSize <= limit) break;
     try {
       await unlink(file.path);
+      evicted.push(file.path);
       currentSize -= file.size;
       freedBytes += file.size;
       deleted++;
@@ -264,7 +266,63 @@ export async function trimFediStorage(): Promise<{ deleted: number; freedBytes: 
     }
   }
 
+  if (evicted.length > 0) await restoreEvictedMedia(evicted);
   return { deleted, freedBytes };
+}
+
+/**
+ * Put every post that referenced an evicted file back to loading from source
+ * (#478).
+ *
+ * Before this, the trim unlinked the file and changed nothing else. The remote
+ * original was discarded at proxy time, so the picture was simply gone — and
+ * eviction is by age, so it took the oldest media first: posts far enough down
+ * the timeline that nobody scrolls to them today. The damage appeared
+ * gradually, in old posts, long after the trim that caused it.
+ *
+ * Rows written before `mediaRemoteUrls` existed have an empty array and are left
+ * alone. There is nothing to restore them FROM — the URL was never recorded —
+ * and rewriting them to "" would replace a broken image with a missing one while
+ * destroying the record that there had been an image at all.
+ */
+async function restoreEvictedMedia(paths: string[]): Promise<void> {
+  // Disk paths → the /uploads/... URLs the rows actually store. Matching on the
+  // stored URL rather than the path is what makes this work across BOTH roots
+  // (#479): a file under the legacy root is served from the same /uploads URL.
+  const urls = paths
+    .map((p) => {
+      const i = p.lastIndexOf("/uploads/");
+      return i === -1 ? null : p.slice(i);
+    })
+    .filter((u): u is string => u !== null);
+  if (urls.length === 0) return;
+
+  try {
+    const { prisma } = await import("./db");
+    const rows = await prisma.fediPost.findMany({
+      where: { mediaUrls: { hasSome: urls } },
+      select: { id: true, mediaUrls: true, mediaRemoteUrls: true },
+    });
+    const gone = new Set(urls);
+
+    for (const row of rows) {
+      // A row whose parallel array is short or absent is left untouched rather
+      // than half-rewritten by index — that would silently pair a URL with
+      // another attachment's original.
+      if (row.mediaRemoteUrls.length !== row.mediaUrls.length) continue;
+      const next = row.mediaUrls.map((u, i) =>
+        gone.has(u) && row.mediaRemoteUrls[i] ? row.mediaRemoteUrls[i] : u,
+      );
+      if (next.some((u, i) => u !== row.mediaUrls[i])) {
+        await prisma.fediPost.update({ where: { id: row.id }, data: { mediaUrls: next } });
+      }
+    }
+  } catch (err) {
+    // Never let this fail the sweep. The files are already gone; a database
+    // problem here means some posts show a broken image, which is exactly the
+    // state everything was in before this existed.
+    console.error("[fedihome] #478 restore after cache eviction failed:", err);
+  }
 }
 
 /**
@@ -297,11 +355,18 @@ export async function removeFediMediaFiles(urls: string[]): Promise<number> {
 
 export async function processAttachments(
   attachments: unknown[] | undefined
-): Promise<{ urls: string[]; types: string[] }> {
+): Promise<{ urls: string[]; types: string[]; remotes: string[] }> {
   const urls: string[] = [];
   const types: string[] = [];
+  // The original URL for each entry, parallel to `urls` (#478). Kept so the
+  // cache trim can put a post back to loading from source rather than leaving a
+  // broken image — proxying used to discard it, so an evicted file was gone for
+  // good. Pushed for EVERY branch, including passthrough ones where it equals
+  // the stored URL, because a parallel array that is sometimes short is worse
+  // than no array at all.
+  const remotes: string[] = [];
 
-  if (!Array.isArray(attachments)) return { urls, types };
+  if (!Array.isArray(attachments)) return { urls, types, remotes };
 
   for (const att of attachments) {
     const a = att as Record<string, unknown>;
@@ -320,19 +385,16 @@ export async function processAttachments(
         urls.push(localPath || url);
         types.push("video");
       }
+      remotes.push(url);
     } else if (mediaType.startsWith("image/") || !mediaType) {
       const localPath = await proxyImage(url);
-      if (localPath) {
-        urls.push(localPath);
-        types.push("image");
-      } else {
-        urls.push(url);
-        types.push("image");
-      }
+      urls.push(localPath || url);
+      types.push("image");
+      remotes.push(url);
     }
   }
 
-  return { urls, types };
+  return { urls, types, remotes };
 }
 
 /**
