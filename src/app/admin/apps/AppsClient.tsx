@@ -41,7 +41,11 @@ const scopeBadges = (scope: string) => (
   </div>
 );
 
-export default function AppsClient({ tokens, instanceUrl }: { tokens: TokenRow[]; instanceUrl: string }) {
+export default function AppsClient({ tokens, instanceUrl,
+  registeredClients = [],
+}: { tokens: TokenRow[]; instanceUrl: string
+  registeredClients?: { id: string; clientId: string; label: string; redirectUris: string[] }[];
+}) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -136,6 +140,46 @@ export default function AppsClient({ tokens, instanceUrl }: { tokens: TokenRow[]
 
   function toggleGenScope(s: string) {
     setGenScopes((d) => (d.includes(s) ? d.filter((x) => x !== s) : [...d, s]));
+  }
+
+  const [regOpen, setRegOpen] = useState(false);
+  const [regId, setRegId] = useState("");
+  const [regLabel, setRegLabel] = useState("");
+  const [regUris, setRegUris] = useState("");
+
+  async function registerClient() {
+    setError(null);
+    setBusy("reg");
+    try {
+      const res = await post({
+        action: "register_client",
+        clientId: regId.trim(),
+        label: regLabel.trim(),
+        redirectUris: regUris.split("\n").map((u) => u.trim()).filter(Boolean),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || "Couldn't register that app.");
+        return;
+      }
+      setRegOpen(false);
+      setRegId(""); setRegLabel(""); setRegUris("");
+      router.refresh();
+    } catch {
+      setError("Couldn't register that app.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function unregisterClient(id: string) {
+    setBusy(id);
+    try {
+      await post({ action: "unregister_client", id });
+      router.refresh();
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function generate() {
@@ -309,6 +353,77 @@ export default function AppsClient({ tokens, instanceUrl }: { tokens: TokenRow[]
           </div>
         </div>
       )}
+
+      {/* Registered third-party OAuth clients (#366) */}
+      <div className="rounded-lg border border-surface-700 p-3 flex flex-col gap-2">
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-semibold text-content m-0">Registered apps</p>
+          <button
+            type="button"
+            onClick={() => { setRegOpen((v) => !v); setError(null); }}
+            className="text-xs text-gray-400 hover:text-white"
+          >
+            {regOpen ? "Cancel" : "+ Register an app"}
+          </button>
+        </div>
+        <p className="text-xs text-gray-600 m-0">
+          Lets a third-party app sign in with OAuth instead of a pasted token. FediHome
+          can&apos;t verify who owns an app&apos;s redirect address — <strong>you registering it
+          is the check</strong>, so only add apps you trust and check the redirect matches
+          what the app documents.
+        </p>
+        {regOpen && (
+          <div className="flex flex-col gap-2">
+            <label className="flex flex-col gap-1 text-xs text-gray-400">
+              <span>Client ID</span>
+              <input value={regId} onChange={(e) => setRegId(e.target.value)} placeholder="obsidian-fedihome"
+                className="bg-surface-800 border border-surface-700 rounded-md px-2 py-1.5 text-sm text-white font-mono" />
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-gray-400">
+              <span>Name</span>
+              <input value={regLabel} onChange={(e) => setRegLabel(e.target.value)} placeholder="Obsidian"
+                className="bg-surface-800 border border-surface-700 rounded-md px-2 py-1.5 text-sm text-white" />
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-gray-400">
+              <span>Redirect URIs — one per line</span>
+              <textarea value={regUris} onChange={(e) => setRegUris(e.target.value)} rows={3}
+                placeholder="obsidian://fedihome/callback"
+                className="bg-surface-800 border border-surface-700 rounded-md px-2 py-1.5 text-sm text-white font-mono" />
+            </label>
+            <div>
+              <button onClick={registerClient} disabled={busy !== null} className="btn-primary text-xs !py-1.5 disabled:opacity-50">
+                {busy === "reg" ? "Registering…" : "Register"}
+              </button>
+            </div>
+            <p className="text-xs text-gray-600 m-0">
+              It can take up to a minute before the app can sign in.
+            </p>
+          </div>
+        )}
+        {registeredClients.length === 0 ? (
+          <p className="text-xs text-gray-600 m-0">None registered.</p>
+        ) : (
+          <ul className="flex flex-col gap-1.5">
+            {registeredClients.map((c) => (
+              <li key={c.id} className="flex items-start justify-between gap-3 text-xs">
+                <div className="min-w-0">
+                  <span className="text-white">{c.label}</span>{" "}
+                  <code className="text-gray-500">{c.clientId}</code>
+                  <div className="text-gray-600 break-all font-mono">{c.redirectUris.join(", ")}</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => unregisterClient(c.id)}
+                  disabled={busy !== null}
+                  className="text-red-400 hover:text-red-300 disabled:opacity-50 whitespace-nowrap"
+                >
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
 
       {tokens.length === 0 ? (
         <p className="text-gray-500 text-sm">

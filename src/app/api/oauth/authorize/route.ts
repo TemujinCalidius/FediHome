@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { resolveClient } from "@/lib/oauth-clients";
 import crypto from "crypto";
 import { verifyAdmin, verifyOrigin, hashToken } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { rateLimitKey } from "@/lib/client-ip";
 import {
-  getClient,
   validateRedirectUri,
   sanitizeScope,
   isValidCodeChallenge,
@@ -70,10 +70,13 @@ function readParams(get: (k: string) => string | null): AuthzParams {
  * error string. `redirectValidated` says whether redirect_uri is trusted (so the
  * caller knows an error page is mandatory vs. a redirect would be safe).
  */
-function validate(
+async function validate(
   p: AuthzParams
-): { ok: true; client: OAuthClient; scope: string } | { ok: false; error: string } {
-  const client = getClient(p.clientId);
+): Promise<{ ok: true; client: OAuthClient; scope: string } | { ok: false; error: string }> {
+  // resolveClient, not getClient (#366): first-party ids resolve with no query,
+  // and only an id that is neither first-party nor cached-as-missing reaches the
+  // database.
+  const client = await resolveClient(p.clientId);
   if (!client) {
     // Name the actual constraint (#486). The site advertises the IndieAuth
     // discovery contract on every page — authorization_endpoint, token_endpoint,
@@ -84,10 +87,9 @@ function validate(
     return {
       ok: false,
       error:
-        "This instance only accepts sign-in from its own apps, so it can't complete " +
-        "an IndieAuth handshake for another client yet. If you own this site, you can " +
-        "generate a scoped token by hand in Admin → Connected apps and paste it into " +
-        "the app instead.",
+        "This app isn't registered with this instance. If you own this site, you can " +
+        "register it in Admin → Connected apps — you'll need its client ID and redirect " +
+        "URI — or generate a scoped token by hand and paste it into the app instead.",
     };
   }
   if (!validateRedirectUri(client, p.redirectUri)) {
@@ -239,7 +241,7 @@ function returnToApp(target: string, label: string): NextResponse {
 
 export async function GET(req: NextRequest) {
   const p = readParams((k) => req.nextUrl.searchParams.get(k));
-  const v = validate(p);
+  const v = await validate(p);
   if (!v.ok) return errorPage(v.error);
 
   if (!(await verifyAdmin(req))) {
@@ -272,7 +274,7 @@ export async function POST(req: NextRequest) {
   });
   const decision = form.get("decision");
 
-  const v = validate(p);
+  const v = await validate(p);
   if (!v.ok) return errorPage(v.error);
 
   // Deny → hand an OAuth error back to the app (redirect URI is validated now).

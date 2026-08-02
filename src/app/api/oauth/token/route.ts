@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { resolveClient } from "@/lib/oauth-clients";
 import { hashToken, generateToken } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { rateLimitKey } from "@/lib/client-ip";
 import {
-  getClient,
   verifyPkceS256,
   makeRateLimiter,
   sanitizeScope,
@@ -75,7 +75,8 @@ export async function POST(req: NextRequest) {
   if (grantType !== "authorization_code") {
     return oauthError("unsupported_grant_type", "Only authorization_code is supported.");
   }
-  const client = getClient(clientId);
+  // Registered clients too (#366).
+  const client = await resolveClient(clientId);
   if (!client) return oauthError("invalid_client", "Unknown client_id.", 401);
   if (!codeValue || !redirectUri || !codeVerifier) {
     return oauthError("invalid_request", "code, redirect_uri and code_verifier are required.");
