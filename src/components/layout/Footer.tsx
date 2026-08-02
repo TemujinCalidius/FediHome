@@ -92,9 +92,13 @@ export default async function Footer() {
               </svg>
             </a>
 
-            {siteConfig.contactEmail && (
+            {/* The RUNTIME value, not the env one (#480). `site` is fetched at the
+                top of this component and was simply unused here, so an address
+                typed into the admin panel changed nothing on a default install —
+                this is the default footer, `columns` and `minimal` are opt-in. */}
+            {site.contact.email && (
               <a
-                href={`mailto:${siteConfig.contactEmail}`}
+                href={`mailto:${site.contact.email}`}
                 className="hover:text-accent-400 transition-colors"
                 title="Email"
               >

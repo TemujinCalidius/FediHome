@@ -1,5 +1,6 @@
 import { siteConfig } from "@/../site.config";
 import { getRuntimeProfile } from "@/lib/site-profile";
+import { getRuntimeSiteConfig } from "@/lib/site-settings";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +11,10 @@ export const metadata = {
 
 export default async function AboutPage() {
   const profile = await getRuntimeProfile();
+  // The RUNTIME contact address, not the env one (#480). This page read
+  // the build-time env value directly, so an address set in the admin panel
+  // never appeared here — the same split the default footer had.
+  const site = await getRuntimeSiteConfig();
   return (
     <div className="max-w-3xl mx-auto px-6 py-16">
       <h1 className="font-display text-3xl font-bold text-white mb-6">
@@ -58,14 +63,14 @@ export default async function AboutPage() {
               {siteConfig.fediAddress}
             </span>
           </li>
-          {siteConfig.contactEmail && (
+          {site.contact.email && (
             <li>
               <span className="text-gray-500">Email:</span>{" "}
               <a
-                href={`mailto:${siteConfig.contactEmail}`}
+                href={`mailto:${site.contact.email}`}
                 className="text-accent-400 hover:text-accent-300"
               >
-                {siteConfig.contactEmail}
+                {site.contact.email}
               </a>
             </li>
           )}
