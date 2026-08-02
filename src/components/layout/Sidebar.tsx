@@ -53,9 +53,23 @@ export default async function Sidebar({ blocks = SIDEBAR_BLOCKS }: { blocks?: Si
           {recentPosts.map((p) => (
             <li key={p.slug}>
               <Link href={`/post/${p.slug}`} className="block group">
-                <span className="text-xs text-content-muted group-hover:text-accent-400 transition-colors line-clamp-2">
-                  {p.title || "Untitled"}
-                </span>
+                {/*
+                  A note legitimately has no title, so this used to be a column
+                  of "Untitled" on any microblog (#307 item 3) — the same problem
+                  #253 fixed for the posts API, fixed the same way. Italic when
+                  it's a snippet rather than a title, so the two are still
+                  distinguishable at a glance. A post with no title AND no text
+                  falls through to its date, which at least says something true.
+                */}
+                {p.title ? (
+                  <span className="text-xs text-content-muted group-hover:text-accent-400 transition-colors line-clamp-2">
+                    {p.title}
+                  </span>
+                ) : p.snippet ? (
+                  <span className="text-xs italic text-content-subtle group-hover:text-accent-400 transition-colors line-clamp-2">
+                    {p.snippet}
+                  </span>
+                ) : null}
                 <span className="block text-[11px] text-content-dim mt-0.5">
                   {new Date(p.publishedAt).toLocaleDateString(undefined, {
                     year: "numeric", month: "short", day: "numeric",
