@@ -18,6 +18,8 @@ const { authenticateApiRequest } = vi.hoisted(() => ({ authenticateApiRequest: v
 vi.mock("@/lib/auth", () => ({ authenticateApiRequest }));
 vi.mock("@/lib/sanitize", () => ({ sanitizeHtml: (s: string) => s }));
 vi.mock("@/lib/db", () => ({ prisma: { fediPost: { findMany: vi.fn() } } }));
+const { blockedPostFilter } = vi.hoisted(() => ({ blockedPostFilter: vi.fn() }));
+vi.mock("@/lib/blocks", () => ({ blockedPostFilter }));
 
 import { GET } from "@/app/api/feed/route";
 import { prisma } from "@/lib/db";
@@ -37,6 +39,7 @@ const whereOf = () =>
 beforeEach(() => {
   vi.clearAllMocks();
   asCookie();
+  blockedPostFilter.mockResolvedValue({});
   vi.mocked(prisma.fediPost.findMany).mockResolvedValue([] as never);
 });
 
@@ -104,5 +107,53 @@ describe("Bluesky rows default by who is asking (#393, #407)", () => {
       await GET(req(`?bluesky=${v}`));
       expect(whereOf().source, `?bluesky=${v}`).toBe("fedi");
     }
+  });
+});
+
+/**
+ * Blocked actors, filtered on the way out (#459).
+ *
+ * Blocking is enforced at ingest, but ingest only stops what hasn't arrived yet —
+ * a purge that half-failed, a thread re-import, a row that predates the block. The
+ * read-side filter is what makes the guarantee hold anyway, and `/timeline` and
+ * `/fediverse` both applied it while this route did not.
+ *
+ * The effect was that blocking worked for exactly one screen: the server-rendered
+ * first paint hid the account, and load-more, the filter toggles and the periodic
+ * silent refresh all came back through here unfiltered. Native app clients read
+ * this route exclusively, so they never filtered at all.
+ */
+describe("blocked actors are filtered on read (#459)", () => {
+  it("applies the block filter to the query", async () => {
+    blockedPostFilter.mockResolvedValue({ NOT: { OR: [{ actorUri: { in: ["https://evil.example/u/1"] } }] } });
+    await GET(req());
+    expect(whereOf()).toMatchObject({ NOT: { OR: [{ actorUri: { in: ["https://evil.example/u/1"] } }] } });
+  });
+
+  it("filters for a bearer client too, not just the web UI", async () => {
+    // The app reads this route exclusively — it has no server-rendered fallback
+    // that would have hidden the account first.
+    asBearer();
+    blockedPostFilter.mockResolvedValue({ NOT: { OR: [{ domain: "evil.example" }] } });
+    await GET(req());
+    expect(whereOf()).toMatchObject({ NOT: { OR: [{ domain: "evil.example" }] } });
+  });
+
+  it("keeps the cursor clause intact alongside it", async () => {
+    // The cursor contributes `OR` and the filter contributes `NOT`. Different
+    // keys, so neither may clobber the other — a paginated request has to stay
+    // both correctly paged AND filtered.
+    blockedPostFilter.mockResolvedValue({ NOT: { OR: [{ domain: "evil.example" }] } });
+    // The real token format is `<ISO>_<id>` (src/lib/cursor.ts) — not base64.
+    await GET(req("?cursor=2026-01-01T00:00:00.000Z_abc123"));
+    const where = whereOf();
+    expect(where).toHaveProperty("NOT");
+    expect(where).toHaveProperty("OR");
+  });
+
+  it("does not add an empty clause when nothing is blocked", async () => {
+    blockedPostFilter.mockResolvedValue({});
+    await GET(req());
+    expect(whereOf()).not.toHaveProperty("NOT");
   });
 });
