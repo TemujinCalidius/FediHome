@@ -64,7 +64,7 @@ export default function MobileMenu({
                 href="/timeline"
                 className="text-base py-2.5 border-b border-surface-800/50 text-content-faint hover:text-accent-400 transition-colors"
               >
-                Fedi Feed
+                Admin
               </Link>
             )}
             <Link

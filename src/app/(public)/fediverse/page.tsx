@@ -28,7 +28,16 @@ export default async function FediversePage() {
   // This page renders to strangers, so a blocked actor reappearing here is the
   // worst version of the ingest gap (#396).
   const posts = await prisma.fediPost.findMany({
-    where: { inReplyTo: null, boostedBy: null, ...(await blockedPostFilter()) },
+    // viaLookup excludes posts pulled in on demand — a thread the owner
+    // expanded, or a profile they opened (#460). A thread ROOT has no
+    // inReplyTo, so without it one curious click publishes a stranger's post
+    // here, under the owner's domain, permanently.
+    where: {
+      inReplyTo: null,
+      boostedBy: null,
+      viaLookup: false,
+      ...(await blockedPostFilter()),
+    },
     orderBy: { publishedAt: "desc" },
     take: MAX_POSTS,
   });

@@ -129,3 +129,64 @@ describe("loadIdentity — must not break the boot", () => {
     expect(getIdentity().siteUrl).toBe("https://from-env.example");
   });
 });
+
+describe("a junk row is ignored rather than published under (#431)", () => {
+  /**
+   * clean() checked type, non-empty, length and whitespace, while
+   * validateSiteUrl lived in the admin ROUTE. So a row written by anything else
+   * — a manual psql edit, a restore, a migration, a script — went straight into
+   * getIdentity().siteUrl, and from there into the actor id, the keyId and every
+   * published post's apId, permanently.
+   */
+  it("does not let `garbage` become the site URL", async () => {
+    findMany.mockResolvedValue(rows({ "identity.siteUrl": "garbage" }));
+    await loadIdentity();
+    expect(getIdentity().siteUrl).toBe("https://from-env.example");
+  });
+
+  it("does not let a junk row into the actor id, which is what gets stamped", async () => {
+    findMany.mockResolvedValue(rows({ "identity.siteUrl": "not a url" }));
+    await loadIdentity();
+    expect(getIdentity().actorId).toBe("https://from-env.example/ap/actor");
+  });
+
+  it("rejects a URL carrying a path — the actor id is built by appending", async () => {
+    findMany.mockResolvedValue(rows({ "identity.siteUrl": "https://ok.example/sub" }));
+    await loadIdentity();
+    expect(getIdentity().siteUrl).toBe("https://from-env.example");
+  });
+
+  it("rejects a javascript: row", async () => {
+    findMany.mockResolvedValue(rows({ "identity.siteUrl": "javascript:alert(1)" }));
+    await loadIdentity();
+    expect(getIdentity().siteUrl).toBe("https://from-env.example");
+  });
+
+  it("rejects a handle that would break the @address", async () => {
+    findMany.mockResolvedValue(rows({ "identity.fediHandle": "me@somewhere.else" }));
+    await loadIdentity();
+    expect(getIdentity().fediHandle).toBe("envhandle");
+  });
+
+  it("lowercases a domain row rather than rejecting it — #427 was that bug", async () => {
+    findMany.mockResolvedValue(rows({ "identity.fediDomain": "Example.COM" }));
+    await loadIdentity();
+    expect(getIdentity().fediDomain).toBe("example.com");
+  });
+
+  it("still accepts a good row, so the overlay keeps working", async () => {
+    findMany.mockResolvedValue(rows({ "identity.siteUrl": "https://from-db.example" }));
+    await loadIdentity();
+    expect(getIdentity().siteUrl).toBe("https://from-db.example");
+  });
+
+  it("takes the good fields when only one row is junk", async () => {
+    // Per-field, not all-or-nothing: one bad row must not discard a good one.
+    findMany.mockResolvedValue(
+      rows({ "identity.siteUrl": "garbage", "identity.fediHandle": "realhandle" }),
+    );
+    await loadIdentity();
+    expect(getIdentity().siteUrl).toBe("https://from-env.example");
+    expect(getIdentity().fediHandle).toBe("realhandle");
+  });
+});

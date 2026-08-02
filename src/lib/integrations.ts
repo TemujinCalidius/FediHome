@@ -1,4 +1,5 @@
 import { prisma } from "./db";
+import { isLocalOrPrivateHost } from "./public-host";
 import { encryptSecret, decryptSecret } from "./secret-box";
 
 /**
@@ -30,12 +31,54 @@ import { encryptSecret, decryptSecret } from "./secret-box";
  * Lives in this module because it sits at the bottom of the import graph:
  * `bluesky-agent.ts` imports from here, not the other way round.
  */
+/** The default PDS. Overridable per-instance — see `blueskyService()` (#449). */
 export const BLUESKY_SERVICE = "https://bsky.social";
+
+/**
+ * Validate an operator-supplied PDS origin (#449).
+ *
+ * AT Protocol is deliberately multi-host: bsky.social is one Personal Data
+ * Server among many, and an operator who has migrated to a self-hosted PDS keeps
+ * their DID, posts and followers while their PDS HOSTNAME changes. Hardcoding
+ * the host meant FediHome could not authenticate them at all, for one string.
+ *
+ * https only, and publicly reachable. A PDS behind loopback or on a private
+ * range cannot federate, and this value is fed to an outbound client — the same
+ * rule already guards the site URL, so it is the same helper rather than a
+ * second opinion.
+ */
+export function validateBlueskyService(input: string): string | null {
+  let u: URL;
+  try {
+    u = new URL(input.trim());
+  } catch {
+    return null;
+  }
+  if (u.protocol !== "https:") return null;
+  if (u.username || u.password) return null;
+  if (u.pathname !== "/" || u.search || u.hash) return null;
+  if (isLocalOrPrivateHost(u.hostname)) return null;
+  return u.origin;
+}
+
+/**
+ * The PDS this instance talks to. Falls back to bsky.social, so nothing changes
+ * for anyone who never sets it.
+ *
+ * An invalid stored value falls back rather than throwing: a bad row must not
+ * take crossposting down, and the admin route validates on the way in.
+ */
+export async function blueskyService(): Promise<string> {
+  const o = await readRows([KEYS.bskyService]);
+  const stored = o[KEYS.bskyService] ?? process.env.BLUESKY_SERVICE;
+  return (stored && validateBlueskyService(stored)) || BLUESKY_SERVICE;
+}
 
 const KEYS = {
   bskyHandle: "integration.bluesky.handle",
   bskyPassword: "integration.bluesky.password", // encrypted
   bskyDid: "integration.bluesky.did", //           captured at login, not a secret
+  bskyService: "integration.bluesky.service", //    PDS origin; blank = bsky.social (#449)
   threadsUserId: "integration.threads.userId",
   threadsToken: "integration.threads.accessToken", // encrypted
   smtpHost: "integration.smtp.host",
@@ -137,17 +180,44 @@ export async function setBlueskyCredentials(
 }
 
 export async function clearBlueskyCredentials(): Promise<void> {
-  await drop([KEYS.bskyHandle, KEYS.bskyPassword, KEYS.bskyDid]);
+  // The service row goes too: it belongs to the account being cleared, and a
+  // stale PDS origin left behind would silently point the next set of
+  // credentials at the wrong host.
+  await drop([KEYS.bskyHandle, KEYS.bskyPassword, KEYS.bskyDid, KEYS.bskyService]);
+}
+
+/** Store the PDS origin. Empty string clears it, falling back to bsky.social. */
+export async function setBlueskyService(
+  input: string,
+): Promise<{ ok: true; value: string } | { ok: false; error: string }> {
+  const raw = input.trim();
+  if (!raw) {
+    await drop([KEYS.bskyService]);
+    return { ok: true, value: BLUESKY_SERVICE };
+  }
+  const valid = validateBlueskyService(raw);
+  if (!valid) {
+    return {
+      ok: false,
+      error:
+        "Use a bare https:// address for your PDS, reachable from the internet — for example https://pds.example.com.",
+    };
+  }
+  await put(KEYS.bskyService, valid);
+  return { ok: true, value: valid };
 }
 
 /** Try an app-password login without storing anything — for the "Test" button. */
 export async function testBlueskyLogin(
   handle: string,
   password: string,
+  service?: string,
 ): Promise<{ ok: boolean; error?: string; did?: string }> {
   try {
     const { BskyAgent } = await import("@atproto/api");
-    const agent = new BskyAgent({ service: BLUESKY_SERVICE });
+    // The service under test, not the configured one: the Test button has to
+    // exercise the host the operator is about to save, or it verifies nothing.
+    const agent = new BskyAgent({ service: service ?? (await blueskyService()) });
     await agent.login({ identifier: normalizeBlueskyHandle(handle), password });
     // The session carries the DID. Returned so the caller can persist it —
     // it is the only identifier that survives a handle change (#448).

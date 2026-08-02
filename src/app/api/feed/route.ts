@@ -52,6 +52,12 @@ export async function GET(req: NextRequest) {
     where.source = "fedi";
   }
 
+  // Feed provenance (#460), unconditional — not behind showReplies. A reply
+  // pulled in by expanding a thread is just as much someone else's content as
+  // the root is, and the thread view reads it by conversationId regardless, so
+  // nothing the owner asked to see is lost by keeping both out of the feed.
+  where.viaLookup = false;
+
   // Blocked actors, filtered on the way OUT as well as at ingest (#459).
   // /timeline and /fediverse both did this; this route did not — so the SSR first
   // paint hid a blocked account and every client refetch brought it back. Load

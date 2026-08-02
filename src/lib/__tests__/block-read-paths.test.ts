@@ -24,6 +24,22 @@ import { join } from "node:path";
 const ROOT = process.cwd();
 const read = (rel: string) => readFileSync(join(ROOT, rel), "utf-8");
 
+/**
+ * The balanced `{...}` argument of the call starting on the first line of `src`.
+ * Falls back to the whole remainder if braces don't balance, so a parse failure
+ * can never turn into a false PASS.
+ */
+function callArgs(src: string): string {
+  const start = src.indexOf("{");
+  if (start === -1) return src;
+  let depth = 0;
+  for (let i = start; i < src.length; i++) {
+    if (src[i] === "{") depth++;
+    else if (src[i] === "}" && --depth === 0) return src.slice(start, i + 1);
+  }
+  return src;
+}
+
 /** Reads federated posts and shows them to someone. */
 const USER_FACING_READS = [
   "src/app/api/feed/route.ts", //                  the app + web timeline
@@ -63,7 +79,14 @@ describe("read-side block filtering", () => {
         // Both directions: the filter is spread into the `where` literal in some
         // routes and assigned onto a built-up `where` object just above the query
         // in others. Both are correct; only "nowhere near this read" is not.
-        const window = lines.slice(Math.max(0, i - 10), i + 6).join("\n");
+        //
+        // Forward half is the call's OWN argument object, matched by brace
+        // balance rather than a fixed line count. A fixed count silently gets
+        // too tight the moment a where-clause grows a line — which is exactly
+        // what #460 did to it, turning a real guard into a formatting tripwire.
+        const rest = lines.slice(i).join("\n");
+        const window =
+          lines.slice(Math.max(0, i - 10), i).join("\n") + "\n" + callArgs(rest);
         expect(
           /blockedPostFilter|blockFilter/.test(window),
           `${rel}:${i + 1} reads fediPost with no block filter in its where clause`,

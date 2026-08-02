@@ -39,7 +39,7 @@ export default async function Navbar() {
               href="/timeline"
               className="text-xs text-content-faint hover:text-accent-400 transition-colors hidden md:inline"
             >
-              Fedi Feed
+              Admin
             </Link>
           )}
           {isAdmin && <NotificationBell />}

@@ -952,7 +952,12 @@ async function handleNote(actorUri: string, note: Record<string, unknown>) {
           ? new Date(note.published as string)
           : new Date(),
       },
-      update: {},
+      // Promote back to feed provenance (#460). Delivery is proof this belongs
+      // in the timeline: if we saw the post first by expanding a thread, the row
+      // is marked viaLookup, and it must stop being hidden the moment it arrives
+      // for real. The create side leaves the default (false) — inbox delivery is
+      // the definition of feed provenance.
+      update: { viaLookup: false },
     });
 
     // Also record as FediInteraction if replying to one of OUR posts or replies
