@@ -329,6 +329,15 @@ model FediPost {
   contentHtml String?
   mediaUrls   String[]
   mediaTypes  String[] // parallel to mediaUrls: "image" or "video"
+  /// The ORIGINAL remote URL for each entry in mediaUrls, parallel to it (#478).
+  /// Empty string where there isn't one — a passthrough URL is already remote,
+  /// and rows written before this column existed have nothing to record.
+  ///
+  /// Exists so the cache trim can put a post back to loading from source instead
+  /// of leaving a broken image: evicting a file used to unlink it and change
+  /// nothing else, and the remote original was not kept anywhere, so the picture
+  /// was gone for good.
+  mediaRemoteUrls String[]
   username    String
   domain      String
   displayName String?

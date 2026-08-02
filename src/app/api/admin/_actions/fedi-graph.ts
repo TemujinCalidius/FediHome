@@ -223,7 +223,7 @@ export async function follow(body: AdminBody): Promise<NextResponse> {
             const note = item.type === "Create" ? item.object : item;
             if (!note?.id || !note?.content) continue;
 
-            const { urls: mediaUrls, types: mediaTypes } =
+            const { urls: mediaUrls, types: mediaTypes, remotes: mediaRemoteUrls } =
               await processAttachments(note.attachment);
             const safeContent = sanitizeHtml(note.content || "");
             const embed = await fetchLinkEmbed(safeContent);
@@ -240,6 +240,7 @@ export async function follow(body: AdminBody): Promise<NextResponse> {
                 contentHtml: safeContent,
                 mediaUrls,
                 mediaTypes,
+                mediaRemoteUrls,
                 inReplyTo,
                 conversationId,
                 // Pulled because the owner opened this profile, not because

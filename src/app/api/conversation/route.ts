@@ -195,6 +195,10 @@ async function fetchThreadViaMastodon(
     const safe = sanitizeHtml(s.content || "");
     const media = (s.media_attachments || []).filter((m) => m?.url);
     const mediaUrls = media.map((m) => m.url!);
+    // This path stores the remote URLs directly rather than proxying, so each
+    // entry is already its own original (#478). Recorded anyway so the array
+    // stays parallel — a trim that finds no local file here has nothing to undo.
+    const mediaRemoteUrls = mediaUrls;
     const mediaTypes = media.map((m) => (m.type === "image" ? "image" : "video"));
     const inReplyTo = s.in_reply_to_id ? idToUri.get(String(s.in_reply_to_id)) || null : null;
     let domain = "";
@@ -213,6 +217,7 @@ async function fetchThreadViaMastodon(
           contentHtml: safe,
           mediaUrls,
           mediaTypes,
+          mediaRemoteUrls,
           inReplyTo,
           conversationId: null,
           username: s.account.username || "unknown",
@@ -284,7 +289,7 @@ async function fetchRemoteNote(apId: string) {
     const actor = await actorRes.json();
     const domain = new URL(actorUri).hostname;
 
-    const { urls: mediaUrls, types: mediaTypes } = await processAttachments(
+    const { urls: mediaUrls, types: mediaTypes, remotes: mediaRemoteUrls } = await processAttachments(
       note.attachment
     );
     const embed = await fetchLinkEmbed(note.content || "");
@@ -303,6 +308,7 @@ async function fetchRemoteNote(apId: string) {
         contentHtml: safeHtml,
         mediaUrls,
         mediaTypes,
+        mediaRemoteUrls,
         inReplyTo,
         conversationId,
         embedUrl: embed?.url || null,

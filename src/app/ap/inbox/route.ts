@@ -691,7 +691,7 @@ async function handleBoost(actorUri: string, activity: Record<string, unknown>) 
     const content = sanitizeHtml(
       boostTitle ? `<h2>${escapeText(boostTitle)}</h2>${boostBody}` : boostBody
     );
-    const { urls: mediaUrls, types: mediaTypes } = await processAttachments(
+    const { urls: mediaUrls, types: mediaTypes, remotes: mediaRemoteUrls } = await processAttachments(
       note.attachment as unknown[] | undefined
     );
     const embed = await fetchLinkEmbed(content);
@@ -704,6 +704,7 @@ async function handleBoost(actorUri: string, activity: Record<string, unknown>) 
         contentHtml: content,
         mediaUrls,
         mediaTypes,
+        mediaRemoteUrls,
         username: originalInfo?.username || "unknown",
         domain: originalInfo?.domain || new URL(targetApId).hostname,
         displayName: originalInfo?.displayName,
@@ -819,7 +820,7 @@ async function handleUpdateNote(actorUri: string, note: Record<string, unknown>)
   const editedAt = isNaN(updatedRaw.getTime()) || updatedRaw > now ? now : updatedRaw;
 
   if (stored) {
-    const { urls: mediaUrls, types: mediaTypes } = await processAttachments(
+    const { urls: mediaUrls, types: mediaTypes, remotes: mediaRemoteUrls } = await processAttachments(
       note.attachment as unknown[] | undefined
     );
     const articleTitle = typeof note.name === "string" ? note.name.trim() : "";
@@ -831,7 +832,10 @@ async function handleUpdateNote(actorUri: string, note: Record<string, unknown>)
 
     await prisma.fediPost.update({
       where: { apId },
-      data: { content, contentHtml: content, mediaUrls, mediaTypes, editedAt },
+      // mediaRemoteUrls travels with the media it describes (#478): an Update
+      // replaces the attachments, so leaving the old remotes behind would point
+      // a future eviction at the wrong originals.
+      data: { content, contentHtml: content, mediaUrls, mediaTypes, mediaRemoteUrls, editedAt },
     });
     if (DEBUG) console.log(`AP inbox: applied Update to ${encodeURIComponent(apId)}`);
   }
@@ -907,7 +911,7 @@ async function handleNote(actorUri: string, note: Record<string, unknown>) {
 
   if (isFollowed) {
     // Store as FediPost for timeline (both top-level and replies from followed accounts)
-    const { urls: mediaUrls, types: mediaTypes } = await processAttachments(
+    const { urls: mediaUrls, types: mediaTypes, remotes: mediaRemoteUrls } = await processAttachments(
       note.attachment as unknown[] | undefined
     );
 
@@ -937,6 +941,7 @@ async function handleNote(actorUri: string, note: Record<string, unknown>) {
         contentHtml: content,
         mediaUrls,
         mediaTypes,
+        mediaRemoteUrls,
         inReplyTo,
         conversationId,
         embedUrl: embed?.url || null,
