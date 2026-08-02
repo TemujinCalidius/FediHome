@@ -3,6 +3,9 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import type { RuntimeSiteConfig } from "@/lib/site-settings";
+// Bounds only — a leaf module with no imports, so this stays client-safe
+// (site-settings.ts pulls in Prisma).
+import { MAX_EXPLORE_LOOKBACK_DAYS, MAX_EXPLORE_STORED } from "@/lib/explore-limits";
 // Pure data + math (no prisma / server-only), so it's safe in a client bundle.
 import { THEMES, DEFAULT_ACCENT } from "@/lib/themes";
 
@@ -449,6 +452,10 @@ export default function SiteSettingsClient({
       "feed.public": String(cfg.publicFeed),
       "feed.publicTitle": cfg.publicFeedTitle,
       "feed.hideSocialGraph": String(cfg.hideSocialGraph),
+      "explore.enabled": String(cfg.explore.enabled),
+      "explore.replyParents": String(cfg.explore.replyParents),
+      "explore.lookbackDays": String(cfg.explore.lookbackDays),
+      "explore.maxStored": String(cfg.explore.maxStored),
       "nav.journal": String(cfg.nav.showJournal),
       "nav.articles": String(cfg.nav.showArticles),
       "nav.photography": String(cfg.nav.showPhotography),
@@ -509,6 +516,7 @@ export default function SiteSettingsClient({
       [
         "site.name", "site.description", "landing.mode", "landing.headline", "landing.subhead",
         "landing.repoUrl", "feed.public", "feed.publicTitle", "feed.hideSocialGraph",
+        "explore.enabled", "explore.replyParents", "explore.lookbackDays", "explore.maxStored",
         "nav.journal", "nav.articles", "nav.photography", "nav.videos", "nav.audio", "nav.about",
         "footer.webringUrl", "footer.webringLabel", "footer.badgeSrc", "footer.badgeHref",
         "footer.badgeAlt", "footer.fundingUrl", "footer.fundingLabel",
@@ -536,6 +544,7 @@ export default function SiteSettingsClient({
   const setLayout = (patch: Partial<RuntimeSiteConfig["layout"]>) => setCfg((c) => ({ ...c, layout: { ...c.layout, ...patch } }));
   const setSidebar = (patch: Partial<RuntimeSiteConfig["sidebar"]>) => setCfg((c) => ({ ...c, sidebar: { ...c.sidebar, ...patch } }));
   const setSecurity = (patch: Partial<RuntimeSiteConfig["security"]>) => setCfg((c) => ({ ...c, security: { ...c.security, ...patch } }));
+  const setExplore = (patch: Partial<RuntimeSiteConfig["explore"]>) => setCfg((c) => ({ ...c, explore: { ...c.explore, ...patch } }));
   /** Bytes → a figure a person reads, not a computer. */
   const gb = (n: number) => {
     if (n >= 1024 ** 3) return `${(n / 1024 ** 3).toFixed(1)} GB`;
@@ -932,6 +941,68 @@ export default function SiteSettingsClient({
           {check("Show a login-free read-only feed at /fediverse", cfg.publicFeed, (v) => set({ publicFeed: v }))}
           {text("Feed title", cfg.publicFeedTitle, (v) => set({ publicFeedTitle: v }))}
           {check("Hide follower/following lists (report counts only)", cfg.hideSocialGraph, (v) => set({ hideSocialGraph: v }))}
+        </>)}
+
+        {section("Explore", <>
+          <p className="text-xs text-gray-600 m-0">
+            A second feed showing posts from people you <em>don&apos;t</em> follow, surfaced
+            because someone you <em>do</em> follow boosted them or replied to them. It appears
+            as an <strong>Explore</strong> tab next to your timeline, and only for you —
+            nothing here is ever shown on your public pages.
+          </p>
+          {check("Turn on the Explore feed", cfg.explore.enabled, (v) => setExplore({ enabled: v }))}
+          {cfg.explore.enabled && (
+            <>
+              {check(
+                "Also fetch the posts your follows replied to",
+                cfg.explore.replyParents,
+                (v) => setExplore({ replyParents: v }),
+              )}
+              <p className="text-xs text-gray-600 m-0">
+                Boosts need nothing fetched — those posts are already on your server, just
+                hidden from your timeline. Replies are different: what arrives is your
+                friend&apos;s reply, not the post they replied to, so FediHome goes and gets
+                it. That&apos;s a small number of requests to other servers each hour, at most
+                ten, and only for posts that are public.
+              </p>
+              <label className="flex flex-col gap-1 text-xs text-gray-400">
+                <span>How far back to look (days)</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={MAX_EXPLORE_LOOKBACK_DAYS}
+                  value={cfg.explore.lookbackDays}
+                  onChange={(e) => setExplore({ lookbackDays: Number(e.target.value) })}
+                  className="bg-surface-800 border border-surface-700 rounded-md px-2 py-1.5 text-sm text-white font-mono"
+                />
+                <span className="text-gray-600">
+                  Only replies received in this window are followed up. A week suits most
+                  people; longer mostly means chasing conversations nobody is reading now.
+                </span>
+              </label>
+              <label className="flex flex-col gap-1 text-xs text-gray-400">
+                <span>Keep at most this many discovered posts</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={MAX_EXPLORE_STORED}
+                  value={cfg.explore.maxStored}
+                  onChange={(e) => setExplore({ maxStored: Number(e.target.value) })}
+                  className="bg-surface-800 border border-surface-700 rounded-md px-2 py-1.5 text-sm text-white font-mono"
+                />
+                <span className="text-gray-600">
+                  The oldest are deleted past this, along with any images cached for them, so
+                  Explore can&apos;t quietly fill your disk. <strong>0</strong> means no limit.
+                  Boosted posts aren&apos;t counted here — you already had those.
+                </span>
+              </label>
+            </>
+          )}
+          <p className="text-xs text-gray-600 m-0">
+            Posts from accounts or domains you&apos;ve blocked never appear, and are never
+            downloaded — the check runs on whoever <em>wrote</em> the post, not on whoever
+            boosted or replied to it.
+          </p>
         </>)}
 
         {section("Navigation", <div className="grid grid-cols-2 gap-2">

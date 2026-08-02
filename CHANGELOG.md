@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **Explore: find people through the ones you already follow** (#386) — until now the only way to meet anyone new was to already know their address and paste it in. Turn on **Explore** in **Admin → Site settings** and you get a second tab beside your timeline showing posts from people you *don't* follow, surfaced because someone you *do* follow boosted them or replied to them. No algorithm and no firehose: the people you picked are the filter. Some of it is content your server has been receiving and discarding all along — every boost by someone you follow was already being saved and then hidden. The rest is new: when a friend replies to a stranger, FediHome now goes and fetches the post they were replying to, which is the half that never arrives on its own. Public posts only, nothing from anyone you've blocked (checked on whoever *wrote* the post, not whoever passed it on), at most ten requests to other servers an hour, and a limit on how much is kept so it can't fill your disk. **Off unless you turn it on**, and nothing it finds ever appears on your public pages. Liking, boosting and replying work exactly as they do in your timeline.
+
+### Schema
+- `FediPost.discoveredVia` — records that a post reached you through Explore rather than your own feed, so it can never appear on your timeline or your public page (#386). Applied automatically on upgrade; every existing post is left as feed content, so nothing you already had changes.
+
 ## 1.26.0 (2026-08-04)
 
 ### Added

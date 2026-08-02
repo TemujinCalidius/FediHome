@@ -37,6 +37,7 @@ export default async function TimelinePage() {
       inReplyTo: null,
       boostedBy: null,
       viaLookup: false,
+      discoveredVia: null,
       ...(await blockedPostFilter()),
     },
     orderBy: { publishedAt: "desc" },
@@ -238,6 +239,11 @@ export default async function TimelinePage() {
         // The same layout.feed key the public feeds honour (#269) — the one
         // remaining feed surface that ignored it.
         feedVariant={feedVariant}
+        // Whether to offer the Explore tab at all (#386). Passed down rather
+        // than probed from the client, so the tab never appears for a moment and
+        // then disappears — and /api/explore 404s independently, so the flag is
+        // a UI affordance rather than the access check.
+        exploreEnabled={timelineSite.explore.enabled}
       />
     </div>
   );

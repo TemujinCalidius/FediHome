@@ -53,7 +53,7 @@ const MASTER_TICK_MS = 15_000;
  * process would drift past its own schedule.
  */
 const UPDATE_CHECK_POLL_MS = 5 * 60_000;
-const lastRun = { publish: 0, bluesky: 0, delivery: 0, crosspost: 0, storage: 0, updateCheck: 0, retention: 0 };
+const lastRun = { publish: 0, bluesky: 0, delivery: 0, crosspost: 0, storage: 0, updateCheck: 0, retention: 0, explore: 0 };
 
 /**
  * When the master loop last completed a pass (#358).
@@ -226,6 +226,35 @@ export async function runRetentionSweepTick(): Promise<void> {
   }
 }
 
+/**
+ * Resolve the posts your follows replied to, for the Explore feed (#386).
+ *
+ * Hourly, and small: the resolver caps itself at ten outbound fetches per run,
+ * because each one is a request to a server that never asked to hear from us.
+ * Discovery being an hour behind costs nothing; hammering strangers' servers to
+ * make it a minute behind would.
+ *
+ * Imported dynamically, like storage and update-check: `explore.ts` pulls in the
+ * media pipeline and the actor resolver, and there is no reason for an instance
+ * with Explore switched off to load either at boot.
+ */
+export async function runExploreTick(): Promise<void> {
+  if (!(await getEffectiveSchedulerConfig()).exploreSync.enabled) return;
+  try {
+    const { resolveReplyParents } = await import("./explore");
+    const r = await resolveReplyParents();
+    if (r.stored > 0 || r.pruned > 0) {
+      log(
+        `explore: ${r.stored} new post(s) from ${r.fetched} fetch(es)` +
+          `${r.skipped > 0 ? `, ${r.skipped} refused` : ""}` +
+          `${r.pruned > 0 ? `, ${r.pruned} pruned (over cap)` : ""}`,
+      );
+    }
+  } catch (err) {
+    console.error("scheduler: explore failed:", err);
+  }
+}
+
 async function masterTick(): Promise<void> {
   const cfg = await getEffectiveSchedulerConfig();
   const now = Date.now();
@@ -259,6 +288,10 @@ async function masterTick(): Promise<void> {
   if (cfg.retentionSweep.enabled && now - lastRun.retention >= cfg.retentionSweep.intervalSec * 1000) {
     lastRun.retention = now;
     await runRetentionSweepTick();
+  }
+  if (cfg.exploreSync.enabled && now - lastRun.explore >= cfg.exploreSync.intervalSec * 1000) {
+    lastRun.explore = now;
+    await runExploreTick();
   }
   // Stamped only on a COMPLETED pass, so a loop that hangs mid-tick shows as
   // stale rather than fresh.
@@ -296,7 +329,11 @@ export function startScheduler(): boolean {
       // said nothing about a job that walks the entire uploads tree.
       `storage=${cfg.storageScan.enabled ? cfg.storageScan.intervalSec + "s" : "off"}, ` +
       `updates=${cfg.updateCheck.enabled ? cfg.updateCheck.intervalSec + "s" : "off"}, ` +
-      `retention=${cfg.retentionSweep.enabled ? cfg.retentionSweep.intervalSec + "s/" + cfg.retentionSweep.retentionDays + "d" : "off"}` +
+      `retention=${cfg.retentionSweep.enabled ? cfg.retentionSweep.intervalSec + "s/" + cfg.retentionSweep.retentionDays + "d" : "off"}, ` +
+      // Reads "off" here on almost every instance even when Explore IS on: this
+      // line prints the ENV layer, and Explore's switch is a site setting. The
+      // effective config is consulted per tick.
+      `explore=${cfg.exploreSync.enabled ? cfg.exploreSync.intervalSec + "s" : "off (env)"}` +
       ` (env defaults; /admin/settings overrides apply live)`,
   );
 
@@ -313,6 +350,9 @@ export function startScheduler(): boolean {
   // and an instance that has been off for a week should find out on boot.
   lastRun.updateCheck = 0;
   lastRun.retention = Date.now();
+  // Waits out a full interval, like the other network-facing jobs: a restart
+  // loop must not turn into a burst of requests at other people's servers.
+  lastRun.explore = Date.now();
 
   const boot = masterTick().catch((err) => console.error("scheduler: tick failed:", err));
   void boot;

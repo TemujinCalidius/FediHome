@@ -30,6 +30,7 @@ export interface SchedulerConfig {
   storageScan: SchedulerJobConfig;
   updateCheck: SchedulerJobConfig;
   retentionSweep: RetentionJobConfig;
+  exploreSync: SchedulerJobConfig;
 }
 
 // Retention window bounds (#240): a 7-day floor blocks the 0-day "delete
@@ -99,6 +100,19 @@ export function getSchedulerConfig(): SchedulerConfig {
       enabled: flag(process.env.SCHEDULER_CROSSPOST_ENABLED, true),
       intervalSec: posNum(process.env.SCHEDULER_CROSSPOST_INTERVAL_SEC, 60),
     },
+    // Resolve the posts your follows replied to, for the Explore feed (#386).
+    // Default: OFF, hourly.
+    //
+    // Off in the env layer on purpose, and NOT the switch an owner uses. The
+    // real toggle is the `explore.enabled` site setting, which the override
+    // layer below reads — one visible switch on the Explore settings card rather
+    // than a feature that is only half-on because two unrelated screens disagree.
+    // This env var exists so an operator can hold the job off at the process
+    // level regardless (a read-only volume, a migration window).
+    exploreSync: {
+      enabled: flag(process.env.SCHEDULER_EXPLORE_ENABLED, false),
+      intervalSec: posNum(process.env.SCHEDULER_EXPLORE_INTERVAL_SEC, 3600),
+    },
     // Prune stale cached REMOTE federated posts (#240). Default: OFF (opt-in —
     // it deletes data), daily, keep 90 days.
     retentionSweep: {
@@ -128,6 +142,8 @@ export const SCHEDULER_SETTING_KEYS = [
   "scheduler.retention.enabled",
   "scheduler.retention.intervalSec",
   "scheduler.retention.days",
+  "scheduler.explore.enabled",
+  "scheduler.explore.intervalSec",
 ] as const;
 
 export type SchedulerSettingKey = (typeof SCHEDULER_SETTING_KEYS)[number];
@@ -171,11 +187,17 @@ export async function getEffectiveSchedulerConfig(): Promise<SchedulerConfig> {
       // Also fetch the Bluesky integration handle (same query, no extra round-trip)
       // so the sync job's default-enable reflects credentials set via /admin/integrations,
       // not just the BLUESKY_HANDLE env var.
-      where: { key: { in: [...SCHEDULER_SETTING_KEYS, "integration.bluesky.handle"] } },
+      // Also fetch `explore.enabled` (#386) for the same reason and by the same
+      // precedent: the job's default-enable has to follow the switch the owner
+      // actually sees, which lives in site settings, not in a scheduler key.
+      where: {
+        key: { in: [...SCHEDULER_SETTING_KEYS, "integration.bluesky.handle", "explore.enabled"] },
+      },
     });
     const o = Object.fromEntries(rows.map((r) => [r.key, r.value]));
     // Bluesky is "configured" when a handle exists in the DB (admin panel) or env.
     const bskyConfigured = !!(o["integration.bluesky.handle"] || process.env.BLUESKY_HANDLE);
+    const exploreOn = o["explore.enabled"] === "true";
     cfg = {
       publishScheduled: {
         enabled: overrideFlag(o["scheduler.publish.enabled"], base.publishScheduled.enabled),
@@ -205,6 +227,10 @@ export async function getEffectiveSchedulerConfig(): Promise<SchedulerConfig> {
         enabled: overrideFlag(o["scheduler.retention.enabled"], base.retentionSweep.enabled),
         intervalSec: overrideNum(o["scheduler.retention.intervalSec"], base.retentionSweep.intervalSec),
         retentionDays: clampDays(o["scheduler.retention.days"], base.retentionSweep.retentionDays),
+      },
+      exploreSync: {
+        enabled: overrideFlag(o["scheduler.explore.enabled"], base.exploreSync.enabled || exploreOn),
+        intervalSec: overrideNum(o["scheduler.explore.intervalSec"], base.exploreSync.intervalSec),
       },
     };
   } catch {

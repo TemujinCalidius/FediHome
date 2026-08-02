@@ -30,6 +30,9 @@ const REMOTE_URL_FETCHERS = [
   "src/lib/http-signatures.ts",
   "src/lib/fedi-resolve.ts",
   "src/lib/fedi-media.ts",
+  // The Explore resolver fetches an apId that came out of a *stranger's*
+  // inReplyTo — nobody in the chain is someone we chose (#386).
+  "src/lib/explore.ts",
   "src/lib/peertube.ts",
   "src/app/ap/inbox/route.ts",
   "src/app/api/conversation/route.ts",
