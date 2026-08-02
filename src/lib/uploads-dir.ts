@@ -105,6 +105,31 @@ export async function resolveUploadPath(relative: string): Promise<string | null
   return firstContained;
 }
 
+/**
+ * Every root that may hold media, newest first (#479).
+ *
+ * `resolveUploadPath` has always read from both the configured root and the
+ * legacy one, because changing the setting deliberately moves no files —
+ * anything already on disk keeps serving from where it is. But the trim sweep
+ * and the storage measurement each walked only the CURRENT root, so after an
+ * operator moved the directory the old cache was still served and never
+ * reclaimed or counted.
+ *
+ * That is the worst category to strand: it is other people's media, in a folder
+ * the operator does not browse, and the figure the panel showed them was
+ * smaller than what was actually on disk. An operator who moved the directory
+ * BECAUSE they were running out of space kept the problem, invisibly, in the
+ * place they had just moved away from.
+ *
+ * Deduplicated, because the legacy root IS the configured root on a default
+ * install — walking it twice would double every byte reported.
+ */
+export async function uploadsRoots(): Promise<string[]> {
+  const current = await uploadsDir();
+  const legacy = legacyUploadsDir();
+  return current === legacy ? [current] : [current, legacy];
+}
+
 /** An absolute path under the configured root, or `null` if it would escape. */
 export async function uploadPathFor(...segments: string[]): Promise<string | null> {
   const root = await uploadsDir();
