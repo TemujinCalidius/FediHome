@@ -730,6 +730,23 @@ export default function SiteSettingsClient({
           </div>
         </>)}
 
+        {section("Export your content", <>
+          <p className="text-xs text-gray-600 m-0">
+            Everything you&apos;ve published — posts, photos, videos, audio, your own Fediverse
+            posts and approved comments — as one file, with the original text and all the
+            metadata. No shell, no database tools.
+          </p>
+          <p className="text-xs text-gray-600 m-0">
+            It streams as it&apos;s built, so a large site won&apos;t run your server out of
+            memory, and a partial download is still readable up to the last complete line.
+            Your uploaded files aren&apos;t in it — they&apos;re already on your disk — but every
+            reference to them is, so an archive can be put back together.
+          </p>
+          <a href="/api/admin/export" className="btn-outlined text-xs !py-1.5 self-start">
+            Download export
+          </a>
+        </>)}
+
         {section("Your profile", <>
           <p className="text-xs text-gray-600 m-0">
             You — as shown on <code>/about</code>, in your Fediverse profile, and to apps. Separate from the site
