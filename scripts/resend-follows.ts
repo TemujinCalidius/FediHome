@@ -4,6 +4,7 @@
  * Run this after implementing HTTP signatures to fix unsigned follows.
  */
 import { PrismaClient } from "../src/generated/prisma/client";
+import { assertPublicHost } from "../src/lib/url-guard";
 import { PrismaPg } from "@prisma/adapter-pg";
 import * as crypto from "node:crypto";
 
@@ -39,8 +40,14 @@ async function signedFetch(url, body) {
     `signature="${signature}"`,
   ].join(",");
 
+  // A signed POST — the signature covers (request-target), host and digest, so
+  // it cannot follow a redirect and re-sign. Guarded up front and pinned to no
+  // redirects (#476). A delivery must not be re-aimed by the receiving server,
+  // which is the rule guardedFetch enforces with crossOrigin: false.
+  if (!(await assertPublicHost(url))) throw new Error(`refusing non-public host: ${url}`);
   return fetch(url, {
     method: "POST",
+    redirect: "manual",
     headers: {
       "Content-Type": "application/activity+json",
       Date: date,
