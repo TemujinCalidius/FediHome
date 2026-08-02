@@ -2,7 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { hashToken, generateToken } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { rateLimitKey } from "@/lib/client-ip";
-import { getClient, verifyPkceS256, makeRateLimiter, sanitizeScope, bodyTooLarge } from "@/lib/oauth";
+import {
+  getClient,
+  verifyPkceS256,
+  makeRateLimiter,
+  sanitizeScope,
+  bodyTooLarge,
+  appTokenExpiry,
+} from "@/lib/oauth";
 import { getSiteUrl } from "@/lib/identity";
 
 /**
@@ -19,13 +26,16 @@ const tokenLimiter = makeRateLimiter(20, 60_000);
 /**
  * Optional token lifetime. Set `APP_TOKEN_TTL_DAYS` to expire OAuth tokens after
  * N days; unset (or <= 0) → no expiry (long-lived + revocable), the default.
+ *
+ * The day-count→expiry arithmetic moved to `@/lib/oauth` (#327), because the
+ * Apps screen mints tokens too and could not reach it while it was private to
+ * this file — which is exactly why admin-generated tokens never expired.
+ * Behaviour here is unchanged.
  */
-async function appTokenExpiry(): Promise<Date | null> {
+async function siteDefaultExpiry(): Promise<Date | null> {
   // Web-editable (Admin → Security), env as the default (#59). 0 = never expires.
   const { getRuntimeSiteConfig } = await import("@/lib/site-settings");
-  const days = (await getRuntimeSiteConfig()).security.appTokenTtlDays;
-  if (!Number.isFinite(days) || days <= 0) return null;
-  return new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+  return appTokenExpiry((await getRuntimeSiteConfig()).security.appTokenTtlDays);
 }
 
 function oauthError(error: string, description: string, status = 400): NextResponse {
@@ -114,7 +124,7 @@ export async function POST(req: NextRequest) {
     scope: grantedScope,
     clientId: client.id,
     createdVia: "oauth",
-    expiresAt: await appTokenExpiry(), // null (long-lived + revocable) unless a TTL is set
+    expiresAt: await siteDefaultExpiry(), // null (long-lived + revocable) unless a TTL is set
   });
 
   return NextResponse.json(

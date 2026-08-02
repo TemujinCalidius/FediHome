@@ -186,3 +186,37 @@ const HTML_ESCAPES: Record<string, string> = {
 export function escapeHtml(s: string): string {
   return String(s).replace(/[&<>"']/g, (c) => HTML_ESCAPES[c]);
 }
+
+// === App-token lifetime (#327) ===
+
+/**
+ * Upper bound on a per-token lifetime, mirroring the int cap that
+ * `validateSiteConfigValue` already applies to `security.appTokenTtlDays`
+ * (site-settings.ts). A token picked on the Apps screen must not be able to
+ * outlive what the settings screen itself permits.
+ */
+export const MAX_APP_TOKEN_TTL_DAYS = 3650;
+
+/**
+ * Turn a day count into an expiry. `0` (or anything non-positive) means the
+ * token never expires — long-lived and revocable, which is what every token
+ * issued before this existed already is.
+ *
+ * Lives HERE, not next to `generateToken` in auth.ts where it conceptually
+ * belongs, for a concrete reason: `apps-create-token.test.ts` replaces the whole
+ * of `@/lib/auth` with three functions, so an import added there resolves to
+ * `undefined` at runtime and takes the suite with it. This module is already the
+ * shared app-token vocabulary both mint sites import (`sanitizeScope`) and is
+ * mocked by neither.
+ *
+ * `now` is injected so a test can assert the arithmetic rather than a window.
+ */
+export function appTokenExpiry(days: number, now: number = Date.now()): Date | null {
+  if (!Number.isFinite(days) || days <= 0) return null;
+  return new Date(now + days * 24 * 60 * 60 * 1000);
+}
+
+/** A day count a client is allowed to ask for. `0` is valid and means "never". */
+export function isValidTtlDays(v: unknown): v is number {
+  return typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= MAX_APP_TOKEN_TTL_DAYS;
+}
