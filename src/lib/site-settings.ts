@@ -1,4 +1,5 @@
 import { prisma } from "./db";
+import { MAX_FEDI_CACHE_MB, DEFAULT_FEDI_CACHE_MB } from "./uploads-dir";
 import { siteConfig } from "@/../site.config";
 import { isThemeId, isFeedVariant, isHeaderVariant, isFooterVariant, isShellVariant, resolveSidebar } from "./themes";
 import { parseCategoryList, resolveCategoryList, MAX_CATEGORIES } from "./categories";
@@ -74,6 +75,7 @@ export const SITE_CONFIG_FIELDS: Record<string, FieldType> = {
   "analytics.siteId": "text",
   "analytics.embedId": "text",
   "storage.uploadsDir": "text", // absolute path; "" = <cwd>/public/uploads (#363)
+  "storage.fediCacheMb": "int", //  remote-media cache budget in MB; 0 = don't cache (#364)
 };
 
 export const SITE_CONFIG_KEYS = Object.keys(SITE_CONFIG_FIELDS);
@@ -115,7 +117,7 @@ export interface RuntimeSiteConfig {
   // Tinylytics public embed ids (#59). API key stays env-only.
   analytics: { siteId: string; embedId: string };
   /** Where uploaded media is written (#363). "" = the built-in public/uploads. */
-  storage: { uploadsDir: string };
+  storage: { uploadsDir: string; fediCacheMb: number };
 }
 
 /** The env/default view — exactly what `siteConfig` (env-driven) exposes today. */
@@ -151,7 +153,16 @@ export function siteConfigDefaults(): RuntimeSiteConfig {
       audio: resolveCategoryList(parseCategoryList(siteConfig.categories.audio), "audio"),
     },
     analytics: { ...siteConfig.analytics },
-    storage: { uploadsDir: process.env.FEDIHOME_UPLOADS_DIR?.trim() || "" },
+    storage: {
+      uploadsDir: process.env.FEDIHOME_UPLOADS_DIR?.trim() || "",
+      // Megabytes of OTHER people's media to keep cached. 2048 was hardcoded
+      // before #364, so this default keeps an upgrade behaviour-identical.
+      // 0 = don't cache remote media at all.
+      fediCacheMb: (() => {
+        const n = Number(process.env.FEDIHOME_FEDI_CACHE_MB);
+        return Number.isInteger(n) && n >= 0 ? n : DEFAULT_FEDI_CACHE_MB;
+      })(),
+    },
   };
 }
 
@@ -258,7 +269,10 @@ export async function getRuntimeSiteConfig(): Promise<RuntimeSiteConfig> {
         siteId: textOverride(o["analytics.siteId"], base.analytics.siteId),
         embedId: textOverride(o["analytics.embedId"], base.analytics.embedId),
       },
-      storage: { uploadsDir: textOverride(o["storage.uploadsDir"], base.storage.uploadsDir) },
+      storage: {
+        uploadsDir: textOverride(o["storage.uploadsDir"], base.storage.uploadsDir),
+        fediCacheMb: intOverride(o["storage.fediCacheMb"], base.storage.fediCacheMb),
+      },
     };
   } catch {
     return base; // DB down/mid-migration — env defaults, don't cache the failure
@@ -285,6 +299,12 @@ export function validateSiteConfigValue(key: string, value: string): string | nu
   if (type === "bool") return value === "true" || value === "false" ? value : null;
   if (type === "int") {
     const n = Number(value);
+    // The generic cap is a DAY count (~10yr). storage.fediCacheMb is megabytes,
+    // so the shared cap would silently reject any budget above 3.5GB — including
+    // the 2GB default's obvious next step up (#364).
+    if (key === "storage.fediCacheMb") {
+      return Number.isInteger(n) && n >= 0 && n <= MAX_FEDI_CACHE_MB ? String(n) : null;
+    }
     return Number.isInteger(n) && n >= 0 && n <= 3650 ? String(n) : null; // days, ~10yr cap
   }
   if (value.length > MAX_TEXT || CONTROL.test(value)) return null;
