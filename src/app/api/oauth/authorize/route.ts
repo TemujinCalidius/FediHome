@@ -74,7 +74,22 @@ function validate(
   p: AuthzParams
 ): { ok: true; client: OAuthClient; scope: string } | { ok: false; error: string } {
   const client = getClient(p.clientId);
-  if (!client) return { ok: false, error: "Unknown application (client_id)." };
+  if (!client) {
+    // Name the actual constraint (#486). The site advertises the IndieAuth
+    // discovery contract on every page — authorization_endpoint, token_endpoint,
+    // indieauth-metadata — so a third-party client finds these endpoints,
+    // follows the spec exactly, and lands here. "Unknown application" reads as a
+    // broken site, and the operator gets a bug report with nothing in their logs
+    // or admin panel to explain it. Say what is true and what to do instead.
+    return {
+      ok: false,
+      error:
+        "This instance only accepts sign-in from its own apps, so it can't complete " +
+        "an IndieAuth handshake for another client yet. If you own this site, you can " +
+        "generate a scoped token by hand in Admin → Connected apps and paste it into " +
+        "the app instead.",
+    };
+  }
   if (!validateRedirectUri(client, p.redirectUri)) {
     return { ok: false, error: "The redirect URI is not registered for this application." };
   }
