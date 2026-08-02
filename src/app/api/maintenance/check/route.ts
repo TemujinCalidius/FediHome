@@ -9,7 +9,7 @@ export const maxDuration = 60;
  *
  * This endpoint existed with no caller anywhere in the tree, and neither did any
  * scheduled run, so nothing ever produced the maintenance items the notification
- * bell renders. It now backs a button in Instance settings, alongside the daily
+ * bell renders. It now backs a button in Background jobs, alongside the daily
  * job.
  *
  * Three things were missing, none of which shows up until it bites:
