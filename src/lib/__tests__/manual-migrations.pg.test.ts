@@ -50,11 +50,28 @@ const TABLES = [
      "scheduledFor" TIMESTAMP(3))`,
   // apId NOT NULL on purpose: 2026-07-29-fedipost-bluesky-source drops that
   // constraint, so the column has to start out carrying it.
-  `CREATE TABLE "FediPost" ("id" TEXT PRIMARY KEY, "apId" TEXT NOT NULL)`,
+  //
+  // actorUri/isOutgoing/boostedBy are ordinary Prisma columns that predate every
+  // migration here, and 2026-08-02-fedipost-via-lookup's backfill reads all
+  // three. They were absent because nothing had needed them yet — and a fixture
+  // that is missing a column the SQL reads doesn't fail loudly: the runner
+  // classifies the file as "not applicable yet" and moves on.
+  `CREATE TABLE "FediPost" (
+     "id" TEXT PRIMARY KEY, "apId" TEXT NOT NULL,
+     "actorUri" TEXT NOT NULL DEFAULT '',
+     "isOutgoing" BOOLEAN NOT NULL DEFAULT false,
+     "boostedBy" TEXT)`,
   `CREATE TABLE "FediInteraction" ("id" TEXT PRIMARY KEY)`,
-  `CREATE TABLE "FediFollowing" ("id" TEXT PRIMARY KEY)`,
+  `CREATE TABLE "FediFollowing" ("id" TEXT PRIMARY KEY, "actorUri" TEXT NOT NULL DEFAULT '')`,
   `CREATE TABLE "AuthToken" ("id" TEXT PRIMARY KEY)`,
+  // TWO different tables, and the near-identical names are why this was missed:
+  // "SiteSettings" (plural) is the singleton profile row; "SiteSetting"
+  // (singular) is the key/value store that gates one-shot backfills. The
+  // via-lookup migration reads and writes the SINGULAR one.
   `CREATE TABLE "SiteSettings" ("id" TEXT PRIMARY KEY)`,
+  `CREATE TABLE "SiteSetting" (
+     "key" TEXT PRIMARY KEY, "value" TEXT NOT NULL,
+     "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
   // 2026-07-30-maintenanceitem-resolved adds resolvedAt/occurrences to this.
   `CREATE TABLE "MaintenanceItem" (
      "id" TEXT PRIMARY KEY, "kind" TEXT NOT NULL, "packageName" TEXT NOT NULL,

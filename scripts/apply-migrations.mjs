@@ -181,7 +181,13 @@ async function main() {
         await client.query("ROLLBACK").catch(() => {});
         if (NOT_READY_CODES.has(err.code)) {
           notReady++;
-          say(`${m.name} — not applicable yet; will apply once the schema exists.`);
+          // Name what was missing. Without it this line is unfalsifiable: a file
+          // that will NEVER apply — because it references something no schema
+          // creates — is indistinguishable from one legitimately waiting for
+          // `db push`, and it says so once per boot forever. That is exactly how
+          // a broken fixture hid in CI: the run was red, and the reason was a
+          // sentence that looked like normal first-boot output.
+          say(`${m.name} — not applicable yet; will apply once the schema exists. (${err.message})`);
         } else {
           failed++;
           warn(`Could not apply ${m.name}: ${err.message}`);
