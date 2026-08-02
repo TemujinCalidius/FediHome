@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.25.0 (2026-08-03)
 
 ### Added
 - **Point FediHome at your own AT Protocol server** (#449) — the Bluesky host was fixed at `bsky.social`. If you've moved your account to a PDS you run yourself you keep your handle, posts and followers, but the server address changes — and FediHome couldn't sign in at all. Set `BLUESKY_SERVICE` in your `.env.local` to your own server's address and it will. **This release is the environment variable only** — there's no box for it in the admin panel yet, which is tracked in #504. Leave it unset and nothing changes.
