@@ -24,7 +24,12 @@ const SLUG = /^[a-z0-9-]+$/;
  * (site-profile.ts, #201).
  */
 
-export type FieldType = "bool" | "text" | "url" | "int";
+/**
+ * `prose` is text that is allowed to be LONG and to contain newlines (#439).
+ * Every other text field here is a label, a title or a path, so the generic
+ * gate rejects both — and a page body written in markdown is neither.
+ */
+export type FieldType = "bool" | "text" | "url" | "int" | "prose";
 
 /** Every editable key and its value type (drives validation + parsing). */
 export const SITE_CONFIG_FIELDS: Record<string, FieldType> = {
@@ -44,6 +49,8 @@ export const SITE_CONFIG_FIELDS: Record<string, FieldType> = {
   "nav.videos": "bool",
   "nav.audio": "bool",
   "nav.about": "bool",
+  "about.heading": "text", //  "" = the built-in "About" (#439)
+  "about.markdown": "prose", // "" = the built-in copy, rebuilt from live identity
   "footer.webringUrl": "url",
   "footer.webringLabel": "text",
   "footer.badgeSrc": "url",
@@ -118,6 +125,7 @@ export interface RuntimeSiteConfig {
   analytics: { siteId: string; embedId: string };
   /** Where uploaded media is written (#363). "" = the built-in public/uploads. */
   storage: { uploadsDir: string; fediCacheMb: number };
+  about: { heading: string; markdown: string };
 }
 
 /** The env/default view — exactly what `siteConfig` (env-driven) exposes today. */
@@ -153,6 +161,11 @@ export function siteConfigDefaults(): RuntimeSiteConfig {
       audio: resolveCategoryList(parseCategoryList(siteConfig.categories.audio), "audio"),
     },
     analytics: { ...siteConfig.analytics },
+    // "" on both means "use the built-in", the same revert convention
+    // avatarPath/bannerPath already use (#439). The default copy is rebuilt from
+    // the live identity at render time rather than stored, so resetting keeps
+    // tracking the operator's actual address.
+    about: { heading: "", markdown: "" },
     storage: {
       uploadsDir: process.env.FEDIHOME_UPLOADS_DIR?.trim() || "",
       // Megabytes of OTHER people's media to keep cached. 2048 was hardcoded
@@ -273,6 +286,10 @@ export async function getRuntimeSiteConfig(): Promise<RuntimeSiteConfig> {
         uploadsDir: textOverride(o["storage.uploadsDir"], base.storage.uploadsDir),
         fediCacheMb: intOverride(o["storage.fediCacheMb"], base.storage.fediCacheMb),
       },
+      about: {
+        heading: textOverride(o["about.heading"], base.about.heading),
+        markdown: textOverride(o["about.markdown"], base.about.markdown),
+      },
     };
   } catch {
     return base; // DB down/mid-migration — env defaults, don't cache the failure
@@ -286,6 +303,12 @@ export async function getRuntimeSiteConfig(): Promise<RuntimeSiteConfig> {
 
 const KEY_SET = new Set<string>(SITE_CONFIG_KEYS);
 const MAX_TEXT = 500;
+/**
+ * 64KB of markdown. Generous — this is a page someone writes — but bounded,
+ * because it is stored in a single SiteSetting row read on every render of the
+ * page and there is no reason for it to be unbounded.
+ */
+const MAX_PROSE = 64_000;
 const CONTROL = /[\r\n]/;
 
 /**
@@ -297,6 +320,16 @@ const CONTROL = /[\r\n]/;
 export function validateSiteConfigValue(key: string, value: string): string | null {
   const type = SITE_CONFIG_FIELDS[key];
   if (type === "bool") return value === "true" || value === "false" ? value : null;
+  // BEFORE the generic gate below, not after (#439). MAX_TEXT is 500 and CONTROL
+  // rejects \r\n, so a page body would be refused on both counts — and a branch
+  // placed after them would simply never be reached.
+  if (type === "prose") {
+    if (value.length > MAX_PROSE) return null;
+    // Strip \r so a value typed on Windows round-trips identically; nothing
+    // downstream distinguishes the two, and an invisible difference in stored
+    // bytes is how "I saved it twice and got two versions" happens.
+    return value.replace(/\r\n?/g, "\n");
+  }
   if (type === "int") {
     const n = Number(value);
     // The generic cap is a DAY count (~10yr). storage.fediCacheMb is megabytes,
