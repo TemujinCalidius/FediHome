@@ -242,6 +242,9 @@ export async function follow(body: AdminBody): Promise<NextResponse> {
                 mediaTypes,
                 inReplyTo,
                 conversationId,
+                // Pulled because the owner opened this profile, not because
+                // they follow them (#460) — keep it out of the timelines.
+                viaLookup: true,
                 embedUrl: embed?.url || null,
                 embedTitle: embed?.title || null,
                 embedDescription: embed?.description || null,

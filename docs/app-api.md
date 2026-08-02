@@ -212,7 +212,7 @@ One endpoint, dispatched on a JSON `action` field, each gated on its own scope.
 
 | action | scope | body (besides `action`) |
 |---|---|---|
-| `like` / `unlike` / `boost` / `unboost` | `interact` | `postApId`, `targetInbox` |
+| `like` / `unlike` / `boost` / `unboost` | `interact` | `postId` (preferred — works on both networks) **or** `postApId` (fediverse only), `targetInbox?` |
 | `reply` | `interact` | `content`, `inReplyTo`, `targetInbox`, `actorUri`, `mentionHandle`, `crosspostBluesky?` |
 | `edit_reply` | `interact` | `replyId`, `content` |
 | `follow` | `interact` | `handle` (`@user@domain`) |

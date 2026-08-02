@@ -29,7 +29,14 @@ export default async function TimelinePage() {
     // Blocked actors excluded on read as well as at ingest (#396) — the purge
     // is reversible by any path that writes a FediPost, so the feed shouldn't
     // depend on it having held.
-    where: { inReplyTo: null, boostedBy: null, ...(await blockedPostFilter()) },
+    // Same provenance filter as the public page and /api/feed (#460) — the
+    // three must agree, or the feed changes shape the moment anything refetches.
+    where: {
+      inReplyTo: null,
+      boostedBy: null,
+      viaLookup: false,
+      ...(await blockedPostFilter()),
+    },
     orderBy: { publishedAt: "desc" },
     take: 21, // 20 + 1 to check for more
   });

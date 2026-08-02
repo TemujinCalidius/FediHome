@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
 
   // Login to Bluesky
   const agent = new BskyAgent({ service: "https://bsky.social" });
-  await agent.login({ identifier: handle, password });
+  await agent.login({ identifier: creds.did ?? handle, password });
 
   // Get posts to poll
   const postId = req.nextUrl.searchParams.get("postId");

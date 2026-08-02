@@ -106,7 +106,7 @@ docker compose pull && docker compose up -d
 
 (Use `docker compose build && docker compose up -d` if you build the image yourself.)
 
-FediHome checks for updates and security advisories **once a day on its own** and puts what it finds in your admin notification bell — including the command that applies to your install. There's a "Check now" button and a toggle in **Admin → Instance settings**, and `npm run check-updates` runs the same check by hand. It also scans for outdated dependencies, security advisories, and new releases of key libraries (Fedify, Next.js, Prisma, atproto, React).
+FediHome checks for updates and security advisories **once a day on its own** and puts what it finds in your admin notification bell, with a link to the details. There's a "Check now" button and a toggle in **Admin → Instance settings**, and `npm run check-updates` runs the same check by hand. It also scans for outdated dependencies, security advisories, and new releases of key libraries (Fedify, Next.js, Prisma, atproto, React).
 
 ```bash
 npm run check-updates

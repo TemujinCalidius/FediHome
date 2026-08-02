@@ -185,7 +185,7 @@ export async function bskyDm(body: AdminBody): Promise<NextResponse> {
   try {
     const { BskyAgent } = await import("@atproto/api");
     const agent = new BskyAgent({ service: "https://bsky.social" });
-    await agent.login({ identifier: bskyHandle, password: bskyPassword });
+    await agent.login({ identifier: creds.did ?? bskyHandle, password: bskyPassword });
     const chatAgent = agent.withProxy("bsky_chat", "did:web:api.bsky.chat");
 
     let convoId = existingConvoId as string | undefined;

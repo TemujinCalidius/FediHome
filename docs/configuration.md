@@ -187,6 +187,55 @@ ownership of that directory before dropping to the unprivileged `node` user, and
 it can't read the admin-panel setting that early. Without it, a fresh mount is
 owned by root and every upload fails.
 
+**Also in Docker: the directory has to be on a mounted volume.** Ownership
+failures are loud — every upload breaks immediately, and you fix it. Choosing a
+directory that isn't durable is the opposite: it saves cleanly, uploads work,
+and the files disappear on your next `docker compose up --build`. Older uploads
+keep displaying the whole time, because reads fall back to the previous
+location, so the loss looks like a problem with a few specific files rather than
+with the setting you changed days earlier.
+
+FediHome now checks this when you save. If the directory lives on the
+container's own filesystem — or on a `tmpfs`, which is a mount point but is held
+in memory — the panel says so and asks you to confirm before saving. It asks
+rather than refuses: you may have a reason, and only you know your deployment.
+Outside a container the question doesn't arise and nothing is shown.
+
+Note that setting `FEDIHOME_UPLOADS_DIR` does **not** protect you here. The
+database setting outranks it, so a change in the panel wins regardless of the
+environment.
+
+### Repairing a wrong site address after you've published
+
+Changing your site address is refused once you've published anything, gained a
+follower, or followed anyone — because the address is written inside every post
+you've sent and other servers keep the first one they saw. Changing it then
+*orphans* that content rather than moving it.
+
+If you set the wrong address early and are now stuck, and losing those few items
+is acceptable:
+
+```
+npx tsx scripts/set-identity.ts                    # show what's currently set
+npx tsx scripts/set-identity.ts --site-url https://example.com --orphan-published
+```
+
+It prints exactly what you'd be orphaning — how many published items, followers
+and follows — and refuses without the flag. Restart the app afterwards; the
+address is read once at boot.
+
+**On a PaaS, use this rather than editing `.env.local`.** That file is rebuilt on
+every deploy, so the edit silently reverts. The script writes to the database,
+which persists. Most platforms give you a one-off command runner (`railway run`,
+`fly ssh console`, `heroku run`) even when there's no persistent shell.
+
+If every change in the admin panel is being refused with "forbidden", that's the
+same problem, and the app now says so in its logs — naming both the address
+you're browsing and the one it's configured with.
+
+Migrating properly, keeping your followers, needs an account move rather than a
+setting change. That's tracked separately.
+
 ## Blocking People and Servers
 
 Everything here is **local and private**. Nothing is sent to the person or server

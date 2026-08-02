@@ -114,7 +114,11 @@ export async function startUpdateCheck(
     const child = spawn("npx", ["tsx", scriptPath], {
       cwd: process.cwd(),
       detached: true,
-      stdio: "ignore",
+      // The child's own report ("5 package update(s) recorded") is the only
+      // evidence the check ran at all — "ignore" discarded it, which is half of
+      // why a dead check was unobservable (#437). Inherited rather than piped:
+      // the parent is unref'd and must not hold a buffer for a detached child.
+      stdio: ["ignore", "inherit", "inherit"],
       env: process.env,
     });
     // `spawn` reports a missing executable through an ASYNCHRONOUS 'error' event.
@@ -125,7 +129,18 @@ export async function startUpdateCheck(
       console.error("[fedihome] couldn't start the update check:", err);
       g.__fedihomeUpdateCheckStartedAt = undefined;
     });
-    child.on("exit", () => {
+    child.on("exit", (code, signal) => {
+      // The other half of #437. The code was dropped, so a check that genuinely
+      // died — a missing schema, a bad DATABASE_URL, an npm failure — was
+      // indistinguishable from one that succeeded and found nothing. The lease
+      // cleared either way and the next run behaved as if all was well.
+      if (code !== 0) {
+        console.error(
+          `[fedihome] the update check failed (exit ${code ?? "null"}${signal ? `, signal ${signal}` : ""}). ` +
+            `Package and security alerts will be stale until it succeeds. ` +
+            `Run it directly to see why: npx tsx scripts/check-updates.ts`,
+        );
+      }
       g.__fedihomeUpdateCheckStartedAt = undefined;
     });
     child.unref();

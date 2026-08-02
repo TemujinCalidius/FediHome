@@ -35,11 +35,57 @@ type IdentityField = (typeof FIELDS)[number];
 
 export const IDENTITY_KEYS = FIELDS.map((f) => `${KEY_PREFIX}${f}`);
 
-/** Reject junk so a bad row can't produce a malformed actor id. */
-function clean(value: unknown): string | undefined {
+export const HANDLE_RE = /^[a-zA-Z0-9_]{1,30}$/;
+export const DOMAIN_RE = /^[a-z0-9.-]+\.[a-z]{2,}$/;
+
+/**
+ * Shape check for a site URL: a bare http(s) origin, no credentials, no path.
+ *
+ * Deliberately does NOT include the reachability check (#431). That one belongs
+ * to what an operator can SET, not to what we can load — a developer who points
+ * a local instance at http://localhost:3000 by hand has done something
+ * deliberate, and silently reverting it to the environment with nothing in the
+ * logs would be the same class of unexplained behaviour this is trying to
+ * remove. The admin route layers `isLocalOrPrivateHost` on top for the set path.
+ */
+export function siteUrlShape(input: string): string | undefined {
+  let u: URL;
+  try {
+    u = new URL(input);
+  } catch {
+    return undefined;
+  }
+  if (u.protocol !== "https:" && u.protocol !== "http:") return undefined;
+  if (u.username || u.password) return undefined;
+  if (u.pathname !== "/" || u.search || u.hash) return undefined;
+  return u.origin;
+}
+
+/**
+ * Reject junk so a bad row can't produce a malformed actor id.
+ *
+ * The docstring above said exactly this before #431 — it just didn't reject
+ * enough to achieve it. The checks were type, non-empty, length and whitespace,
+ * while `validateSiteUrl` lived in the admin ROUTE. So any row written by
+ * something other than that route — a manual psql edit, a restore, a future
+ * migration or script — flowed straight into getIdentity().siteUrl, and from
+ * there into the actor id, the keyId, and every published post's apId. A row of
+ * `not a url` produced an actor id of `not a url/ap/actor`, which the instance
+ * then published under.
+ *
+ * Field-aware now, and the rules are the same objects the route uses, so there
+ * is one rule set rather than two that can drift.
+ */
+function clean(value: unknown, field?: IdentityField): string | undefined {
   if (typeof value !== "string") return undefined;
   const v = value.trim();
   if (!v || v.length > 300 || /[\s\r\n]/.test(v)) return undefined;
+  if (field === "siteUrl") return siteUrlShape(v);
+  if (field === "fediHandle") return HANDLE_RE.test(v) ? v : undefined;
+  if (field === "fediDomain") {
+    const lower = v.toLowerCase();
+    return DOMAIN_RE.test(lower) ? lower : undefined;
+  }
   return v;
 }
 
@@ -57,7 +103,7 @@ export async function loadIdentity(): Promise<void> {
     for (const row of rows) {
       const field = row.key.slice(KEY_PREFIX.length) as IdentityField;
       if (!FIELDS.includes(field)) continue;
-      const value = clean(row.value);
+      const value = clean(row.value, field);
       if (value) found[field] = value;
     }
     applyIdentityOverrides(found);
@@ -251,7 +297,7 @@ export async function setIdentity(patch: IdentityPatch): Promise<void> {
       await prisma.siteSetting.deleteMany({ where: { key } });
       continue;
     }
-    const value = clean(raw);
+    const value = clean(raw, field);
     if (value === undefined) throw new Error(`Invalid value for ${field}`);
     await prisma.siteSetting.upsert({ where: { key }, update: { value }, create: { key, value } });
   }

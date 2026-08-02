@@ -59,6 +59,17 @@ export async function POST(req: NextRequest) {
   if (typeof uploadsDir === "string" && uploadsDir.trim() !== "") {
     const check = await checkUploadsDir(uploadsDir);
     if (!check.ok) return NextResponse.json({ error: check.error }, { status: 400 });
+    // Durability is asked separately from validity (#387), and answered with a
+    // 409 rather than a 400: the path is fine, we just want the operator to say
+    // they meant it. Silence here is a data-loss path with a delay measured in
+    // days — no error, no symptom, and the read fallback keeping old uploads
+    // visible until a rebuild takes the new ones.
+    if (check.ephemeral && body?.acknowledgeEphemeral !== true) {
+      return NextResponse.json(
+        { error: check.ephemeral, confirm: "acknowledgeEphemeral" },
+        { status: 409 },
+      );
+    }
     body.settings["storage.uploadsDir"] = check.path;
   }
 

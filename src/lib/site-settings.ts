@@ -36,6 +36,7 @@ export const SITE_CONFIG_FIELDS: Record<string, FieldType> = {
   "feed.public": "bool",
   "feed.publicTitle": "text",
   "feed.hideSocialGraph": "bool",
+  "bluesky.domainHandle": "bool",
   "nav.journal": "bool",
   "nav.articles": "bool",
   "nav.photography": "bool",
@@ -84,6 +85,13 @@ export interface RuntimeSiteConfig {
   publicFeed: boolean;
   publicFeedTitle: string;
   hideSocialGraph: boolean;
+  /**
+   * Serve `/.well-known/atproto-did`, so this domain can be used as the owner's
+   * Bluesky handle (#448). Off by default — serving it claims an identity, and
+   * that must be an explicit choice rather than a side effect of configuring
+   * Bluesky at all.
+   */
+  blueskyDomainHandle: boolean;
   nav: {
     showJournal: boolean; showArticles: boolean; showPhotography: boolean;
     showVideos: boolean; showAudio: boolean; showAbout: boolean;
@@ -124,6 +132,7 @@ export function siteConfigDefaults(): RuntimeSiteConfig {
     publicFeed: siteConfig.publicFeed,
     publicFeedTitle: siteConfig.publicFeedTitle,
     hideSocialGraph: siteConfig.hideSocialGraph,
+    blueskyDomainHandle: false,
     nav: { ...siteConfig.nav },
     footer: { ...siteConfig.footer },
     download: { ...siteConfig.download },
@@ -191,6 +200,7 @@ export async function getRuntimeSiteConfig(): Promise<RuntimeSiteConfig> {
       publicFeed: boolOverride(o["feed.public"], base.publicFeed),
       publicFeedTitle: textOverride(o["feed.publicTitle"], base.publicFeedTitle),
       hideSocialGraph: boolOverride(o["feed.hideSocialGraph"], base.hideSocialGraph),
+      blueskyDomainHandle: boolOverride(o["bluesky.domainHandle"], base.blueskyDomainHandle),
       nav: {
         showJournal: boolOverride(o["nav.journal"], base.nav.showJournal),
         showArticles: boolOverride(o["nav.articles"], base.nav.showArticles),

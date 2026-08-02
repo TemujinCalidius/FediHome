@@ -5,6 +5,9 @@ import {
   setBlueskyCredentials,
   clearBlueskyCredentials,
   testBlueskyLogin,
+  rememberBlueskyDid,
+  checkDomainHandle,
+  getBlueskyCredentials,
   setThreadsCredentials,
   clearThreadsCredentials,
   testThreadsToken,
@@ -12,6 +15,8 @@ import {
   clearDayOneCredentials,
 } from "@/lib/integrations";
 import { secretBoxAvailable } from "@/lib/secret-box";
+import { getIdentity } from "@/lib/identity";
+import { applySiteConfig } from "@/lib/site-settings";
 
 /**
  * Admin crosspost integrations (#59): configure Bluesky + Threads credentials
@@ -68,6 +73,54 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, status: await getIntegrationStatus() });
   }
 
+  // Ahead of the allowlist and the handle/password guard below: these actions need
+  // neither, because they read the identity and credentials already stored (#448).
+  if (provider === "bluesky" && action === "set-domain-handle") {
+    const enabled = body?.enabled === true;
+
+    // Capture the DID BEFORE writing the setting, when enabling.
+    //
+    // The owner's next step is to change their handle in the Bluesky app, and
+    // Bluesky verifies the record AT THAT MOMENT. So the endpoint has to be live
+    // the instant the toggle goes on — but an instance configured before this
+    // feature existed has no DID yet, and the route correctly 404s without one.
+    // Left to the lazy capture in getBlueskyAgent, that gap lasts until the next
+    // Bluesky sync: up to fifteen minutes of the feature looking broken.
+    //
+    // Uses the STORED credentials, never anything from the request. Persisting a
+    // DID proved by some other handle would pair it with the saved password and
+    // break every login — the DID outranks the handle, so it would win silently.
+    if (enabled) {
+      try {
+        const { getBlueskyAgent } = await import("@/lib/bluesky-agent");
+        await getBlueskyAgent();
+      } catch {
+        return NextResponse.json(
+          { error: "Couldn't reach Bluesky to confirm your account. Check the connection above, then try again." },
+          { status: 400 },
+        );
+      }
+      const creds = await getBlueskyCredentials();
+      if (!creds?.did) {
+        return NextResponse.json(
+          { error: "Connected to Bluesky but couldn't read your account id. Try saving your credentials again." },
+          { status: 400 },
+        );
+      }
+    }
+
+    const applied = await applySiteConfig({ "bluesky.domainHandle": enabled ? "true" : "false" });
+    if (!applied.ok) return NextResponse.json({ error: applied.error }, { status: 400 });
+    return NextResponse.json({ success: true, enabled });
+  }
+
+  if (provider === "bluesky" && action === "verify-domain") {
+    // The configured identity, never a client-supplied domain — taking it from the
+    // request body would make this a handle-lookup proxy for anyone with admin.
+    const { fediDomain } = getIdentity();
+    return NextResponse.json({ domain: fediDomain, ...(await checkDomainHandle(fediDomain)) });
+  }
+
   if (action !== "test" && action !== "save") {
     return NextResponse.json({ error: "unknown action" }, { status: 400 });
   }
@@ -88,6 +141,11 @@ export async function POST(req: NextRequest) {
     }
     const r = await setBlueskyCredentials(handle, password);
     if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
+    // Persist the DID the login just proved. It is the identifier every later
+    // login uses, so that a handle change — including pointing it at this very
+    // domain (#448) — doesn't quietly break crossposting. After
+    // setBlueskyCredentials, which clears any DID belonging to the old account.
+    if (t.did) await rememberBlueskyDid(t.did);
     return NextResponse.json({ success: true, status: await getIntegrationStatus() });
   }
 
