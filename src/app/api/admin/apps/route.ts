@@ -79,6 +79,30 @@ export async function POST(req: NextRequest) {
     });
   }
 
+  // Third-party OAuth client registration (#366). A registration is the only way
+  // a custom-scheme redirect (obsidian://, raycast://) can be trusted — nothing
+  // about a scheme proves who owns it, so the owner asserting it IS the security
+  // model. That is also why IndieAuth alone cannot serve these clients: it
+  // authenticates a client by URL, and a custom scheme has none.
+  if (action === "register_client") {
+    const { registerClient } = await import("@/lib/oauth-clients");
+    const r = await registerClient(
+      typeof body?.clientId === "string" ? body.clientId : "",
+      typeof body?.label === "string" ? body.label : "",
+      Array.isArray(body?.redirectUris) ? body.redirectUris.filter((u: unknown) => typeof u === "string") : [],
+    );
+    if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
+    return NextResponse.json({ success: true });
+  }
+
+  if (action === "unregister_client") {
+    const { unregisterClient } = await import("@/lib/oauth-clients");
+    const id = typeof body?.id === "string" ? body.id : "";
+    if (!id || id.length > 64) return NextResponse.json({ error: "invalid id" }, { status: 400 });
+    await unregisterClient(id);
+    return NextResponse.json({ success: true });
+  }
+
   if (action === "revoke") {
     const id = typeof body?.id === "string" ? body.id : "";
     if (!id || id.length > 64) {

@@ -22,16 +22,16 @@ describe("the unknown-client rejection names the real constraint (#486)", () => 
   // import list above it, so an unanchored indexOf yields an empty string — and
   // every assertion against an empty string would fail loudly rather than pass,
   // but for the wrong reason.
-  const start = src.indexOf("const client = getClient(p.clientId);");
+  const start = src.indexOf("const client = await resolveClient(p.clientId);");
   const msg = src.slice(start, src.indexOf("validateRedirectUri", start));
 
   it("no longer says only 'Unknown application'", () => {
     expect(src).not.toContain('error: "Unknown application (client_id)."');
   });
 
-  it("says the instance only accepts its own apps", () => {
+  it("says the app isn't registered, rather than implying a malformed id", () => {
     // The actual reason, rather than implying the client_id was malformed.
-    expect(msg).toMatch(/only accepts sign-in from its own apps/);
+    expect(msg).toMatch(/isn't registered with this instance/);
   });
 
   it("names the workaround an operator can actually take", () => {

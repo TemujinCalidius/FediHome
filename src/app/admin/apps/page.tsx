@@ -13,6 +13,9 @@ export const metadata = {
 };
 
 export default async function AdminAppsPage() {
+  // Third-party OAuth clients the owner registered (#366).
+  const { listClients } = await import("@/lib/oauth-clients");
+  const registered = await listClients().catch(() => []);
   const cookieStore = await cookies();
   const cookieValue = cookieStore.get("sl_admin")?.value;
 
@@ -41,7 +44,11 @@ export default async function AdminAppsPage() {
         apps you signed in via OAuth, plus any Micropub tokens. Revoke anything you
         don&apos;t recognise; a revoked token stops working on its next request.
       </p>
-      <AppsClient tokens={rows} instanceUrl={siteConfig.url} />
+      <AppsClient
+        tokens={rows}
+        instanceUrl={siteConfig.url}
+        registeredClients={JSON.parse(JSON.stringify(registered))}
+      />
     </div>
   );
 }

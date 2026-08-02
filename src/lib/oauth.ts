@@ -45,6 +45,8 @@ export function sanitizeScope(requested: string | null | undefined): string {
 export interface OAuthClient {
   id: string;
   label: string;
+  /** First-party ships in the app; registered was added by the owner (#366). */
+  kind: "first-party" | "registered";
   /** Exact-match custom-scheme redirect URIs. */
   redirectSchemes: string[];
   /** Allow `http://127.0.0.1:<any-port><loopbackPath>` (and ::1). */
@@ -56,6 +58,7 @@ const CLIENTS: readonly OAuthClient[] = [
   {
     id: "fedihome-macos",
     label: "FediHome for macOS",
+    kind: "first-party",
     redirectSchemes: ["fedihome-macos://callback"],
     allowLoopback: true,
     loopbackPath: "/callback",
@@ -63,6 +66,7 @@ const CLIENTS: readonly OAuthClient[] = [
   {
     id: "fedihome-ios",
     label: "FediHome for iOS",
+    kind: "first-party",
     redirectSchemes: ["fedihome-ios://callback"],
     allowLoopback: true,
     loopbackPath: "/callback",
@@ -70,6 +74,7 @@ const CLIENTS: readonly OAuthClient[] = [
   {
     id: "fedihome-android",
     label: "FediHome for Android",
+    kind: "first-party",
     redirectSchemes: ["fedihome-android://callback"],
     allowLoopback: true,
     loopbackPath: "/callback",
@@ -86,8 +91,36 @@ export function getClient(clientId: string | null | undefined): OAuthClient | nu
  * must match verbatim; loopback URIs may vary only in port (RFC 8252 §7.3) and
  * must carry no userinfo, query, or fragment.
  */
+/**
+ * Schemes a redirect URI may use (#366).
+ *
+ * THE REASON THIS EXISTS. authorize/route.ts renders the redirect target as
+ * `href="${escapeHtml(target)}"` and then calls `location.replace(a.href)`.
+ * escapeHtml does nothing to a dangerous SCHEME, so `javascript:...` in a
+ * redirect URI is script execution in the owner's authenticated session.
+ *
+ * Harmless while every client was hardcoded with an exact-match URI. The moment
+ * a registration can supply one it is the sharpest edge in the feature, which is
+ * why the check lives HERE — on the path every client goes through — rather than
+ * in the admin handler alone. A hand-edited database row has to fail too. That
+ * is the #431 lesson: validate wherever the value comes from.
+ *
+ * `http:` is allowed only for loopback, which the caller enforces separately.
+ */
+const SAFE_SCHEME = /^[a-z][a-z0-9+.-]*:/;
+const FORBIDDEN_SCHEMES = new Set(["javascript:", "data:", "vbscript:", "file:", "blob:"]);
+
+export function isSafeRedirectScheme(redirectUri: string): boolean {
+  const m = redirectUri.toLowerCase().match(SAFE_SCHEME);
+  if (!m) return false;
+  return !FORBIDDEN_SCHEMES.has(m[0]);
+}
+
 export function validateRedirectUri(client: OAuthClient, redirectUri: string): boolean {
   if (!redirectUri) return false;
+  // Before anything else, including the exact-match fast path — a registration
+  // that stored a javascript: URI must not pass by matching itself.
+  if (!isSafeRedirectScheme(redirectUri)) return false;
   if (client.redirectSchemes.includes(redirectUri)) return true;
   if (!client.allowLoopback) return false;
   let u: URL;
