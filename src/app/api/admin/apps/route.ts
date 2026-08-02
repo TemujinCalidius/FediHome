@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { verifyAdmin, verifyOrigin, generateToken } from "@/lib/auth";
-import { sanitizeScope } from "@/lib/oauth";
+import { sanitizeScope, appTokenExpiry, isValidTtlDays } from "@/lib/oauth";
 
 /**
  * Connected-apps management (#158). Lets the owner revoke the bearer tokens that
@@ -28,7 +28,13 @@ export async function POST(req: NextRequest) {
   // pasted token (headless/CI, App Store review, read-only readers) without the
   // OAuth/ADMIN_SECRET dance. The RAW token is returned exactly once; only its
   // sha256 hash is stored (generateToken), so it can't be read back later — a
-  // lost token is revoked + reissued. Long-lived + revocable (no expiry).
+  // lost token is revoked + reissued.
+  //
+  // The lifetime is now chosen per token (#327). Before that this branch passed
+  // no expiry at all, so every admin-generated token was permanent — and the
+  // global `security.appTokenTtlDays` that the settings screen advertises never
+  // reached them, because the arithmetic was private to the OAuth route. An
+  // operator who set that global had half their tokens quietly ignore it.
   if (action === "create") {
     const rawLabel = typeof body?.label === "string" ? body.label.trim() : "";
     if (rawLabel.length > 100 || /[\r\n]/.test(rawLabel)) {
@@ -38,8 +44,39 @@ export async function POST(req: NextRequest) {
     if (!scope) {
       return NextResponse.json({ error: "pick at least one scope" }, { status: 400 });
     }
-    const token = await generateToken(rawLabel || "Generated token", { scope, createdVia: "manual" });
-    return NextResponse.json({ success: true, token, label: rawLabel || "Generated token", scope });
+    // Absent means "use the instance default", NOT "never" — which is what makes
+    // the global finally apply here. That default ships as 0 (site.config.ts), so
+    // nothing changes for anyone who has not deliberately set it; an operator who
+    // HAS set it is getting the behaviour the setting already promised.
+    // An explicit value must be a whole number of days; 0 is valid and means
+    // never. null is rejected rather than treated as a choice, since 0 already
+    // says that and two spellings of one thing is how they drift apart.
+    let ttlDays: number;
+    if (body?.ttlDays === undefined) {
+      const { getRuntimeSiteConfig } = await import("@/lib/site-settings");
+      ttlDays = (await getRuntimeSiteConfig()).security.appTokenTtlDays;
+    } else if (isValidTtlDays(body.ttlDays)) {
+      ttlDays = body.ttlDays;
+    } else {
+      return NextResponse.json({ error: "invalid expiry" }, { status: 400 });
+    }
+
+    const expiresAt = appTokenExpiry(ttlDays);
+    const token = await generateToken(rawLabel || "Generated token", {
+      scope,
+      createdVia: "manual",
+      expiresAt,
+    });
+    return NextResponse.json({
+      success: true,
+      token,
+      label: rawLabel || "Generated token",
+      scope,
+      // Returned so the one-time reveal can state the lifetime. It is the only
+      // moment the operator sees the token, so it is the only moment worth
+      // telling them when it dies.
+      expiresAt: expiresAt ? expiresAt.toISOString() : null,
+    });
   }
 
   if (action === "revoke") {
