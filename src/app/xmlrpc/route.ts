@@ -1,9 +1,9 @@
 import { NextRequest } from "next/server";
+import { renderMarkdownToSafeHtml } from "@/lib/markdown";
 import { prisma } from "@/lib/db";
 import { hasScope, verifyTokenValue, type TokenVerification } from "@/lib/auth";
 import { recordTokenUse } from "@/lib/audit";
 import { sanitizeHtml } from "@/lib/sanitize";
-import { marked } from "marked";
 import { extractParam, extractStruct, between } from "@/lib/xmlrpc";
 import { rateLimitKey } from "@/lib/client-ip";
 import { buildPostObject } from "@/lib/ap-post";
@@ -171,7 +171,7 @@ export async function POST(req: NextRequest) {
       const title = struct.title || null;
       const content = struct.description || "";
       const slug = slugify(title || content.slice(0, 40) || "post-" + Date.now().toString(36));
-      const contentHtml = sanitizeHtml(marked.parse(content) as string);
+      const contentHtml = renderMarkdownToSafeHtml(content);
 
       const post = await prisma.post.create({
         data: {

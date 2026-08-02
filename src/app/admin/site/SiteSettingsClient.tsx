@@ -465,6 +465,8 @@ export default function SiteSettingsClient({
       "security.adminSessionTtlDays": String(cfg.security.adminSessionTtlDays),
       "security.appTokenTtlDays": String(cfg.security.appTokenTtlDays),
       "contact.email": cfg.contact.email,
+      "about.heading": cfg.about.heading,
+      "about.markdown": cfg.about.markdown,
       "podcast.title": cfg.podcast.title,
       "podcast.author": cfg.podcast.author,
       "podcast.description": cfg.podcast.description,
@@ -499,6 +501,7 @@ export default function SiteSettingsClient({
         "theme.id", "layout.feed", "layout.header", "layout.footer", "layout.shell",
         "sidebar.side", "sidebar.blocks", "storage.uploadsDir",
         "security.adminSessionTtlDays", "security.appTokenTtlDays", "contact.email",
+        "about.heading", "about.markdown",
         "podcast.title", "podcast.author", "podcast.description", "podcast.email", "podcast.image",
         "categories.photos", "categories.videos", "categories.audio",
         "analytics.siteId", "analytics.embedId",
@@ -667,6 +670,29 @@ export default function SiteSettingsClient({
               )}
             </div>
           )}
+        </>)}
+
+        {section("About page", <>
+          <p className="text-xs text-gray-600 m-0">
+            The <code>/about</code> page. Written in Markdown — headings, links, lists,
+            <code>---</code> for a divider. Leave both blank to use the built-in text, which
+            includes your bio and follows your Fediverse address if it ever changes.
+          </p>
+          {text("Heading", cfg.about.heading, (v) => set({ about: { ...cfg.about, heading: v } }), "About")}
+          <label className="flex flex-col gap-1 text-xs text-gray-400">
+            <span>Page content</span>
+            <textarea
+              value={cfg.about.markdown}
+              onChange={(e) => set({ about: { ...cfg.about, markdown: e.target.value } })}
+              rows={14}
+              placeholder="Leave blank for the built-in text."
+              className="bg-surface-800 border border-surface-700 rounded-md px-2 py-1.5 text-sm text-white font-mono leading-relaxed"
+            />
+            <span className="text-gray-600">
+              Your contact details are added underneath automatically — you don&apos;t need to
+              repeat them here.
+            </span>
+          </label>
         </>)}
 
         {section("Your profile", <>
