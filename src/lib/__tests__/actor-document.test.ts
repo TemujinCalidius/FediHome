@@ -40,13 +40,23 @@ import { getActorProfile } from "@/lib/federation";
 
 const OLD = { SITE_URL: process.env.SITE_URL, FEDI_HANDLE: process.env.FEDI_HANDLE, FEDI_DOMAIN: process.env.FEDI_DOMAIN };
 
+/** Answer findUnique per key; anything unlisted is unset. */
+const setRows = (rows: Record<string, string>) =>
+  siteSettingFindUnique.mockImplementation(async (args: { where: { key: string } }) =>
+    args.where.key in rows ? { key: args.where.key, value: rows[args.where.key] } : null,
+  );
+
 beforeEach(() => {
   vi.clearAllMocks();
   process.env.SITE_URL = "https://demo.example";
   process.env.FEDI_HANDLE = "ada";
   delete process.env.FEDI_DOMAIN;
   actorKeysFindUnique.mockResolvedValue({ publicKey: "PUBKEY", privateKey: "PRIVKEY" });
-  siteSettingFindUnique.mockResolvedValue(null); // no aliases by default
+  // Key-aware, not a blanket value: the actor now reads TWO SiteSetting rows
+  // (identity.alsoKnownAs and identity.movedTo, #347), and a mock that answers
+  // both with the same string would make "moved" and "has an alias" the same
+  // state — which is precisely the thing these tests exist to tell apart.
+  setRows({});
 });
 
 afterAll(() => {
@@ -88,8 +98,8 @@ describe("alsoKnownAs on the actor (#326)", () => {
   });
 
   it("appears verbatim once set, so a Move verification can match it", async () => {
-    siteSettingFindUnique.mockResolvedValue({
-      value: "https://mastodon.social/users/ada\nhttps://old.example/users/ada",
+    setRows({
+      "identity.alsoKnownAs": "https://mastodon.social/users/ada\nhttps://old.example/users/ada",
     });
     const actor = await getActorProfile();
     expect((actor as { alsoKnownAs?: string[] }).alsoKnownAs).toEqual([
@@ -98,16 +108,15 @@ describe("alsoKnownAs on the actor (#326)", () => {
     ]);
   });
 
-  it("needs no extra JSON-LD term — alsoKnownAs is in the activitystreams context", async () => {
+  it("needs no term of its OWN — alsoKnownAs is in the activitystreams context", async () => {
     // Verified against the published AS2 context: alsoKnownAs is defined there
-    // as {"@id":"as:alsoKnownAs","@type":"@id"}. (movedTo is NOT — that one will
-    // need an inline term when the outbound half lands.)
-    siteSettingFindUnique.mockResolvedValue({ value: "https://old.example/users/ada" });
+    // as {"@id":"as:alsoKnownAs","@type":"@id"}, so setting an alias must not be
+    // what drags an inline term object into the document.
+    setRows({ "identity.alsoKnownAs": "https://old.example/users/ada" });
     const actor = await getActorProfile();
-    expect(actor["@context"]).toEqual([
-      "https://www.w3.org/ns/activitystreams",
-      "https://w3id.org/security/v1",
-    ]);
+    expect(actor["@context"][0]).toBe("https://www.w3.org/ns/activitystreams");
+    expect(actor["@context"][1]).toBe("https://w3id.org/security/v1");
+    expect(actor["@context"][2]).not.toHaveProperty("alsoKnownAs");
   });
 
   it("still serves the actor when the alias lookup fails", async () => {

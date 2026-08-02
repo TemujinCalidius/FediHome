@@ -11,6 +11,9 @@ import { getSiteUrl } from "@/lib/identity";
 import { isBlockedSender } from "@/lib/blocks";
 import { guardedFetch } from "@/lib/safe-fetch";
 import { VIA_BOOST } from "@/lib/explore";
+// The alsoKnownAs check is the security property in BOTH directions (#347),
+// so the inbound half and the outbound half share one implementation.
+import { fetchActorForMove, sameActor } from "@/lib/account-move";
 
 const ACTOR_FETCH_TIMEOUT_MS = 8000;
 const DEBUG = process.env.FEDIHOME_DEBUG === "true";
@@ -229,56 +232,6 @@ async function handleFollow(actorUri: string, activity: Record<string, unknown>)
 
 async function handleUnfollow(actorUri: string) {
   await prisma.fediFollower.delete({ where: { actorUri } }).catch(() => {});
-}
-
-/**
- * Strip trailing slashes without a regex.
- *
- * `/\/+$/` looks harmless but backtracks quadratically on a long run of slashes
- * followed by anything else — and these strings come straight out of a REMOTE
- * actor document, so a hostile server could send 100KB of slashes and burn CPU
- * in our inbox. Caught by CodeQL (js/polynomial-redos). A character scan is O(n)
- * and cannot backtrack.
- */
-function stripTrailingSlashes(s: string): string {
-  let end = s.length;
-  while (end > 0 && s.charCodeAt(end - 1) === 47 /* "/" */) end--;
-  return s.slice(0, end);
-}
-
-/** Compare actor ids the way a remote server does — exact, bar a trailing slash. */
-function sameActor(a: string, b: string): boolean {
-  return stripTrailingSlashes(a) === stripTrailingSlashes(b);
-}
-
-/**
- * Fetch an actor for Move verification, including `alsoKnownAs`.
- *
- * Uses `signedGet`, unlike `fetchActorInfo`: an instance running authorized
- * fetch (Mastodon's secure mode) answers an unsigned actor request with 401,
- * and silently failing to verify would mean silently refusing every move from
- * such a server.
- */
-async function fetchActorForMove(actorUri: string) {
-  if (!(await assertPublicHost(actorUri))) return null;
-  try {
-    const res = await signedGet(actorUri, ACTOR_FETCH_TIMEOUT_MS);
-    if (!res.ok) return null;
-    const actor = await res.json();
-    const aka = actor.alsoKnownAs;
-    return {
-      inbox: typeof actor.inbox === "string" ? actor.inbox : null,
-      username: actor.preferredUsername || "unknown",
-      domain: new URL(actorUri).hostname,
-      displayName: actor.name || null,
-      avatarUrl: actor.icon?.url || null,
-      alsoKnownAs: (Array.isArray(aka) ? aka : aka ? [aka] : []).filter(
-        (v: unknown): v is string => typeof v === "string",
-      ),
-    };
-  } catch {
-    return null;
-  }
 }
 
 /**

@@ -130,6 +130,57 @@ export default function SiteSettingsClient({
       setIdentBusy(false);
     }
   }
+  // Leaving for another server (#347) — its own route, cookie-only, and never
+  // part of the plaintext site-config save: declaring a move tells every
+  // follower's server to re-point its follow, which is not something a settings
+  // batch should be able to do as a side effect.
+  const [move, setMove] = useState<{
+    movedTo: string | null; movedAt: string | null; handle: string | null;
+    cooldownDaysLeft: number; cooldownDays: number; followers: number;
+  } | null>(null);
+  const [moveTarget, setMoveTarget] = useState("");
+  const [moveBusy, setMoveBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/admin/move")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (!cancelled && d) setMove(d); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  async function postMove(payload: Record<string, unknown>): Promise<void> {
+    setMoveBusy(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/admin/move", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        // The refusal text is the useful part — "the new account doesn't list
+        // this one as an alias yet" is an instruction, not an error.
+        setResult({ ok: false, msg: data?.error || "Couldn't do that." });
+        return;
+      }
+      setMove((c) => (c ? { ...c, ...data } : c));
+      setMoveTarget("");
+      setResult({
+        ok: true,
+        msg: data.movedTo
+          ? `Move sent. Your followers' servers will move them to ${data.handle || data.movedTo}.`
+          : "Move cancelled. Your profile no longer says you've moved.",
+      });
+    } catch {
+      setResult({ ok: false, msg: "Couldn't reach the server — nothing was changed." });
+    } finally {
+      setMoveBusy(false);
+    }
+  }
+
   const [pwCurrent, setPwCurrent] = useState("");
   const [pwNext, setPwNext] = useState("");
   const [pwConfirm, setPwConfirm] = useState("");
@@ -1192,6 +1243,97 @@ export default function SiteSettingsClient({
               {aliasBusy ? "Saving…" : "Save aliases"}
             </button>
           </div>
+        </>)}
+
+        {section("Moving away from here", <>
+          {move?.movedTo ? (
+            <>
+              <div className="rounded-lg border border-amber-400/40 bg-amber-400/5 p-3 flex flex-col gap-1.5">
+                <p className="text-xs font-semibold text-amber-300 m-0">
+                  This account has moved to {move.handle}
+                </p>
+                <p className="text-xs text-gray-400 m-0">
+                  Your profile now tells every server that you&apos;re at{" "}
+                  <code>{move.movedTo}</code>, and this account has stopped publishing new
+                  posts. <strong>Keep this instance running.</strong> Servers verify the move
+                  by fetching this profile, so followers whose server hasn&apos;t checked in
+                  yet can only follow you across while it&apos;s still answering — the
+                  recommendation is at least a year.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => postMove({ action: "resend" })}
+                  disabled={moveBusy}
+                  className="btn-primary text-xs disabled:opacity-50"
+                >
+                  {moveBusy ? "Sending…" : "Send the move again"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => postMove({ action: "cancel" })}
+                  disabled={moveBusy}
+                  className="text-xs text-gray-400 hover:text-white underline disabled:opacity-40"
+                >
+                  Cancel the move
+                </button>
+              </div>
+              <p className="text-xs text-gray-600 m-0">
+                <strong>Send again</strong> is safe to press as often as you like — servers
+                that already moved your followers ignore a repeat. It&apos;s worth doing if
+                someone tells you their follow didn&apos;t come across.{" "}
+                <strong>Cancelling stops telling people you&apos;ve moved; it does not bring
+                followers back</strong> — anyone whose server already moved them is following
+                the new account now, and nothing here can reach into their server.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-xs text-gray-600 m-0">
+                Leaving for another server and want to take your{" "}
+                <strong>{move?.followers ?? 0} follower{move?.followers === 1 ? "" : "s"}</strong>{" "}
+                with you? Set up the new account first, add{" "}
+                <code>{ident?.siteUrl ? `${ident.siteUrl}/ap/actor` : "this account"}</code> to
+                its aliases, then put its address here.
+              </p>
+              <label className="flex flex-col gap-1 text-xs text-gray-400">
+                <span>The account you&apos;re moving to</span>
+                <input
+                  type="text"
+                  value={moveTarget}
+                  onChange={(e) => setMoveTarget(e.target.value)}
+                  spellCheck={false}
+                  placeholder="https://mastodon.social/users/you"
+                  className="bg-surface-800 border border-surface-700 rounded-md px-2 py-1.5 text-sm text-white font-mono"
+                />
+                <span className="text-gray-600">
+                  The full profile address of the new account. We check it lists this account
+                  as an alias before sending anything — if it doesn&apos;t, every server would
+                  refuse the move and your followers would quietly stay here.
+                </span>
+              </label>
+              <div className="rounded-lg border border-surface-700 p-3 flex flex-col gap-1.5">
+                <p className="text-xs font-semibold text-content m-0">Before you press this</p>
+                <ul className="text-xs text-gray-500 m-0 pl-4 list-disc flex flex-col gap-1">
+                  <li><strong>Only followers move.</strong> Your posts, the people you follow, your blocks and your mutes all stay here.</li>
+                  <li><strong>Keep this instance running afterwards.</strong> Every server verifies the move by fetching this profile. Take it down and the followers who hadn&apos;t moved yet can never be moved, by you or anyone.</li>
+                  <li><strong>This account stops publishing.</strong> Replies and likes still work, so you don&apos;t abandon conversations mid-thread.</li>
+                  <li>Moving somewhere <em>else</em> afterwards means waiting {move?.cooldownDays ?? 30} days.</li>
+                </ul>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => postMove({ target: moveTarget })}
+                  disabled={moveBusy || !moveTarget.trim()}
+                  className="btn-primary text-xs disabled:opacity-50"
+                >
+                  {moveBusy ? "Checking…" : "Move my followers"}
+                </button>
+              </div>
+            </>
+          )}
         </>)}
 
         {section("Storage", <>

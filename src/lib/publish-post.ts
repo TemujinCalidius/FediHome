@@ -110,6 +110,19 @@ async function publishGalleryRows(post: Post): Promise<void> {
  * never a double-post.
  */
 export async function publishDueScheduledPosts(now: Date = new Date()): Promise<number> {
+  // Moved away (#347). The sweep stops rather than publishing on behalf of an
+  // account whose actor says "I'm over there now".
+  //
+  // Nothing is claimed, so the posts stay SCHEDULED rather than being marked
+  // published-and-never-delivered — cancelling the move releases them, and
+  // moving for good means they were never silently consumed. There is no user
+  // in the loop here, so this logs once per sweep instead of erroring.
+  const { hasMoved } = await import("./account-move");
+  if (await hasMoved()) {
+    if (DEBUG) console.log("publish: skipped — this account has moved (#347)");
+    return 0;
+  }
+
   const due = await prisma.post.findMany({
     where: { published: false, scheduledFor: { lte: now } },
     orderBy: { scheduledFor: "asc" },

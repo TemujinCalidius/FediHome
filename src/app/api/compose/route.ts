@@ -131,6 +131,29 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
+  // Refuse new posts once this account has moved away (#347). The followers who
+  // matter are on the new server now, so anything published here reaches an
+  // audience that is deliberately being wound down — and posting from an account
+  // whose actor says "I'm over there" is the confusing state the `movedTo`
+  // property exists to prevent.
+  //
+  // Scoped to PUBLISHING. Replies, likes and boosts still work: those are
+  // interactions with conversations already in flight, and cutting them off
+  // mid-thread would strand other people rather than protect anyone. Said out
+  // loud here because the asymmetry looks like an oversight otherwise.
+  const { hasMoved, getMovedTo } = await import("@/lib/account-move");
+  if (await hasMoved()) {
+    return NextResponse.json(
+      {
+        error:
+          `This account has moved to ${await getMovedTo()}, so it can't publish anything new. ` +
+          `Post from the new account instead — or cancel the move in Admin → Site settings ` +
+          `if you didn't mean to leave.`,
+      },
+      { status: 409 },
+    );
+  }
+
   try {
     return await composeHandler(req);
   } catch (err) {
