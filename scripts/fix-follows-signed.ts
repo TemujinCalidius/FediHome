@@ -5,6 +5,8 @@
  * HTTP signatures even on GET requests to fetch actor profiles.
  */
 import { PrismaClient } from "../src/generated/prisma/client";
+import { guardedFetch } from "../src/lib/safe-fetch";
+import { assertPublicHost } from "../src/lib/url-guard";
 import { PrismaPg } from "@prisma/adapter-pg";
 import * as crypto from "node:crypto";
 
@@ -58,14 +60,28 @@ async function signedRequest(url, method, body) {
     `signature="${signature}"`,
   ].join(",");
 
-  return fetch(url, { method, headers, body: method === "POST" ? body : undefined });
+  // Signature covers (request-target) and host, so this cannot follow a redirect
+  // and re-sign the way guardedFetch does. Guarded up front and pinned to no
+  // redirects instead (#476).
+  if (!(await assertPublicHost(url))) throw new Error(`refusing non-public host: ${url}`);
+  return fetch(url, {
+    method,
+    redirect: "manual",
+    headers,
+    body: method === "POST" ? body : undefined,
+  });
 }
 
 async function discoverActorSigned(username, domain) {
   // WebFinger (usually doesn't need signing)
-  const wfRes = await fetch(
+  const wfRes = await guardedFetch(
     `https://${domain}/.well-known/webfinger?resource=acct:${username}@${domain}`,
-    { headers: { Accept: "application/jrd+json" } }
+    {
+      crossOrigin: true,
+      label: "fix-follows-signed webfinger",
+      timeoutMs: 10000,
+      init: { headers: { Accept: "application/jrd+json" } },
+    }
   );
   if (!wfRes.ok) throw new Error(`WebFinger ${wfRes.status}`);
 

@@ -10,6 +10,9 @@
 - **Your contact email now actually appears on your site** (#480) — you could set it in **Admin → Site settings**, press save, and nothing changed: the footer and the About page were both still reading the value from your `.env.local` file. Only two optional layouts had it right, and neither is the default — so on a normal install the setting did nothing a visitor could see, and if you'd never touched `.env.local` you got no contact link at all.
 - **Horizontal rules no longer vanish from your posts** (#481) — writing `---` in an article silently dropped the divider. It looked like a styling choice rather than something being deleted, which is why it lasted; imported posts lost theirs too.
 
+### Security
+- **The maintenance scripts now refuse to be pointed at your own network.** The repair and backfill scripts in `scripts/` fetch addresses chosen by other servers — an account link out of a lookup, a post list out of a profile — and were doing it without the checks the app itself applies. Someone would have had to get a hostile address into your follow list and then wait for you to run one of those scripts by hand, so this is far narrower than the equivalent in the app, but it was the same gap. The check that keeps the app from being redirected into your private network now covers them too, and the test that enforces it no longer stops at the app's own folder. Found by internal review, with no evidence of use.
+
 ## 1.25.0 (2026-08-03)
 
 ### Added

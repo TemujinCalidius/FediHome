@@ -10,6 +10,8 @@
  * Usage: DATABASE_URL="..." node scripts/fix-follows.js
  */
 import { PrismaClient } from "../src/generated/prisma/client";
+import { guardedFetch } from "../src/lib/safe-fetch";
+import { assertPublicHost } from "../src/lib/url-guard";
 import { PrismaPg } from "@prisma/adapter-pg";
 import * as crypto from "node:crypto";
 
@@ -47,8 +49,12 @@ async function signedFetch(url, method, body) {
       `signature="${signature}"`,
     ].join(",");
 
+    // Signed POST — the signature is bound to this target, so it cannot follow
+    // a redirect and re-sign. Guarded up front, no redirects (#476).
+    if (!(await assertPublicHost(url))) throw new Error(`refusing non-public host: ${url}`);
     return fetch(url, {
       method: "POST",
+      redirect: "manual",
       headers: {
         "Content-Type": "application/activity+json",
         Date: date,
@@ -60,17 +66,32 @@ async function signedFetch(url, method, body) {
     });
   }
 
-  // GET request (unsigned, for public resources)
-  return fetch(url, {
-    headers: { Accept: "application/activity+json" },
+  // GET request (unsigned, for public resources) — guardedFetch, because this
+  // one CAN safely follow redirects and must re-check each hop (#476).
+  return guardedFetch(url, {
+    crossOrigin: true,
+    label: "fix-follows get",
+    timeoutMs: 10000,
+    init: { headers: { Accept: "application/activity+json" } },
   });
 }
 
 async function discoverActor(username, domain) {
   // WebFinger lookup
-  const wfRes = await fetch(
+// #476 — these fetch URLs that a remote server chose: an actor href out of a
+// WebFinger response, an outbox URL out of an actor document, an actorUri that
+// arrived inside an inbox activity. Bare fetch() also follows redirects, so a
+// single up-front check would be bypassed by one hop. guardedFetch re-validates
+// EVERY hop, which is the same reasoning as src/lib/safe-fetch.ts (#433) — that
+// fix covered src/ and these scripts were never in its list.
+  const wfRes = await guardedFetch(
     `https://${domain}/.well-known/webfinger?resource=acct:${username}@${domain}`,
-    { headers: { Accept: "application/jrd+json" } }
+    {
+      crossOrigin: true,
+      label: "fix-follows webfinger",
+      timeoutMs: 10000,
+      init: { headers: { Accept: "application/jrd+json" } },
+    }
   );
   if (!wfRes.ok) throw new Error(`WebFinger failed: ${wfRes.status}`);
 
@@ -81,8 +102,11 @@ async function discoverActor(username, domain) {
   if (!actorLink?.href) throw new Error("No actor self link");
 
   // Fetch actor profile
-  const actorRes = await fetch(actorLink.href, {
-    headers: { Accept: "application/activity+json" },
+  const actorRes = await guardedFetch(actorLink.href, {
+    crossOrigin: true,
+    label: "fix-follows actor",
+    timeoutMs: 10000,
+    init: { headers: { Accept: "application/activity+json" } },
   });
   if (!actorRes.ok) throw new Error(`Actor fetch failed: ${actorRes.status}`);
 
@@ -102,8 +126,11 @@ async function backfillPosts(actorUri, outboxUrl, username, domain, displayName,
   if (!outboxUrl) return 0;
 
   try {
-    const outboxRes = await fetch(outboxUrl, {
-      headers: { Accept: "application/activity+json" },
+    const outboxRes = await guardedFetch(outboxUrl, {
+      crossOrigin: true,
+      label: "fix-follows outbox",
+      timeoutMs: 10000,
+      init: { headers: { Accept: "application/activity+json" } },
     });
     if (!outboxRes.ok) return 0;
 

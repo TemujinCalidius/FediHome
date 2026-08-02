@@ -141,3 +141,85 @@ describe("the signed paths keep their asymmetry", () => {
 });
 
 beforeEach(() => vi.restoreAllMocks());
+
+/**
+ * #476. Everything above is about `src/`. The one-off maintenance scripts fetch
+ * the same kind of URL — an actor href out of a WebFinger response, an outbox
+ * URL out of an actor document, an actorUri that arrived inside an inbox
+ * activity — and were in none of the lists, so #433's guarantee never covered
+ * them at all.
+ *
+ * Lower severity than #433: operator-run CLI, no unauthenticated trigger, and
+ * output goes to a console rather than back to the attacker. Same bug though,
+ * and `fix-follows.ts` is specifically the script an operator runs when their
+ * follow graph is already broken — a plausible state to be in after meeting a
+ * hostile server.
+ */
+describe("scripts/ fetch remote-controlled URLs under the same rule (#476)", () => {
+  const SCRIPT_FETCHERS = [
+    "scripts/fix-follows.ts",
+    "scripts/fix-follows-signed.ts",
+    "scripts/backfill-posts.ts",
+    "scripts/resend-follows.ts",
+  ];
+
+  /** Hardcoded first-party APIs — npm and GitHub. Nobody else picks these. */
+  const SCRIPT_FIRST_PARTY: Record<string, RegExp[]> = {
+    "scripts/check-updates.ts": [/api\.github\.com/, /registry\.npmjs\.org/],
+  };
+
+  it.each(SCRIPT_FETCHERS)("%s guards every fetch it makes", (rel) => {
+    // Two acceptable shapes, and the split is not arbitrary. An UNSIGNED read
+    // can follow redirects safely, so it goes through guardedFetch, which
+    // re-checks each hop. A SIGNED request cannot: the signature covers
+    // (request-target) and host, so it must be pinned to no redirects and
+    // checked up front instead.
+    const lines = read(rel).split("\n");
+    lines.forEach((line, i) => {
+      const t = line.trim();
+      if (t.startsWith("*") || t.startsWith("//")) return;
+      if (!/\bfetch\s*\(/.test(t)) return;
+      if (/guardedFetch/.test(t)) return;
+      const before = lines.slice(Math.max(0, i - 8), i).join("\n");
+      const after = lines.slice(i, i + 4).join("\n");
+      expect(
+        /assertPublicHost/.test(before) && /redirect:\s*"manual"/.test(after),
+        `${rel}:${i + 1} calls fetch() with no assertPublicHost guard and no ` +
+          `redirect: "manual" — a signed request must have both:\n  ${t}`,
+      ).toBe(true);
+    });
+  });
+
+  for (const [rel, allowed] of Object.entries(SCRIPT_FIRST_PARTY)) {
+    it(`${rel} only fetches hosts nobody else chooses`, () => {
+      // The URL sits on the NEXT line for a multi-line call, so match the call
+      // plus its argument rather than the `fetch(` line alone — checking only
+      // that line would pass every multi-line call without reading its host.
+      const lines = read(rel).split("\n");
+      lines.forEach((line, i) => {
+        const t = line.trim();
+        if (t.startsWith("*") || t.startsWith("//")) return;
+        if (!/\bfetch\s*\(/.test(t)) return;
+        if (/guardedFetch|signedGet/.test(t)) return;
+        const call = lines.slice(i, i + 3).join("\n");
+        expect(
+          allowed.some((re) => re.test(call)),
+          `${rel}:${i + 1} fetches a host that isn't provably first-party:\n  ${call}`,
+        ).toBe(true);
+      });
+    });
+  }
+
+  it("names every script that fetches at all, so a new one can't slip the list", () => {
+    // The failure mode #476 IS: the guarantee silently meant "the files someone
+    // remembered to list". A script that fetches and appears in neither list
+    // fails here rather than being quietly uncovered.
+    const { readdirSync } = require("node:fs") as typeof import("node:fs");
+    const known = new Set([...SCRIPT_FETCHERS, ...Object.keys(SCRIPT_FIRST_PARTY)]);
+    const unlisted = readdirSync(join(ROOT, "scripts"))
+      .filter((f) => f.endsWith(".ts") || f.endsWith(".mjs"))
+      .map((f) => `scripts/${f}`)
+      .filter((rel) => !known.has(rel) && /\bfetch\s*\(/.test(read(rel)));
+    expect(unlisted, `these scripts fetch and are in neither list: ${unlisted.join(", ")}`).toEqual([]);
+  });
+});
