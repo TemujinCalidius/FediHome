@@ -40,7 +40,7 @@ export default async function HeaderCentered() {
           ))}
           {isAdmin && (
             <Link href="/timeline" className="text-xs text-content-faint hover:text-accent-400 transition-colors">
-              Fedi Feed
+              Admin
             </Link>
           )}
         </div>
