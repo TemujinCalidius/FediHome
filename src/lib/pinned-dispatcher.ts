@@ -1,5 +1,6 @@
 import { Agent } from "undici";
 import dns from "node:dns/promises";
+import type { LookupFunction } from "node:net";
 import { isPrivateIPv4, isPrivateIPv6 } from "./url-guard";
 
 /**
@@ -90,7 +91,17 @@ export function guardedLookup(
 
 export function guardedDispatcher(): Agent {
   if (agent) return agent;
-  agent = new Agent({ connect: { lookup: guardedLookup as never } });
+  // Cast to Node's own `net.LookupFunction`, which is the type undici's
+  // `connect.lookup` actually resolves to (its BuildOptions spreads
+  // net.TcpNetConnectOpts). Narrow and checkable, unlike the `as never` this
+  // replaces — that erased the signature completely, so the callback could have
+  // had any shape at all and `tsc` would have agreed (#506).
+  //
+  // A cast is still needed, and this is the honest reason: undici passes
+  // `all: true`, so the callback is handed an ARRAY, while LookupFunction names
+  // only the scalar form. `guardedLookup` handles both — it is a superset of
+  // what the type asks for, which structural typing cannot express.
+  agent = new Agent({ connect: { lookup: guardedLookup as unknown as LookupFunction } });
   return agent;
 }
 
