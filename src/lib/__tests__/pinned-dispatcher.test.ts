@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 /**
  * #434. assertPublicHost resolves the hostname and checks every address. Then
@@ -118,18 +120,51 @@ describe("guardedDispatcher — one Agent, and a real one", () => {
 });
 
 describe("guardedFetch installs it (#434)", () => {
-  it("passes the dispatcher on every hop", async () => {
+  it("passes the dispatcher on every hop — to UNDICI's fetch, not the global one", async () => {
+    // This test used to stub the GLOBAL fetch, and that is exactly why it could
+    // not see #506. `dispatcher` is honoured only by the undici copy that built
+    // it: the Agent comes from node_modules' undici, while global fetch is
+    // Node's bundled one. Stubbing the global made the assertion pass while the
+    // real code handed an Agent to a stranger.
+    //
+    // Mocking the `undici` module instead means this fails if anyone puts the
+    // global back.
     vi.resetModules();
     const fetchSpy = vi.fn().mockResolvedValue(new Response("{}", { status: 200 }));
-    vi.stubGlobal("fetch", fetchSpy);
+    vi.doMock("undici", async (orig) => ({
+      ...(await orig<typeof import("undici")>()),
+      fetch: fetchSpy,
+    }));
     vi.doMock("@/lib/url-guard", async (orig) => ({
       ...(await orig<typeof import("@/lib/url-guard")>()),
       assertPublicHost: vi.fn().mockResolvedValue(true),
     }));
     const { guardedFetch } = await import("@/lib/safe-fetch");
     await guardedFetch("https://example.com/", { crossOrigin: true, label: "t", timeoutMs: 1000 });
+    expect(fetchSpy).toHaveBeenCalled();
     expect(fetchSpy.mock.calls[0][1]).toHaveProperty("dispatcher");
-    vi.unstubAllGlobals();
+    vi.doUnmock("undici");
     vi.doUnmock("@/lib/url-guard");
+  });
+
+  it("the dispatcher and the fetch come from the SAME undici copy", async () => {
+    // THE structural guard, and the one that would have made #506 a one-line
+    // diagnosis instead of 22 confusing assertion failures.
+    //
+    // `guardedDispatcher()` builds an Agent from the undici in node_modules.
+    // Whatever `guardedFetch` calls has to be from that same copy, or the
+    // handler shapes disagree — silently while both are 6.x, and fatally
+    // (`UND_ERR_INVALID_ARG: invalid onRequestStart method`) the moment the
+    // userland one moves to 8.x. Neither `tsc` nor `next build` can see it.
+    const src = readFileSync(join(process.cwd(), "src/lib/safe-fetch.ts"), "utf-8");
+    expect(src, "safe-fetch.ts must import fetch from undici").toMatch(
+      /import\s*\{[^}]*\bfetch\b[^}]*\}\s*from\s*"undici"/,
+    );
+    // A bare `fetch(` call would be the global one creeping back in.
+    const calls = src
+      .split("\n")
+      .filter((l) => /(?:^|[^.\w])fetch\s*\(/.test(l) && !l.trim().startsWith("*") && !l.trim().startsWith("//"))
+      .filter((l) => !/undiciFetch\s*\(/.test(l));
+    expect(calls, `safe-fetch.ts calls a non-undici fetch:\n${calls.join("\n")}`).toEqual([]);
   });
 });

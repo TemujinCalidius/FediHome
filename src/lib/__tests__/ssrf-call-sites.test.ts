@@ -89,9 +89,18 @@ describe("no remote-controlled URL is fetched without the redirect guard", () =>
     // One implementation, so the rule can't drift back apart. `public-host.ts`
     // records the same lesson from #357: a rule only some paths enforce is worse
     // than no rule, because the unguarded path is the one people hit.
-    const bare = bareFetchLines(read("src/lib/safe-fetch.ts"));
-    expect(bare).toHaveLength(1);
-    expect(bare[0]).toContain("fetch(current");
+    //
+    // The call is `undiciFetch(current, …)`, not a bare `fetch(` — undici's own
+    // fetch, because `dispatcher` is honoured only by the undici copy that built
+    // the Agent (#506). `bareFetchLines` therefore reports NOTHING here, and
+    // that is the correct answer: there is no global-fetch call left to find.
+    const src = read("src/lib/safe-fetch.ts");
+    expect(bareFetchLines(src), "a bare fetch() reappeared in safe-fetch.ts").toEqual([]);
+    // …but the single guarded call must still exist, or this test would pass on
+    // a file that had stopped fetching altogether.
+    const calls = src.split("\n").filter((l) => /\bundiciFetch\s*\(/.test(l) && !l.trim().startsWith("*"));
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toContain("undiciFetch(current");
   });
 
   it("every guardedFetch call states a cross-origin policy explicitly", () => {
