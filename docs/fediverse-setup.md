@@ -92,12 +92,42 @@ FediHome also **follows accounts that move away**: if someone you follow migrate
 to another server, their `Move` is verified and your follow is re-pointed
 automatically, and you get a notification saying so.
 
-The **leaving** half — setting `movedTo` and publishing a `Move` to your own
-followers — is **not implemented yet** (tracked in #347). So today there's still
-no supported way to carry your own followers to a new domain, which makes the
-advice above a hard rule rather than a recommendation.
+FediHome implements the **leaving** half too (#347): **Admin → Site settings →
+Moving away from here**. Enter the new account's address and FediHome sets
+`movedTo` on your profile and sends a `Move` to every follower.
 
-If you must move, the shape that works with the grain of the protocol is:
+Before it sends anything, it checks the new account lists this one in its
+`alsoKnownAs`. That check is not politeness — it is exactly what every receiving
+server does, and a `Move` that fails it is refused everywhere, silently, while
+you are told it worked. So FediHome refuses to send one at all and tells you what
+to add on the other server.
+
+What you need to know before pressing it:
+
+- **Only followers move.** Your posts, your own following list, your blocks and
+  your mutes all stay. That is a limit of the protocol, not of FediHome --
+  Mastodon behaves identically.
+- **Keep this instance running afterwards.** Every server verifies the move by
+  fetching this profile. Take it down and any follower whose server had not yet
+  checked can never be moved, by you or by anyone. FEP-7628 asks servers to keep
+  serving `movedTo` for **at least a year**.
+- **This account stops publishing.** New posts are refused from the composer,
+  Micropub, XML-RPC and the scheduler, so nothing goes out from an account whose
+  profile says you are elsewhere. Replies and likes still work, so you do not
+  abandon a conversation mid-thread.
+- **Send it again whenever you like.** The activity keeps a stable id, so servers
+  that already moved your followers ignore a repeat. Worth doing if someone tells
+  you their follow did not come across.
+- **Cancelling stops telling people you moved. It does not bring followers back**
+  — anyone whose server already acted is following the new account now, and
+  nothing on this end can reach into theirs.
+- Moving somewhere **else** afterwards means waiting 30 days, matching Mastodon.
+
+### Moving to a new domain, rather than to another server
+
+A move carries followers to a **different account**. It does not rename this one,
+and the caveats below still apply if what you actually want is the same content
+on a new domain:
 
 1. Stand up a **new instance on the new domain**, running alongside the old one.
 2. Migrate your content to it (a database restore keeps your posts and your

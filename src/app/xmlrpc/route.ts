@@ -167,6 +167,16 @@ export async function POST(req: NextRequest) {
 
     case "metaWeblog.newPost": {
       if (!hasScope(auth.scope, "create")) return refuseScope("create");
+      // Moved away (#347) — a blog editor is the path most likely to be pointed
+      // at the old account out of habit, so it has to say so rather than
+      // succeed. Refused BEFORE the row is created: a post that exists locally
+      // and federates nowhere is the confusing half-state to avoid.
+      const { hasMoved, getMovedTo } = await import("@/lib/account-move");
+      if (await hasMoved()) {
+        return xmlResponse(
+          fault(410, `This account has moved to ${await getMovedTo()} and no longer publishes.`),
+        );
+      }
       const struct = extractStruct(body);
       const title = struct.title || null;
       const content = struct.description || "";

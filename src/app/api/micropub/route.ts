@@ -114,6 +114,20 @@ export async function POST(req: NextRequest) {
   // Micropub is always a write (create/update/delete) — audit it. Best-effort.
   void recordTokenUse(auth, req);
 
+  // Moved away (#347) — see the compose route for why publishing specifically is
+  // what stops. Micropub answers a third-party editor, so the message has to be
+  // self-contained: whoever is looking at it may have no idea a move happened.
+  const { hasMoved, getMovedTo } = await import("@/lib/account-move");
+  if (await hasMoved()) {
+    return NextResponse.json(
+      {
+        error: "gone",
+        error_description: `This account has moved to ${await getMovedTo()} and no longer publishes.`,
+      },
+      { status: 410 },
+    );
+  }
+
   const contentType = req.headers.get("content-type") || "";
 
   let properties: Record<string, string[]> = {};

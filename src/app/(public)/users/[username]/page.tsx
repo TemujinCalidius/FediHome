@@ -6,6 +6,7 @@ import type { Metadata } from "next";
 import { siteConfig } from "@/../site.config";
 import { getRuntimeProfile } from "@/lib/site-profile";
 import { getIdentity } from "@/lib/identity";
+import { getMovedTo, moveHandle } from "@/lib/account-move";
 
 
 export async function generateMetadata({
@@ -36,11 +37,16 @@ export default async function UserProfilePage({
   const { username } = await params;
   if (username !== getIdentity().fediHandle) notFound();
 
-  const [postCount, followerCount, followingCount, profile] = await Promise.all([
+  const [postCount, followerCount, followingCount, profile, movedTo] = await Promise.all([
     prisma.post.count({ where: { inReplyToPostId: null } }),
     prisma.fediFollower.count(),
     prisma.fediFollowing.count(),
     getRuntimeProfile(),
+    // Where this account went, if it left (#347). The actor document carries the
+    // machine-readable half; this is the half a PERSON reads, and it matters
+    // because a visitor who arrives from a bookmark or a search result gets no
+    // ActivityPub anything — they just see a profile that has stopped.
+    getMovedTo(),
   ]);
 
   return (
@@ -60,6 +66,22 @@ export default async function UserProfilePage({
               className="rounded-full border-4 border-white dark:border-neutral-900"
             />
           </div>
+
+          {movedTo && (
+            <div className="mb-4 rounded-lg border border-amber-400/40 bg-amber-50 dark:bg-amber-500/10 px-4 py-3">
+              <p className="text-sm font-semibold text-amber-900 dark:text-amber-200 m-0">
+                This account has moved
+              </p>
+              <p className="mt-1 text-sm text-amber-900/90 dark:text-amber-100/90 m-0">
+                {profile.authorName} is now at{" "}
+                <a href={movedTo} rel="me noopener" className="font-medium underline">
+                  {moveHandle(movedTo)}
+                </a>
+                . Follow them there — if you already follow this account, your server
+                should move the follow across on its own.
+              </p>
+            </div>
+          )}
 
           <h1 className="text-2xl font-bold text-neutral-900 dark:text-white">
             {profile.authorName}
