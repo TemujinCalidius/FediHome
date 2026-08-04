@@ -22,16 +22,27 @@ describe("the unknown-client rejection names the real constraint (#486)", () => 
   // import list above it, so an unanchored indexOf yields an empty string — and
   // every assertion against an empty string would fail loudly rather than pass,
   // but for the wrong reason.
-  const start = src.indexOf("const client = await resolveClient(p.clientId);");
+  const start = src.indexOf("const client = await resolveClient(p.clientId, rateKey);");
   const msg = src.slice(start, src.indexOf("validateRedirectUri", start));
 
   it("no longer says only 'Unknown application'", () => {
     expect(src).not.toContain('error: "Unknown application (client_id)."');
   });
 
-  it("says the app isn't registered, rather than implying a malformed id", () => {
-    // The actual reason, rather than implying the client_id was malformed.
-    expect(msg).toMatch(/isn't registered with this instance/);
+  it("says why verification failed, rather than implying a malformed id", () => {
+    // The actual reason. Reworded once URL client ids landed (#494): "isn't
+    // registered" became wrong for the commonest case, since a web client is
+    // never registered and is not supposed to be — it failed because its address
+    // wasn't reachable or didn't list the redirect.
+    expect(msg).toMatch(/couldn't be verified/);
+    expect(msg).toMatch(/fetching its client ID/);
+  });
+
+  it("distinguishes the two kinds of client, since the fix differs (#494)", () => {
+    // A web app is fixed on the app's side (make the address reachable, list the
+    // redirect); a custom-scheme app can only be fixed here, by registering it.
+    // One message for both would send half the readers to the wrong place.
+    expect(msg).toMatch(/custom link scheme/);
   });
 
   it("names the workaround an operator can actually take", () => {
