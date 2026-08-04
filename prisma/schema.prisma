@@ -329,6 +329,15 @@ model FediPost {
   contentHtml String?
   mediaUrls   String[]
   mediaTypes  String[] // parallel to mediaUrls: "image" or "video"
+  /// The ORIGINAL remote URL for each entry in mediaUrls, parallel to it (#478).
+  /// Empty string where there isn't one — a passthrough URL is already remote,
+  /// and rows written before this column existed have nothing to record.
+  ///
+  /// Exists so the cache trim can put a post back to loading from source instead
+  /// of leaving a broken image: evicting a file used to unlink it and change
+  /// nothing else, and the remote original was not kept anywhere, so the picture
+  /// was gone for good.
+  mediaRemoteUrls String[]
   username    String
   domain      String
   displayName String?
@@ -437,6 +446,29 @@ model AppTokenUsage {
 // Short-lived, single-use OAuth 2.0 / IndieAuth authorization codes. Issued by
 // /api/oauth/authorize, exchanged ONCE (PKCE-verified) at /api/oauth/token, then
 // deleted. Bound to the client + redirect + scope + PKCE challenge that created it.
+/// Third-party OAuth clients the owner registered by hand (#366).
+///
+/// First-party ids stay in code: they ship inside the apps and are not the
+/// owner's to change. A registration is the ONLY way a custom-scheme redirect
+/// (obsidian://, raycast://) can be trusted — nothing about a scheme proves who
+/// owns it, so the owner asserting it IS the security model. That is also why
+/// IndieAuth alone cannot serve these clients: it authenticates a client by URL,
+/// and a custom scheme has none.
+model OAuthClientRegistration {
+  id String @id @default(cuid())
+  /// As sent in client_id. NOT @unique on purpose — `prisma db push` is the
+  /// upgrade path and refuses to add a unique constraint without
+  /// --accept-data-loss, the same reason FediInteraction.sourceApId isn't one.
+  /// Uniqueness is enforced when a registration is created.
+  clientId     String
+  label        String
+  redirectUris String[]
+  createdAt    DateTime  @default(now())
+  lastUsedAt   DateTime?
+
+  @@index([clientId])
+}
+
 model AuthorizationCode {
   id            String   @id @default(cuid())
   codeHash      String   @unique // SHA-256 of the authorization code

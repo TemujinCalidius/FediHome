@@ -47,11 +47,19 @@ enforces its structure (`.github/workflows/changelog.yml`):
 
    ```bash
    git checkout main && git pull
-   git tag vX.Y.Z && git push origin vX.Y.Z
+   git tag -a vX.Y.Z -m "FediHome vX.Y.Z" && git push origin vX.Y.Z
    gh release create vX.Y.Z --title "FediHome vX.Y.Z" \
      --notes "<highlights from the CHANGELOG section>" \
      --discussion-category "Announcements"
    ```
+
+   **`-a` matters (#517).** Without it you get a *lightweight* tag — a bare
+   pointer with no tag object, no tagger, no date and no signature. Nothing
+   records who cut the release or when, and the tag can be moved to a different
+   commit later with no trace that it ever pointed elsewhere. `git cat-file -t
+   vX.Y.Z` should print `tag`, not `commit`. Releases up to and including v1.25.0
+   are lightweight and stay that way — re-pointing a published tag is worse than
+   leaving it.
 
 4. **Back-merge** so `dev` shares the merge commit:
 

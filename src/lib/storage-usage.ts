@@ -1,7 +1,7 @@
 import path from "path";
 import { statfs } from "fs/promises";
 import { readdir, stat } from "fs/promises";
-import { uploadsDir } from "./uploads-dir";
+import { uploadsDir, uploadsRoots } from "./uploads-dir";
 
 /**
  * How full the uploads volume is (#385).
@@ -103,9 +103,14 @@ async function dirSize(dir: string): Promise<number> {
  * scheduler, never from a request handler.
  */
 export async function measureStorageUsage(): Promise<StorageUsage> {
-  const root = await uploadsDir();
-  const total = await dirSize(root);
-  const fedi = await dirSize(path.join(root, "fedi"));
+  // Every root (#479). Measuring only the current one under-reported after a
+  // move — and the cache it was missing is precisely the part the operator has
+  // least reason to keep and least chance of noticing.
+  const roots = await uploadsRoots();
+  const sizes = await Promise.all(roots.map((r) => dirSize(r)));
+  const fediSizes = await Promise.all(roots.map((r) => dirSize(path.join(r, "fedi"))));
+  const total = sizes.reduce((a, b) => a + b, 0);
+  const fedi = fediSizes.reduce((a, b) => a + b, 0);
   const usage: StorageUsage = {
     totalBytes: total,
     fediCacheBytes: fedi,

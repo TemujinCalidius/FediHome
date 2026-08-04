@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { renderMarkdownToSafeHtml } from "@/lib/markdown";
 import { verifyMicropubToken, hasScope } from "@/lib/auth";
 import { recordTokenUse } from "@/lib/audit";
 import { prisma } from "@/lib/db";
 import { sanitizeHtml } from "@/lib/sanitize";
-import { marked } from "marked";
 import { publishPost } from "@/lib/publish-post";
 import { deletePostWithFederation } from "@/lib/delete-post";
 import { getRuntimeSiteConfig } from "@/lib/site-settings";
@@ -179,7 +179,7 @@ export async function POST(req: NextRequest) {
 
   const slug = generateSlug(title, content);
   const siteUrl = getSiteUrl();
-  const contentHtml = sanitizeHtml(marked.parse(content) as string);
+  const contentHtml = renderMarkdownToSafeHtml(content);
 
   const post = await prisma.post.create({
     data: {

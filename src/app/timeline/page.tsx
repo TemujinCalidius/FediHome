@@ -1,6 +1,8 @@
 export const dynamic = "force-dynamic";
 
 import { cookies } from "next/headers";
+import { resolveLayout } from "@/lib/themes";
+import { getRuntimeSiteConfig } from "@/lib/site-settings";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { verifyAdminSession } from "@/lib/auth";
@@ -164,6 +166,9 @@ export default async function TimelinePage() {
       }
     : null;
 
+  const timelineSite = await getRuntimeSiteConfig();
+  const feedVariant = resolveLayout(timelineSite.theme.id, timelineSite.layout).feed;
+
   return (
     <div className="max-w-4xl mx-auto px-6 py-16">
       <div className="flex items-center justify-between mb-8">
@@ -230,6 +235,9 @@ export default async function TimelinePage() {
         dmReadState={dmReadState}
         analyticsData={analyticsData ? JSON.parse(JSON.stringify(analyticsData)) : null}
         fediAddress={siteConfig.fediAddress}
+        // The same layout.feed key the public feeds honour (#269) — the one
+        // remaining feed surface that ignored it.
+        feedVariant={feedVariant}
       />
     </div>
   );

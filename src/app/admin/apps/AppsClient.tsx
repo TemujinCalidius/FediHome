@@ -41,7 +41,11 @@ const scopeBadges = (scope: string) => (
   </div>
 );
 
-export default function AppsClient({ tokens, instanceUrl }: { tokens: TokenRow[]; instanceUrl: string }) {
+export default function AppsClient({ tokens, instanceUrl,
+  registeredClients = [],
+}: { tokens: TokenRow[]; instanceUrl: string
+  registeredClients?: { id: string; clientId: string; label: string; redirectUris: string[] }[];
+}) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -52,7 +56,12 @@ export default function AppsClient({ tokens, instanceUrl }: { tokens: TokenRow[]
   const [genOpen, setGenOpen] = useState(false);
   const [genLabel, setGenLabel] = useState("");
   const [genScopes, setGenScopes] = useState<string[]>(["read"]);
-  const [minted, setMinted] = useState<{ token: string; label: string; scope: string } | null>(null);
+  // "" = use the instance default (#327). Kept as a string because it is a
+  // <select> value; the number is only formed at submit time.
+  const [genTtl, setGenTtl] = useState<string>("");
+  const [minted, setMinted] = useState<
+    { token: string; label: string; scope: string; expiresAt: string | null } | null
+  >(null);
   const [copied, setCopied] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
 
@@ -133,6 +142,46 @@ export default function AppsClient({ tokens, instanceUrl }: { tokens: TokenRow[]
     setGenScopes((d) => (d.includes(s) ? d.filter((x) => x !== s) : [...d, s]));
   }
 
+  const [regOpen, setRegOpen] = useState(false);
+  const [regId, setRegId] = useState("");
+  const [regLabel, setRegLabel] = useState("");
+  const [regUris, setRegUris] = useState("");
+
+  async function registerClient() {
+    setError(null);
+    setBusy("reg");
+    try {
+      const res = await post({
+        action: "register_client",
+        clientId: regId.trim(),
+        label: regLabel.trim(),
+        redirectUris: regUris.split("\n").map((u) => u.trim()).filter(Boolean),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error || "Couldn't register that app.");
+        return;
+      }
+      setRegOpen(false);
+      setRegId(""); setRegLabel(""); setRegUris("");
+      router.refresh();
+    } catch {
+      setError("Couldn't register that app.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function unregisterClient(id: string) {
+    setBusy(id);
+    try {
+      await post({ action: "unregister_client", id });
+      router.refresh();
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function generate() {
     if (genScopes.length === 0) {
       setError("Pick at least one scope.");
@@ -141,16 +190,25 @@ export default function AppsClient({ tokens, instanceUrl }: { tokens: TokenRow[]
     setError(null);
     setBusy("gen");
     try {
-      const res = await post({ action: "create", label: genLabel.trim(), scope: genScopes.join(" ") });
+      const res = await post({
+        action: "create",
+        label: genLabel.trim(),
+        scope: genScopes.join(" "),
+        // Omitted rather than sent as null when the operator leaves it on the
+        // default — absent is what the route reads as "use the instance
+        // setting", and null is rejected on purpose.
+        ...(genTtl === "" ? {} : { ttlDays: Number(genTtl) }),
+      });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError(data.error || "Couldn't generate a token.");
         return;
       }
-      setMinted({ token: data.token, label: data.label, scope: data.scope });
+      setMinted({ token: data.token, label: data.label, scope: data.scope, expiresAt: data.expiresAt ?? null });
       setGenOpen(false);
       setGenLabel("");
       setGenScopes(["read"]);
+      setGenTtl("");
       setCopied(false);
       setCopiedLink(false);
       router.refresh();
@@ -191,6 +249,11 @@ export default function AppsClient({ tokens, instanceUrl }: { tokens: TokenRow[]
           <p className="text-sm text-white font-medium">New token — “{minted.label}”</p>
           <p className="text-xs text-gray-400 mt-1">
             Copy it now — it&apos;s shown <strong>once</strong> and can&apos;t be retrieved later. If you lose it, revoke it here and generate a new one.
+          </p>
+          <p className="text-xs text-gray-400 mt-1">
+            {minted.expiresAt
+              ? `Expires ${new Date(minted.expiresAt).toLocaleDateString()}.`
+              : "Doesn't expire — revoke it here when you're done with it."}
           </p>
           <div className="mt-2 flex items-center gap-2">
             <code className="flex-1 min-w-0 break-all bg-surface-950 border border-surface-700 rounded px-2 py-1.5 text-xs text-accent-300 font-mono">
@@ -257,6 +320,25 @@ export default function AppsClient({ tokens, instanceUrl }: { tokens: TokenRow[]
               </label>
             ))}
           </div>
+          <label className="flex flex-col gap-1 text-xs text-gray-400 mb-3">
+            <span>Expires</span>
+            <select
+              value={genTtl}
+              onChange={(e) => setGenTtl(e.target.value)}
+              className="bg-surface-800 border border-surface-700 rounded-md px-2 py-1.5 text-sm text-white"
+            >
+              <option value="">Instance default</option>
+              <option value="7">7 days</option>
+              <option value="30">30 days</option>
+              <option value="90">90 days</option>
+              <option value="365">1 year</option>
+              <option value="0">Never</option>
+            </select>
+            <span className="text-gray-600">
+              A short-lived token is the safer choice for anything you paste once — App Store
+              review, a one-off script. You can always revoke early.
+            </span>
+          </label>
           <div className="flex items-center gap-3">
             <button onClick={generate} disabled={busy !== null} className="btn-primary text-xs !py-1.5 disabled:opacity-50">
               {busy === "gen" ? "Generating…" : "Generate"}
@@ -271,6 +353,77 @@ export default function AppsClient({ tokens, instanceUrl }: { tokens: TokenRow[]
           </div>
         </div>
       )}
+
+      {/* Registered third-party OAuth clients (#366) */}
+      <div className="rounded-lg border border-surface-700 p-3 flex flex-col gap-2">
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-semibold text-content m-0">Registered apps</p>
+          <button
+            type="button"
+            onClick={() => { setRegOpen((v) => !v); setError(null); }}
+            className="text-xs text-gray-400 hover:text-white"
+          >
+            {regOpen ? "Cancel" : "+ Register an app"}
+          </button>
+        </div>
+        <p className="text-xs text-gray-600 m-0">
+          Lets a third-party app sign in with OAuth instead of a pasted token. FediHome
+          can&apos;t verify who owns an app&apos;s redirect address — <strong>you registering it
+          is the check</strong>, so only add apps you trust and check the redirect matches
+          what the app documents.
+        </p>
+        {regOpen && (
+          <div className="flex flex-col gap-2">
+            <label className="flex flex-col gap-1 text-xs text-gray-400">
+              <span>Client ID</span>
+              <input value={regId} onChange={(e) => setRegId(e.target.value)} placeholder="obsidian-fedihome"
+                className="bg-surface-800 border border-surface-700 rounded-md px-2 py-1.5 text-sm text-white font-mono" />
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-gray-400">
+              <span>Name</span>
+              <input value={regLabel} onChange={(e) => setRegLabel(e.target.value)} placeholder="Obsidian"
+                className="bg-surface-800 border border-surface-700 rounded-md px-2 py-1.5 text-sm text-white" />
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-gray-400">
+              <span>Redirect URIs — one per line</span>
+              <textarea value={regUris} onChange={(e) => setRegUris(e.target.value)} rows={3}
+                placeholder="obsidian://fedihome/callback"
+                className="bg-surface-800 border border-surface-700 rounded-md px-2 py-1.5 text-sm text-white font-mono" />
+            </label>
+            <div>
+              <button onClick={registerClient} disabled={busy !== null} className="btn-primary text-xs !py-1.5 disabled:opacity-50">
+                {busy === "reg" ? "Registering…" : "Register"}
+              </button>
+            </div>
+            <p className="text-xs text-gray-600 m-0">
+              It can take up to a minute before the app can sign in.
+            </p>
+          </div>
+        )}
+        {registeredClients.length === 0 ? (
+          <p className="text-xs text-gray-600 m-0">None registered.</p>
+        ) : (
+          <ul className="flex flex-col gap-1.5">
+            {registeredClients.map((c) => (
+              <li key={c.id} className="flex items-start justify-between gap-3 text-xs">
+                <div className="min-w-0">
+                  <span className="text-white">{c.label}</span>{" "}
+                  <code className="text-gray-500">{c.clientId}</code>
+                  <div className="text-gray-600 break-all font-mono">{c.redirectUris.join(", ")}</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => unregisterClient(c.id)}
+                  disabled={busy !== null}
+                  className="text-red-400 hover:text-red-300 disabled:opacity-50 whitespace-nowrap"
+                >
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
 
       {tokens.length === 0 ? (
         <p className="text-gray-500 text-sm">

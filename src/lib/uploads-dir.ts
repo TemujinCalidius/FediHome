@@ -105,6 +105,31 @@ export async function resolveUploadPath(relative: string): Promise<string | null
   return firstContained;
 }
 
+/**
+ * Every root that may hold media, newest first (#479).
+ *
+ * `resolveUploadPath` has always read from both the configured root and the
+ * legacy one, because changing the setting deliberately moves no files —
+ * anything already on disk keeps serving from where it is. But the trim sweep
+ * and the storage measurement each walked only the CURRENT root, so after an
+ * operator moved the directory the old cache was still served and never
+ * reclaimed or counted.
+ *
+ * That is the worst category to strand: it is other people's media, in a folder
+ * the operator does not browse, and the figure the panel showed them was
+ * smaller than what was actually on disk. An operator who moved the directory
+ * BECAUSE they were running out of space kept the problem, invisibly, in the
+ * place they had just moved away from.
+ *
+ * Deduplicated, because the legacy root IS the configured root on a default
+ * install — walking it twice would double every byte reported.
+ */
+export async function uploadsRoots(): Promise<string[]> {
+  const current = await uploadsDir();
+  const legacy = legacyUploadsDir();
+  return current === legacy ? [current] : [current, legacy];
+}
+
 /** An absolute path under the configured root, or `null` if it would escape. */
 export async function uploadPathFor(...segments: string[]): Promise<string | null> {
   const root = await uploadsDir();
@@ -236,4 +261,74 @@ export async function checkUploadsDir(input: string): Promise<PathCheck> {
   // may genuinely mean it, and only they know their deployment.
   const ephemeral = ephemeralReason(resolved);
   return ephemeral ? { ok: true, path: resolved, ephemeral } : { ok: true, path: resolved };
+}
+
+/* ------------------ Remote-media cache budget (#364) ------------------ */
+
+export const FEDI_CACHE_MB_KEY = "storage.fediCacheMb";
+
+/** Unchanged behaviour on upgrade: the 2GB that used to be hardcoded. */
+export const DEFAULT_FEDI_CACHE_MB = 2048;
+
+/** 1TB. A ceiling against a fat-fingered value, not a policy. */
+export const MAX_FEDI_CACHE_MB = 1_048_576;
+
+/**
+ * Parse a stored or operator-supplied budget in megabytes.
+ *
+ * One parser for both the write path (validation) and the read path (a
+ * defensive re-parse of a row that could have been written by hand or restored
+ * from a backup) — the same belt-and-braces shape the AT Protocol service URL
+ * uses. `0` is valid and means "don't cache remote media at all".
+ */
+export function parseFediCacheMb(raw: string | null | undefined): number | null {
+  if (raw === null || raw === undefined) return null;
+  const t = String(raw).trim();
+  // Plain decimal digits only. Number() would happily accept "1e3", "0x400" and
+  // "+5" — all of which mean something, none of which anyone typed on purpose
+  // into a settings field, and each of which round-trips back as a different
+  // string than was stored.
+  if (!/^\d+$/.test(t)) return null;
+  const n = Number(t);
+  return Number.isInteger(n) && n <= MAX_FEDI_CACHE_MB ? n : null;
+}
+
+// Mirrors the uploads-dir cache: the trim sweep and the storage panel both ask
+// for this, and a database round-trip per cached image would be absurd.
+const BUDGET_CACHE_MS = 60_000;
+let budgetCache: { at: number; bytes: number } | null = null;
+
+/** Drop the cached budget — call after writing the setting. */
+export function invalidateFediCacheBudgetCache(): void {
+  budgetCache = null;
+}
+
+/**
+ * The remote-media cache budget in bytes.
+ *
+ * Precedence matches every other storage setting: database row → environment →
+ * built-in default. Never throws: a bad row falls through rather than taking the
+ * trim sweep or the storage panel down with it.
+ */
+export async function fediCacheBudgetBytes(): Promise<number> {
+  if (budgetCache && Date.now() - budgetCache.at < BUDGET_CACHE_MS) return budgetCache.bytes;
+
+  let mb = parseFediCacheMb(process.env.FEDIHOME_FEDI_CACHE_MB) ?? DEFAULT_FEDI_CACHE_MB;
+  try {
+    const { prisma } = await import("./db");
+    const row = await prisma.siteSetting.findUnique({ where: { key: FEDI_CACHE_MB_KEY } });
+    const parsed = parseFediCacheMb(row?.value);
+    if (parsed !== null) mb = parsed;
+  } catch {
+    /* env or built-in default */
+  }
+
+  const bytes = mb * 1024 * 1024;
+  budgetCache = { at: Date.now(), bytes };
+  return bytes;
+}
+
+/** False when the operator has set the budget to 0 — cache nothing. */
+export async function remoteMediaCachingEnabled(): Promise<boolean> {
+  return (await fediCacheBudgetBytes()) > 0;
 }

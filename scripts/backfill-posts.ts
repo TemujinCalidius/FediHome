@@ -7,6 +7,8 @@
  * Default: 48 hours
  */
 import { PrismaClient } from "../src/generated/prisma/client";
+import { guardedFetch } from "../src/lib/safe-fetch";
+import { assertPublicHost } from "../src/lib/url-guard";
 import { PrismaPg } from "@prisma/adapter-pg";
 import * as crypto from "node:crypto";
 
@@ -45,7 +47,13 @@ async function signedGet(url) {
     `signature="${signature}"`,
   ].join(",");
 
+  // The signature is bound to THIS target (it covers (request-target) and host),
+  // so this one cannot follow redirects and re-sign the way guardedFetch does.
+  // Guarded up front and pinned to no redirects instead (#476): a 3xx here is a
+  // failure rather than something to chase.
+  if (!(await assertPublicHost(url))) throw new Error(`refusing non-public host: ${url}`);
   const res = await fetch(url, {
+    redirect: "manual",
     headers: {
       Accept: "application/activity+json",
       Date: date,
@@ -60,9 +68,11 @@ async function signedGet(url) {
 
 async function fetchOutboxPage(url) {
   // Try unsigned first, fall back to signed
-  let res = await fetch(url, {
-    headers: { Accept: "application/activity+json" },
-    signal: AbortSignal.timeout(10000),
+  let res = await guardedFetch(url, {
+    crossOrigin: true,
+    label: "backfill outbox page",
+    timeoutMs: 10000,
+    init: { headers: { Accept: "application/activity+json" } },
   });
 
   if (res.status === 401 || res.status === 403) {
@@ -76,9 +86,11 @@ async function fetchOutboxPage(url) {
 async function backfillAccount(f, cutoffDate) {
   try {
     // Fetch actor to get outbox URL
-    let actorRes = await fetch(f.actorUri, {
-      headers: { Accept: "application/activity+json" },
-      signal: AbortSignal.timeout(10000),
+    let actorRes = await guardedFetch(f.actorUri, {
+      crossOrigin: true,
+      label: "backfill actor",
+      timeoutMs: 10000,
+      init: { headers: { Accept: "application/activity+json" } },
     });
 
     if (actorRes.status === 401 || actorRes.status === 403) {

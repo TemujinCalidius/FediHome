@@ -8,6 +8,12 @@ const OPTIONS: sanitize.IOptions = {
     "h1", "h2", "h3", "h4", "h5", "h6",
     "ul", "ol", "li",
     "code", "pre", "blockquote",
+    // `hr` (#481): marked renders `---` as <hr>, and every publishing path pairs
+    // marked with this allowlist — so the commonest divider in hand-written
+    // markdown was stripped after rendering, in article bodies and in imports.
+    // It reads as a theme choice rather than a bug, which is why it lasted.
+    // Void element, no attributes, no scripting surface.
+    "hr",
     "table", "thead", "tbody", "tr", "th", "td",
     "img", "span", "div",
   ],

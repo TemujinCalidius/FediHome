@@ -1,8 +1,8 @@
 import { notFound } from "next/navigation";
+import { renderMarkdownToSafeHtml } from "@/lib/markdown";
 import Image from "next/image";
 import Link from "next/link";
 import { prisma } from "@/lib/db";
-import { marked } from "marked";
 import { cookies } from "next/headers";
 import { verifyAdminSession } from "@/lib/auth";
 import { postOgImage, postOgDescription } from "@/lib/og";
@@ -338,7 +338,7 @@ export default async function PostPage({
         className="prose-sl text-gray-300 leading-relaxed [&_a]:text-accent-400 [&_a:hover]:text-accent-300 [&_a]:underline [&_p]:mb-4 [&_h2]:font-display [&_h2]:text-white [&_h2]:text-xl [&_h2]:mt-8 [&_h2]:mb-3 [&_h3]:font-display [&_h3]:text-white [&_h3]:text-lg [&_h3]:mt-6 [&_h3]:mb-2 [&_ul]:list-disc [&_ul]:ml-5 [&_ul]:mb-4 [&_ol]:list-decimal [&_ol]:ml-5 [&_ol]:mb-4 [&_li]:mb-1 [&_blockquote]:border-l-4 [&_blockquote]:border-accent-400/30 [&_blockquote]:pl-4 [&_blockquote]:italic [&_blockquote]:text-gray-400 [&_code]:bg-surface-800 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:rounded [&_code]:text-accent-300 [&_code]:text-sm [&_strong]:text-white"
         dangerouslySetInnerHTML={{
           __html: linkHashtags(
-            post.contentHtml ?? sanitizeHtml(marked.parse(post.content) as string)
+            post.contentHtml ?? renderMarkdownToSafeHtml(post.content)
           ),
         }}
       />

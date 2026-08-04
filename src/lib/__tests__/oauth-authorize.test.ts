@@ -55,7 +55,9 @@ describe("GET /api/oauth/authorize — validation & rendering", () => {
   it("error page for an unknown client (no redirect)", async () => {
     const res = await GET(getReq({ ...VALID, client_id: "evil" }));
     expect(res.headers.get("content-type")).toMatch(/text\/html/);
-    expect(await res.text()).toContain("Unknown application");
+    // The message now names the constraint rather than implying a malformed
+    // client_id (#486) — this instance only accepts its own apps.
+    expect(await res.text()).toContain("registered with this instance");
   });
 
   it("error page for an unregistered redirect URI", async () => {
@@ -129,7 +131,7 @@ describe("POST /api/oauth/authorize — consent decision", () => {
     verifyOrigin.mockReturnValue(true);
     verifyAdmin.mockResolvedValue(true);
     const html = await (await POST(postReq({ ...VALID, client_id: "evil", decision: "approve" }))).text();
-    expect(html).toContain("Unknown application");
+    expect(html).toContain("registered with this instance");
     expect(prisma.authorizationCode.create).not.toHaveBeenCalled();
   });
 });

@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { resolveClient } from "@/lib/oauth-clients";
 import crypto from "crypto";
 import { verifyAdmin, verifyOrigin, hashToken } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { rateLimitKey } from "@/lib/client-ip";
 import {
-  getClient,
   validateRedirectUri,
   sanitizeScope,
   isValidCodeChallenge,
@@ -70,11 +70,28 @@ function readParams(get: (k: string) => string | null): AuthzParams {
  * error string. `redirectValidated` says whether redirect_uri is trusted (so the
  * caller knows an error page is mandatory vs. a redirect would be safe).
  */
-function validate(
+async function validate(
   p: AuthzParams
-): { ok: true; client: OAuthClient; scope: string } | { ok: false; error: string } {
-  const client = getClient(p.clientId);
-  if (!client) return { ok: false, error: "Unknown application (client_id)." };
+): Promise<{ ok: true; client: OAuthClient; scope: string } | { ok: false; error: string }> {
+  // resolveClient, not getClient (#366): first-party ids resolve with no query,
+  // and only an id that is neither first-party nor cached-as-missing reaches the
+  // database.
+  const client = await resolveClient(p.clientId);
+  if (!client) {
+    // Name the actual constraint (#486). The site advertises the IndieAuth
+    // discovery contract on every page — authorization_endpoint, token_endpoint,
+    // indieauth-metadata — so a third-party client finds these endpoints,
+    // follows the spec exactly, and lands here. "Unknown application" reads as a
+    // broken site, and the operator gets a bug report with nothing in their logs
+    // or admin panel to explain it. Say what is true and what to do instead.
+    return {
+      ok: false,
+      error:
+        "This app isn't registered with this instance. If you own this site, you can " +
+        "register it in Admin → Connected apps — you'll need its client ID and redirect " +
+        "URI — or generate a scoped token by hand and paste it into the app instead.",
+    };
+  }
   if (!validateRedirectUri(client, p.redirectUri)) {
     return { ok: false, error: "The redirect URI is not registered for this application." };
   }
@@ -224,7 +241,7 @@ function returnToApp(target: string, label: string): NextResponse {
 
 export async function GET(req: NextRequest) {
   const p = readParams((k) => req.nextUrl.searchParams.get(k));
-  const v = validate(p);
+  const v = await validate(p);
   if (!v.ok) return errorPage(v.error);
 
   if (!(await verifyAdmin(req))) {
@@ -257,7 +274,7 @@ export async function POST(req: NextRequest) {
   });
   const decision = form.get("decision");
 
-  const v = validate(p);
+  const v = await validate(p);
   if (!v.ok) return errorPage(v.error);
 
   // Deny → hand an OAuth error back to the app (redirect URI is validated now).

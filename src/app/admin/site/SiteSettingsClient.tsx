@@ -62,6 +62,7 @@ export default function SiteSettingsClient({
 }) {
   const [cfg, setCfg] = useState<RuntimeSiteConfig>(effective);
   const [saving, setSaving] = useState(false);
+  const [diagCopied, setDiagCopied] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [hasOverrides, setHasOverrides] = useState(Object.keys(overrides).length > 0);
   // Live analytics-embed status (#288) — refreshed from each save response.
@@ -345,6 +346,19 @@ export default function SiteSettingsClient({
     setAccentHex(s ?? themeOwnAccent(id));
   };
 
+  /** Fetch the support bundle and put it on the clipboard (#395). */
+  async function copyDiagnostics() {
+    try {
+      const res = await fetch("/api/admin/diagnostics");
+      if (!res.ok) throw new Error("failed");
+      await navigator.clipboard.writeText(await res.text());
+      setDiagCopied(true);
+      setTimeout(() => setDiagCopied(false), 2000);
+    } catch {
+      setResult({ ok: false, msg: "Couldn't build the support bundle." });
+    }
+  }
+
   async function post(
     settings: Record<string, string | null>,
     acknowledgeEphemeral = false,
@@ -462,9 +476,12 @@ export default function SiteSettingsClient({
       "sidebar.side": cfg.sidebar.side,
       "sidebar.blocks": sidebarText,
       "storage.uploadsDir": cfg.storage.uploadsDir,
+      "storage.fediCacheMb": String(cfg.storage.fediCacheMb),
       "security.adminSessionTtlDays": String(cfg.security.adminSessionTtlDays),
       "security.appTokenTtlDays": String(cfg.security.appTokenTtlDays),
       "contact.email": cfg.contact.email,
+      "about.heading": cfg.about.heading,
+      "about.markdown": cfg.about.markdown,
       "podcast.title": cfg.podcast.title,
       "podcast.author": cfg.podcast.author,
       "podcast.description": cfg.podcast.description,
@@ -497,8 +514,9 @@ export default function SiteSettingsClient({
         "footer.badgeAlt", "footer.fundingUrl", "footer.fundingLabel",
         "download.macos.enabled", "download.macos.releaseUrl", "download.macos.appStoreUrl",
         "theme.id", "layout.feed", "layout.header", "layout.footer", "layout.shell",
-        "sidebar.side", "sidebar.blocks", "storage.uploadsDir",
+        "sidebar.side", "sidebar.blocks", "storage.uploadsDir", "storage.fediCacheMb",
         "security.adminSessionTtlDays", "security.appTokenTtlDays", "contact.email",
+        "about.heading", "about.markdown",
         "podcast.title", "podcast.author", "podcast.description", "podcast.email", "podcast.image",
         "categories.photos", "categories.videos", "categories.audio",
         "analytics.siteId", "analytics.embedId",
@@ -667,6 +685,67 @@ export default function SiteSettingsClient({
               )}
             </div>
           )}
+        </>)}
+
+        {section("About page", <>
+          <p className="text-xs text-gray-600 m-0">
+            The <code>/about</code> page. Written in Markdown — headings, links, lists,
+            <code>---</code> for a divider. Leave both blank to use the built-in text, which
+            includes your bio and follows your Fediverse address if it ever changes.
+          </p>
+          {text("Heading", cfg.about.heading, (v) => set({ about: { ...cfg.about, heading: v } }), "About")}
+          <label className="flex flex-col gap-1 text-xs text-gray-400">
+            <span>Page content</span>
+            <textarea
+              value={cfg.about.markdown}
+              onChange={(e) => set({ about: { ...cfg.about, markdown: e.target.value } })}
+              rows={14}
+              placeholder="Leave blank for the built-in text."
+              className="bg-surface-800 border border-surface-700 rounded-md px-2 py-1.5 text-sm text-white font-mono leading-relaxed"
+            />
+            <span className="text-gray-600">
+              Your contact details are added underneath automatically — you don&apos;t need to
+              repeat them here.
+            </span>
+          </label>
+        </>)}
+
+        {section("Support bundle", <>
+          <p className="text-xs text-gray-600 m-0">
+            A plain-text summary of this instance — version, install shape, whether the
+            scheduler is running, disk space, which integrations are set up. Useful to paste
+            into a bug report when something isn&apos;t working.
+          </p>
+          <p className="text-xs text-gray-600 m-0">
+            It contains <strong>no passwords, tokens or keys</strong>. Environment variables are
+            listed by name with whether they&apos;re set, never by value. Nothing is sent
+            anywhere — you get the text and decide what to do with it.
+          </p>
+          <div className="flex items-center gap-3">
+            <button type="button" onClick={copyDiagnostics} className="btn-outlined text-xs !py-1.5">
+              {diagCopied ? "Copied ✓" : "Copy support bundle"}
+            </button>
+            <a href="/api/admin/diagnostics" download="fedihome-support.txt" className="text-xs text-gray-400 hover:text-white">
+              Download
+            </a>
+          </div>
+        </>)}
+
+        {section("Export your content", <>
+          <p className="text-xs text-gray-600 m-0">
+            Everything you&apos;ve published — posts, photos, videos, audio, your own Fediverse
+            posts and approved comments — as one file, with the original text and all the
+            metadata. No shell, no database tools.
+          </p>
+          <p className="text-xs text-gray-600 m-0">
+            It streams as it&apos;s built, so a large site won&apos;t run your server out of
+            memory, and a partial download is still readable up to the last complete line.
+            Your uploaded files aren&apos;t in it — they&apos;re already on your disk — but every
+            reference to them is, so an archive can be put back together.
+          </p>
+          <a href="/api/admin/export" className="btn-outlined text-xs !py-1.5 self-start">
+            Download export
+          </a>
         </>)}
 
         {section("Your profile", <>
@@ -1064,6 +1143,23 @@ export default function SiteSettingsClient({
               one failed. In Docker we also check it&apos;s on a mounted volume: a directory
               inside the container is deleted on the next rebuild, and you wouldn&apos;t find
               out until then.
+            </span>
+          </label>
+          <label className="flex flex-col gap-1 text-xs text-gray-400">
+            <span>Cache for other people&apos;s media (MB)</span>
+            <input
+              type="number"
+              min={0}
+              value={cfg.storage.fediCacheMb}
+              onChange={(e) => setStorage({ fediCacheMb: Number(e.target.value) })}
+              className="bg-surface-800 border border-surface-700 rounded-md px-2 py-1.5 text-sm text-white font-mono"
+            />
+            <span className="text-gray-600">
+              Images and video from posts in your feed are copied here so they load fast and
+              don&apos;t leak your visitors&apos; IP addresses to other servers. When it goes over
+              budget the oldest files are deleted. <strong>0</strong> turns caching off entirely —
+              media then loads from the original server. This shares the disk with your own
+              uploads, which are never touched by this.
             </span>
           </label>
           <div className="rounded-lg border border-surface-700 p-3 flex flex-col gap-1.5">

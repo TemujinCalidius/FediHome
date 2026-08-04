@@ -65,16 +65,16 @@ is narrowed:
 
 - If the alert points at `src/lib/safe-fetch.ts`, it is the known one. Dismiss as
   a false positive.
-- If it points **anywhere else in `src/`**, treat it as real. There is exactly one
-  `fetch()` on a remote-controlled URL in the application, and it is that one. Any
-  other is either a new call site that skipped `guardedFetch` — the bug #433
-  existed to fix, across eight files — or a first-party host that has become
-  remote-controlled.
-- The one-chokepoint guarantee is about `src/`, **not** `scripts/`. The one-off
-  maintenance scripts still call `fetch` directly on remote-controlled URLs and
-  are not covered by `ssrf-call-sites.test.ts`. They are operator-run rather than
-  reachable by a stranger, which is why they are a lower priority and not a
-  quietly-broken promise — but do not read a clean scan as covering them.
+- If it points **anywhere else**, treat it as real. There is exactly one `fetch()`
+  on a remote-controlled URL in the tree, and it is that one. Any other is either
+  a new call site that skipped `guardedFetch` — the bug #433 existed to fix,
+  across eight files — or a first-party host that has become remote-controlled.
+- That guarantee now covers `scripts/` as well as `src/` (#476). It did not
+  before: the one-off maintenance scripts called `fetch` directly on
+  remote-controlled URLs and `ssrf-call-sites.test.ts` stopped at the application
+  folder, so a clean scan said nothing about them. Both halves are fixed —
+  the scripts go through the guard, and the test now fails if a script that
+  fetches appears in neither of its lists.
 
 So the rule still does its job on the case that matters. What it cannot do is
 stay silent on the chokepoint itself.
