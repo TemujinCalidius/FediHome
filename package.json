@@ -21,7 +21,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@atproto/api": "^0.20.36",
+    "@atproto/api": "^0.20.37",
     "@fedify/fedify": "^2.3.4",
     "@fedify/next": "^2.3.4",
     "@prisma/adapter-pg": "^7.9.1",
@@ -33,7 +33,7 @@
     "fast-xml-parser": "^5.10.1",
     "marked": "^18.0.7",
     "music-metadata": "^11.14.0",
-    "next": "^16.2.12",
+    "next": "^16.3.0",
     "next-mdx-remote": "^6.0.0",
     "nodemailer": "^9.0.1",
     "pg": "^8.21.0",
@@ -45,15 +45,15 @@
     "remark-gfm": "^4.0.1",
     "sanitize-html": "^2.17.6",
     "sharp": "^0.35.3",
-    "undici": "^6.28.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^6.0.3",
+    "undici": "^6.28.0",
     "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.6",
     "@types/nodemailer": "^8.0.1",
-    "@types/pg": "^8.20.2",
+    "@types/pg": "^8.20.3",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@types/sanitize-html": "^2.16.1",
@@ -61,8 +61,8 @@
     "@typescript-eslint/parser": "8.61.1",
     "@vitest/coverage-v8": "^4.1.10",
     "eslint": "^10.8.0",
-    "eslint-config-next": "^16.2.12",
-    "tsx": "^4.23.1",
+    "eslint-config-next": "^16.3.0",
+    "tsx": "^4.23.5",
     "vitest": "^4.1.10"
   },
   "overrides": {
