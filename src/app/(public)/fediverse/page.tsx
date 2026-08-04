@@ -32,10 +32,15 @@ export default async function FediversePage() {
     // expanded, or a profile they opened (#460). A thread ROOT has no
     // inReplyTo, so without it one curious click publishes a stranger's post
     // here, under the owner's domain, permanently.
+    //
+    // discoveredVia excludes Explore content for the identical reason (#386):
+    // a post the owner never followed, never asked for and has not read is the
+    // last thing that should appear on the page they show the world.
     where: {
       inReplyTo: null,
       boostedBy: null,
       viaLookup: false,
+      discoveredVia: null,
       ...(await blockedPostFilter()),
     },
     orderBy: { publishedAt: "desc" },

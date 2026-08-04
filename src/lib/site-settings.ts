@@ -1,5 +1,8 @@
 import { prisma } from "./db";
 import { MAX_FEDI_CACHE_MB, DEFAULT_FEDI_CACHE_MB } from "./uploads-dir";
+import {
+  MAX_EXPLORE_LOOKBACK_DAYS, MAX_EXPLORE_STORED, DEFAULT_EXPLORE_MAX_STORED,
+} from "./explore-limits";
 import { siteConfig } from "@/../site.config";
 import { isThemeId, isFeedVariant, isHeaderVariant, isFooterVariant, isShellVariant, resolveSidebar } from "./themes";
 import { parseCategoryList, resolveCategoryList, MAX_CATEGORIES } from "./categories";
@@ -42,6 +45,10 @@ export const SITE_CONFIG_FIELDS: Record<string, FieldType> = {
   "feed.public": "bool",
   "feed.publicTitle": "text",
   "feed.hideSocialGraph": "bool",
+  "explore.enabled": "bool", //     Explore feed, off by default (#386)
+  "explore.replyParents": "bool", // resolve the posts your follows replied to
+  "explore.lookbackDays": "int", //  how far back to look for unresolved parents
+  "explore.maxStored": "int", //     cap on stored reply-parents; 0 = don't cap
   "bluesky.domainHandle": "bool",
   "nav.journal": "bool",
   "nav.articles": "bool",
@@ -95,6 +102,22 @@ export interface RuntimeSiteConfig {
   publicFeedTitle: string;
   hideSocialGraph: boolean;
   /**
+   * The Explore feed (#386) — posts from people the owner does NOT follow,
+   * surfaced because someone they do follow boosted or replied to them.
+   *
+   * Off by default and deliberately not opt-out: turning it on stores other
+   * people's posts and media on the owner's disk, under their domain, so it is
+   * not a thing to acquire by upgrading.
+   */
+  explore: {
+    enabled: boolean;
+    /** Fetch the posts your follows replied to. Boosts need no fetching. */
+    replyParents: boolean;
+    lookbackDays: number;
+    /** Cap on stored reply-parents; 0 = uncapped (retention still applies). */
+    maxStored: number;
+  };
+  /**
    * Serve `/.well-known/atproto-did`, so this domain can be used as the owner's
    * Bluesky handle (#448). Off by default — serving it claims an identity, and
    * that must be an explicit choice rather than a side effect of configuring
@@ -142,6 +165,14 @@ export function siteConfigDefaults(): RuntimeSiteConfig {
     publicFeed: siteConfig.publicFeed,
     publicFeedTitle: siteConfig.publicFeedTitle,
     hideSocialGraph: siteConfig.hideSocialGraph,
+    explore: {
+      enabled: false,
+      replyParents: true,
+      // A week. Long enough that a weekly-active instance still finds parents,
+      // short enough that a dead one doesn't re-scan months of replies forever.
+      lookbackDays: 7,
+      maxStored: DEFAULT_EXPLORE_MAX_STORED,
+    },
     blueskyDomainHandle: false,
     nav: { ...siteConfig.nav },
     footer: { ...siteConfig.footer },
@@ -224,6 +255,12 @@ export async function getRuntimeSiteConfig(): Promise<RuntimeSiteConfig> {
       publicFeed: boolOverride(o["feed.public"], base.publicFeed),
       publicFeedTitle: textOverride(o["feed.publicTitle"], base.publicFeedTitle),
       hideSocialGraph: boolOverride(o["feed.hideSocialGraph"], base.hideSocialGraph),
+      explore: {
+        enabled: boolOverride(o["explore.enabled"], base.explore.enabled),
+        replyParents: boolOverride(o["explore.replyParents"], base.explore.replyParents),
+        lookbackDays: intOverride(o["explore.lookbackDays"], base.explore.lookbackDays),
+        maxStored: intOverride(o["explore.maxStored"], base.explore.maxStored),
+      },
       blueskyDomainHandle: boolOverride(o["bluesky.domainHandle"], base.blueskyDomainHandle),
       nav: {
         showJournal: boolOverride(o["nav.journal"], base.nav.showJournal),
@@ -337,6 +374,17 @@ export function validateSiteConfigValue(key: string, value: string): string | nu
     // the 2GB default's obvious next step up (#364).
     if (key === "storage.fediCacheMb") {
       return Number.isInteger(n) && n >= 0 && n <= MAX_FEDI_CACHE_MB ? String(n) : null;
+    }
+    // Explore's two numbers are also not day counts in the ~10yr sense (#386).
+    // The lookback is bounded far tighter than the generic cap — a scan reaching
+    // back years would burn the per-run fetch budget on replies whose parents
+    // nobody is going to look at — and maxStored is a ROW count, so the shared
+    // cap would be an arbitrary limit on an unrelated quantity.
+    if (key === "explore.lookbackDays") {
+      return Number.isInteger(n) && n >= 1 && n <= MAX_EXPLORE_LOOKBACK_DAYS ? String(n) : null;
+    }
+    if (key === "explore.maxStored") {
+      return Number.isInteger(n) && n >= 0 && n <= MAX_EXPLORE_STORED ? String(n) : null;
     }
     return Number.isInteger(n) && n >= 0 && n <= 3650 ? String(n) : null; // days, ~10yr cap
   }

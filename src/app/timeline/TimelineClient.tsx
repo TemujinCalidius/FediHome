@@ -84,6 +84,12 @@ interface FediPostItem {
   isOutgoing?: boolean;
   likedByMe?: boolean;
   boostedByMe?: boolean;
+  /**
+   * Only on Explore rows (#386): which person the owner follows surfaced this
+   * post, and how. Derived per page by /api/explore rather than stored, because
+   * it is a fact about the follow graph and that changes.
+   */
+  discoveredBy?: { how: "boosted" | "replied"; who: string | null } | null;
 }
 
 interface FediCountsState {
@@ -1824,6 +1830,7 @@ export default function TimelineClient({
   analyticsData,
   fediAddress,
   feedVariant = "cards",
+  exploreEnabled = false,
 }: {
   initialPosts: FediPostItem[];
   initialCursor: string | null;
@@ -1842,8 +1849,10 @@ export default function TimelineClient({
    * branch, never changes the existing one.
    */
   feedVariant?: "cards" | "list";
+  /** Whether to offer the Explore tab (#386). Off unless the owner turned it on. */
+  exploreEnabled?: boolean;
 }) {
-  const [tab, setTab] = useState<"feed" | "replies" | "moderation" | "followers" | "following" | "messages" | "analytics">("feed");
+  const [tab, setTab] = useState<"feed" | "explore" | "replies" | "moderation" | "followers" | "following" | "messages" | "analytics">("feed");
   const [showReplies, setShowReplies] = useState(false);
   const [showBoosts, setShowBoosts] = useState(false);
   const [posts, setPosts] = useState<FediPostItem[]>(initialPosts);
@@ -1916,6 +1925,41 @@ export default function TimelineClient({
         return next;
       });
     }
+  }, []);
+
+  // Explore tab state (#386). Its own list and cursor, never merged into
+  // `posts` — the feed's list is what the live refresh prepends to and what the
+  // "N new posts" pill counts against, and putting content nobody follows into
+  // it is the exact leak the separate route exists to prevent.
+  const [explore, setExplore] = useState<FediPostItem[] | null>(null);
+  const [exploreCursor, setExploreCursor] = useState<string | null>(null);
+  const [exploreLoading, setExploreLoading] = useState(false);
+  const [exploreError, setExploreError] = useState<string | null>(null);
+
+  const loadExplore = useCallback(async (cursor?: string | null) => {
+    setExploreLoading(true);
+    setExploreError(null);
+    try {
+      const params = new URLSearchParams();
+      if (cursor) params.set("cursor", cursor);
+      const res = await fetch(`/api/explore?${params}`);
+      if (res.ok) {
+        const data = await res.json();
+        setExplore((prev) => (cursor && prev ? [...prev, ...data.posts] : data.posts));
+        setExploreCursor(data.nextCursor);
+      } else if (res.status === 404) {
+        // Turned off between the page rendering and this fetch. Say so rather
+        // than showing an empty feed, which reads as "nobody you follow has
+        // boosted anything" and is a different problem entirely.
+        setExplore([]);
+        setExploreError("Explore is switched off in Site settings.");
+      } else {
+        setExploreError("Couldn't load Explore just now.");
+      }
+    } catch {
+      setExploreError("Couldn't load Explore just now.");
+    }
+    setExploreLoading(false);
   }, []);
 
   // Replies tab state
@@ -2118,6 +2162,16 @@ export default function TimelineClient({
     }
   }, [tab, replies, repliesLoading, loadReplies]);
 
+  // Same, for Explore (#386). Lazily on purpose: an owner who never opens the
+  // tab never pays for the query, and the tab isn't even rendered unless they
+  // turned the feature on.
+  useEffect(() => {
+    if (tab === "explore" && explore === null && !exploreLoading) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time lazy load on first open; loadExplore is memoized and guarded by the null/loading checks
+      loadExplore();
+    }
+  }, [tab, explore, exploreLoading, loadExplore]);
+
   // Live feed: refresh on focus + light polling while visible (paused while
   // hidden). The service worker also pings us instantly when a push arrives.
   useEffect(() => {
@@ -2158,11 +2212,16 @@ export default function TimelineClient({
         </div>
       )}
 
-      {/* Tabs — horizontally scrollable so all 7 stay reachable on narrow
+      {/* Tabs — horizontally scrollable so they all stay reachable on narrow
           phones instead of being clipped off-screen (#147). Mirrors the
-          overflow-x-auto pattern used elsewhere in this file. */}
+          overflow-x-auto pattern used elsewhere in this file. Explore sits
+          second, next to the feed it complements, and only when it's on (#386). */}
       <div className="flex gap-2 mb-6 overflow-x-auto">
-        {(["feed", "replies", "messages", "moderation", "followers", "following", "analytics"] as const).map((t) => (
+        {([
+          "feed",
+          ...(exploreEnabled ? (["explore"] as const) : []),
+          "replies", "messages", "moderation", "followers", "following", "analytics",
+        ] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -2285,6 +2344,73 @@ export default function TimelineClient({
               <p className="text-center text-xs text-gray-600 pt-2">
                 You've reached the end
               </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Explore (#386) — posts by people I don't follow, surfaced because
+          someone I do follow boosted or replied to them. */}
+      {tab === "explore" && (
+        <div>
+          <p className="text-xs text-gray-500 mb-4 leading-relaxed">
+            Posts from people you don&apos;t follow, surfaced because someone you{" "}
+            <em>do</em> follow boosted them or replied to them. Nothing here is
+            chosen by an algorithm — the people you picked are the filter.
+          </p>
+
+          {exploreError && (
+            <div className="glass-card p-4 mb-4 text-sm text-amber-400/90">{exploreError}</div>
+          )}
+
+          <div className="space-y-4">
+            {explore === null || (exploreLoading && explore.length === 0) ? (
+              <div className="glass-card p-8 text-center">
+                <p className="text-gray-500">Loading…</p>
+              </div>
+            ) : explore.length === 0 && !exploreError ? (
+              <div className="glass-card p-8 text-center">
+                <p className="text-gray-500">
+                  Nothing yet. Explore fills up as the people you follow boost and
+                  reply to others — give it a little time, and follow a few more
+                  accounts if it stays empty.
+                </p>
+              </div>
+            ) : (
+              explore.map((post) => (
+                <div key={post.id}>
+                  {post.discoveredBy?.who && (
+                    <p className="text-[11px] text-gray-600 mb-1 px-1">
+                      {post.discoveredBy.who}{" "}
+                      {post.discoveredBy.how === "boosted" ? "boosted this" : "replied to this"}
+                    </p>
+                  )}
+                  <PostCard
+                    post={post}
+                    replyTo={replyTo}
+                    setReplyTo={setReplyTo}
+                    replyContent={replyContent}
+                    setReplyContent={setReplyContent}
+                    allPosts={explore}
+                    onViewThread={handleViewThread}
+                    counts={postCounts.get(post.id)}
+                    onLoadCounts={handleLoadCounts}
+                    compact={feedVariant === "list"}
+                  />
+                </div>
+              ))
+            )}
+
+            {exploreCursor && (
+              <div className="text-center pt-2">
+                <button
+                  onClick={() => loadExplore(exploreCursor)}
+                  disabled={exploreLoading}
+                  className="px-6 py-2 text-sm text-accent-400 border border-accent-400/30 rounded-lg hover:bg-accent-400/10 transition-colors disabled:opacity-50"
+                >
+                  {exploreLoading ? "Loading..." : "Load more"}
+                </button>
+              </div>
             )}
           </div>
         </div>
