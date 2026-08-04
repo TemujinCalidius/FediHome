@@ -114,6 +114,15 @@ server {
 }
 ```
 
+> **Rate limiting behind this proxy.** Set `TRUSTED_PROXY=true` in `.env.local` so the
+> limiters see your visitors rather than treating them all as one client. Leave
+> `TRUSTED_PROXY_HEADER` unset — it defaults to `x-real-ip`, which is the header this
+> config sets by overwrite (`$remote_addr`). Do **not** point it at `x-forwarded-for`
+> here: `$proxy_add_x_forwarded_for` *appends*, so the first entry is whatever the
+> visitor sent. If you also run Cloudflare in front of nginx, set
+> `TRUSTED_PROXY_HEADER=cf-connecting-ip` — otherwise every visitor keys to a Cloudflare
+> edge address. See [configuration.md](configuration.md#which-header-should-i-trust).
+
 Enable the site and get an SSL certificate:
 
 ```bash
