@@ -9,8 +9,8 @@ import TimelineLogin from "../../timeline/TimelineLogin";
 import SettingsClient from "./SettingsClient";
 
 export const metadata = {
-  title: "Instance settings",
-  description: "Admin-editable instance configuration.",
+  title: "Background jobs",
+  description: "How often FediHome publishes, syncs and tidies up.",
 };
 
 export default async function AdminSettingsPage() {
