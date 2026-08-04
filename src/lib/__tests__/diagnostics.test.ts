@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 
 const ROOT = join(__dirname, "..", "..", "..");
@@ -253,5 +254,61 @@ describe("the log tail carries its own rule with it (#490)", () => {
     // env-derived set is a no-op on an admin-panel-configured instance.
     expect(src).toContain("await resolveSecrets()");
     expect(src).not.toMatch(/currentSecrets\(\)/);
+  });
+});
+
+/**
+ * #511. The bundle lists the environment variables FediHome reads, by name. One
+ * of them was `TRUST_PROXY`, and every actual reader uses `TRUSTED_PROXY` —
+ * `client-ip.ts` for the rate-limit key and `auth.ts` for the same-origin check.
+ *
+ * So the bundle reported `TRUST_PROXY   not set` on every instance, including
+ * ones correctly configured with `TRUSTED_PROXY=true`. That is worse than
+ * useless in the one document an operator pastes into a bug report: it invites
+ * both of us to chase a variable that isn't the one in play.
+ *
+ * Nothing pinned the list to reality — the existing tests here check that names
+ * appear and values never do, which a typo passes happily. Same structural-test
+ * idiom as `settings-screen-coverage`, `ssrf-call-sites` and `admin-map`: state
+ * the property once, and a name nobody reads fails on the next run.
+ */
+describe("#511 — every name in the bundle is a variable something actually reads", () => {
+  const diag = read("src/lib/diagnostics.ts");
+  const names = [...diag.matchAll(/^\s*"([A-Z][A-Z0-9_]*)",$/gm)].map((m) => m[1]);
+
+  /**
+   * Read by the runtime rather than by `src/` — `NODE_ENV` and `PORT` are set
+   * for Node and Next, not looked up by our code, but an operator debugging a
+   * deployment wants to see them.
+   */
+  const RUNTIME_OWNED = new Set(["NODE_ENV", "PORT"]);
+
+  it("found the list at all", () => {
+    // Guards the regex above: if the array's formatting changes this silently
+    // matches nothing, and every assertion below passes vacuously.
+    expect(names.length).toBeGreaterThan(15);
+    expect(names).toContain("DATABASE_URL");
+  });
+
+  it.each(names.filter((n) => !RUNTIME_OWNED.has(n)))(
+    "%s is read somewhere in src/",
+    (name) => {
+      // `git grep` rather than a manual walk: it honours .gitignore, so the
+      // generated Prisma client and .next can't produce a false positive.
+      const hits = execFileSync(
+        "git",
+        // site.config.ts is at the repo ROOT, not under src/ — it reads the
+        // TTL vars, and scoping to src/scripts alone reports them as dead.
+        ["grep", "-l", "--", `process.env.${name}`, "src", "scripts", "site.config.ts"],
+        { encoding: "utf-8", cwd: process.cwd() },
+      ).trim();
+      expect(hits, `${name} is listed in the support bundle but nothing reads it`).not.toBe("");
+    },
+  );
+
+  it("names TRUSTED_PROXY, not TRUST_PROXY", () => {
+    // The specific regression, stated on its own so it reads as one.
+    expect(names).toContain("TRUSTED_PROXY");
+    expect(names).not.toContain("TRUST_PROXY");
   });
 });
