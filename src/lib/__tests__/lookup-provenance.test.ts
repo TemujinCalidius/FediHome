@@ -127,12 +127,24 @@ describe("#460 — the thread-context map covers everything it ingests", () => {
 describe("#460 — the backfill runs once and is biased toward hiding", () => {
   beforeEach(() => vi.resetModules());
 
-  const load = async (existing: unknown, updateMany = vi.fn().mockResolvedValue({ count: 3 })) => {
+  /**
+   * `marked` is what `FediPost.findFirst({ where: { viaLookup: true } })` returns —
+   * i.e. whether the column still holds the work the marker claims (#516).
+   * Defaults to "yes", which is the ordinary state.
+   */
+  const load = async (
+    existing: unknown,
+    updateMany = vi.fn().mockResolvedValue({ count: 3 }),
+    marked: unknown = { id: "1" },
+  ) => {
     const siteSetting = { findUnique: vi.fn().mockResolvedValue(existing), upsert: vi.fn() };
     const fediFollowing = { findMany: vi.fn().mockResolvedValue([{ actorUri: "https://a.example/u/x" }]) };
-    vi.doMock("@/lib/db", () => ({ prisma: { siteSetting, fediFollowing, fediPost: { updateMany } } }));
+    const findFirst = vi.fn().mockResolvedValue(marked);
+    vi.doMock("@/lib/db", () => ({
+      prisma: { siteSetting, fediFollowing, fediPost: { updateMany, findFirst } },
+    }));
     const mod = await import("@/lib/lookup-backfill");
-    return { mod, siteSetting, updateMany };
+    return { mod, siteSetting, updateMany, findFirst };
   };
 
   it("does nothing when the setting already records a run", async () => {
@@ -170,5 +182,73 @@ describe("#460 — the backfill runs once and is biased toward hiding", () => {
     expect(siteSetting.upsert).toHaveBeenCalledWith(
       expect.objectContaining({ where: { key: "migrations.viaLookupBackfill" } }),
     );
+  });
+
+  /**
+   * #516. The marker records "the backfill ran"; what matters is "the column is
+   * populated". Those are the same fact until a rollback drops the column and a
+   * roll-forward recreates it empty — after which every previously-hidden stray
+   * matches the public feed query again, silently, because the marker survived.
+   */
+  describe("the marker can outlive the column it records (#516)", () => {
+    it("re-runs when a run marked rows but nothing is marked now", async () => {
+      // Rolled back past #460, dropped the column by hand, rolled forward. The
+      // column is back and empty; the SiteSetting row was never touched.
+      const { mod, updateMany } = await load(
+        { key: "migrations.viaLookupBackfill", value: "7" },
+        undefined,
+        null,
+      );
+      expect(await mod.backfillViaLookup()).toBe(3);
+      expect(updateMany).toHaveBeenCalled();
+    });
+
+    it("rewrites the marker with the fresh count, not the stale one", async () => {
+      const { mod, siteSetting } = await load(
+        { key: "migrations.viaLookupBackfill", value: "7" },
+        undefined,
+        null,
+      );
+      await mod.backfillViaLookup();
+      expect(siteSetting.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({ update: { value: "3" } }),
+      );
+    });
+
+    it("trusts a marker recording zero, because zero rows cannot go missing", async () => {
+      // A run that marked nothing has nothing to lose, so "nothing is marked
+      // now" is the expected state rather than evidence of a dropped column.
+      // Treating it as stale would re-run the predicate on every single boot,
+      // which is the #384 failure mode this gating exists to prevent.
+      const { mod, updateMany } = await load(
+        { key: "migrations.viaLookupBackfill", value: "0" },
+        undefined,
+        null,
+      );
+      expect(await mod.backfillViaLookup()).toBeNull();
+      expect(updateMany).not.toHaveBeenCalled();
+    });
+
+    it("does not re-run merely because a marker's value is unparseable", async () => {
+      const { mod, updateMany } = await load(
+        { key: "migrations.viaLookupBackfill", value: "done" },
+        undefined,
+        null,
+      );
+      expect(await mod.backfillViaLookup()).toBeNull();
+      expect(updateMany).not.toHaveBeenCalled();
+    });
+
+    it("costs one indexed lookup on an ordinary boot, and nothing more", async () => {
+      // The gate runs at every start, so it has to stay cheap: a single
+      // findFirst that stops at the first row, and no updateMany.
+      const { mod, updateMany, findFirst } = await load({
+        key: "migrations.viaLookupBackfill",
+        value: "7",
+      });
+      expect(await mod.backfillViaLookup()).toBeNull();
+      expect(findFirst).toHaveBeenCalledTimes(1);
+      expect(updateMany).not.toHaveBeenCalled();
+    });
   });
 });
