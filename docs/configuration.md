@@ -45,6 +45,8 @@ A forwarded header is unforgeable only if the proxy directly in front of this in
 
 If you name something that isn't one of the three, nothing is trusted and every request shares a bucket — safe, but your limits stop distinguishing visitors. That mismatch, and the case where the header you named never arrives, are each logged once, so they show up in your **support bundle**.
 
+**If you don't set these, the admin login still protects itself — differently.** With no way to tell visitors apart, a per-visitor limit on the login page would be a way for a stranger to lock *you* out: their failed attempts would count as yours. So that limit is only applied when the key really does identify one visitor. Otherwise FediHome falls back to a single global limit of **20 failed logins per 5 minutes**, chosen so an honest owner never reaches it and any lockout lifts by itself within five minutes rather than lasting as long as someone keeps trying. Restarting FediHome also clears it immediately. Configuring a header above is still much better: it makes the strict per-visitor limit work, so one stranger's failures never touch your own.
+
 This is worth getting right beyond rate limiting: the same value becomes the stored `ipHash` on guest comments, and it budgets the outbound fetches FediHome makes to resolve an IndieAuth `client_id` *before* anyone has signed in.
 
 ### Optional: Site Info
