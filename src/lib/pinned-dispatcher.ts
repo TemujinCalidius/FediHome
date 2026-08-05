@@ -1,5 +1,6 @@
 import { Agent } from "undici";
 import dns from "node:dns/promises";
+import type { LookupFunction } from "node:net";
 import { isPrivateIPv4, isPrivateIPv6 } from "./url-guard";
 
 /**
@@ -19,8 +20,9 @@ import { isPrivateIPv4, isPrivateIPv6 } from "./url-guard";
  * **This is a real undici Dispatcher on purpose.** A duck-typed object with a
  * `dispatch` method is SILENTLY IGNORED by fetch — no error, the callback simply
  * never fires, and the guard looks installed while doing nothing. Verified
- * end-to-end on Node 20.20 (what the Dockerfile runs) and Node 22.22 (CI), both
- * against undici 6.28: the hook fires and the request completes.
+ * end-to-end on Node 20.20 (what the Dockerfile runs) and Node 22.22 (CI),
+ * originally against undici 6.28 and re-confirmed at 8.10 (#506): the hook fires
+ * and the request completes.
  *
  * `opts.all` is **true** in practice, which decides the callback shape — the
  * array form. Getting that wrong doesn't fail loudly; it produces a bare
@@ -90,7 +92,17 @@ export function guardedLookup(
 
 export function guardedDispatcher(): Agent {
   if (agent) return agent;
-  agent = new Agent({ connect: { lookup: guardedLookup as never } });
+  // Cast to Node's own `net.LookupFunction`, which is the type undici's
+  // `connect.lookup` actually resolves to (its BuildOptions spreads
+  // net.TcpNetConnectOpts). Narrow and checkable, unlike the `as never` this
+  // replaces — that erased the signature completely, so the callback could have
+  // had any shape at all and `tsc` would have agreed (#506).
+  //
+  // A cast is still needed, and this is the honest reason: undici passes
+  // `all: true`, so the callback is handed an ARRAY, while LookupFunction names
+  // only the scalar form. `guardedLookup` handles both — it is a superset of
+  // what the type asks for, which structural typing cannot express.
+  agent = new Agent({ connect: { lookup: guardedLookup as unknown as LookupFunction } });
   return agent;
 }
 

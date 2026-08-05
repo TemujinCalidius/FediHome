@@ -5,6 +5,10 @@ export default defineConfig({
   test: {
     environment: "node",
     globals: true,
+    // Keeps `vi.stubGlobal("fetch", …)` working now that safe-fetch.ts calls
+    // undici's fetch rather than the global one (#506). See the file for what
+    // it does and does not weaken.
+    setupFiles: ["./src/test-setup.ts"],
     // Scope discovery to OUR source tree (#303). Without an `include`, Vitest
     // falls back to its default glob across the whole repo root, so any nested
     // checkout — most often a `git worktree` created inside the project folder,

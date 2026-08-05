@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { deliverActivity, verifyIncomingSignature, actorMatchesSigner, signedGet } from "@/lib/http-signatures";
 import { processAttachments, fetchLinkEmbed } from "@/lib/fedi-media";
-import { sanitizeHtml } from "@/lib/sanitize";
+import { sanitizeHtml, escapeText } from "@/lib/sanitize";
 import { assertPublicHost } from "@/lib/url-guard";
 import { sendPushToOwner } from "@/lib/push";
 import { resolveOwnedTarget } from "@/lib/notifications";
@@ -10,14 +10,13 @@ import { htmlToText } from "@/lib/html-text";
 import { getSiteUrl } from "@/lib/identity";
 import { isBlockedSender } from "@/lib/blocks";
 import { guardedFetch } from "@/lib/safe-fetch";
+import { VIA_BOOST } from "@/lib/explore";
+// The alsoKnownAs check is the security property in BOTH directions (#347),
+// so the inbound half and the outbound half share one implementation.
+import { fetchActorForMove, sameActor } from "@/lib/account-move";
 
 const ACTOR_FETCH_TIMEOUT_MS = 8000;
 const DEBUG = process.env.FEDIHOME_DEBUG === "true";
-
-/** Escape plain text for safe inclusion in HTML (Article `name` is plain text). */
-function escapeText(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
 
 /** Friendly display label for a fedi actor, e.g. "Ada" or "@ada@mastodon.social". */
 function actorLabel(info: { displayName?: string | null; username: string; domain: string }): string {
@@ -233,56 +232,6 @@ async function handleFollow(actorUri: string, activity: Record<string, unknown>)
 
 async function handleUnfollow(actorUri: string) {
   await prisma.fediFollower.delete({ where: { actorUri } }).catch(() => {});
-}
-
-/**
- * Strip trailing slashes without a regex.
- *
- * `/\/+$/` looks harmless but backtracks quadratically on a long run of slashes
- * followed by anything else — and these strings come straight out of a REMOTE
- * actor document, so a hostile server could send 100KB of slashes and burn CPU
- * in our inbox. Caught by CodeQL (js/polynomial-redos). A character scan is O(n)
- * and cannot backtrack.
- */
-function stripTrailingSlashes(s: string): string {
-  let end = s.length;
-  while (end > 0 && s.charCodeAt(end - 1) === 47 /* "/" */) end--;
-  return s.slice(0, end);
-}
-
-/** Compare actor ids the way a remote server does — exact, bar a trailing slash. */
-function sameActor(a: string, b: string): boolean {
-  return stripTrailingSlashes(a) === stripTrailingSlashes(b);
-}
-
-/**
- * Fetch an actor for Move verification, including `alsoKnownAs`.
- *
- * Uses `signedGet`, unlike `fetchActorInfo`: an instance running authorized
- * fetch (Mastodon's secure mode) answers an unsigned actor request with 401,
- * and silently failing to verify would mean silently refusing every move from
- * such a server.
- */
-async function fetchActorForMove(actorUri: string) {
-  if (!(await assertPublicHost(actorUri))) return null;
-  try {
-    const res = await signedGet(actorUri, ACTOR_FETCH_TIMEOUT_MS);
-    if (!res.ok) return null;
-    const actor = await res.json();
-    const aka = actor.alsoKnownAs;
-    return {
-      inbox: typeof actor.inbox === "string" ? actor.inbox : null,
-      username: actor.preferredUsername || "unknown",
-      domain: new URL(actorUri).hostname,
-      displayName: actor.name || null,
-      avatarUrl: actor.icon?.url || null,
-      alsoKnownAs: (Array.isArray(aka) ? aka : aka ? [aka] : []).filter(
-        (v: unknown): v is string => typeof v === "string",
-      ),
-    };
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -711,6 +660,12 @@ async function handleBoost(actorUri: string, activity: Record<string, unknown>) 
         avatarUrl: originalInfo?.avatarUrl,
         boostedBy: actorUri,
         boostedByName: info.displayName || `${info.username}@${info.domain}`,
+        // The author here may well be a stranger — the booster is who we follow.
+        // Every timeline read already hides these behind `boostedBy: null`, so
+        // this is what lets the Explore feed find them deliberately (#386)
+        // rather than by asking for "rows with a booster", which is the same set
+        // today and would stop being so the moment another signal is added.
+        discoveredVia: VIA_BOOST,
         publishedAt: new Date(), // boost time, not original post time
         embedUrl: embed?.url || null,
         embedTitle: embed?.title || null,
@@ -957,12 +912,14 @@ async function handleNote(actorUri: string, note: Record<string, unknown>) {
           ? new Date(note.published as string)
           : new Date(),
       },
-      // Promote back to feed provenance (#460). Delivery is proof this belongs
-      // in the timeline: if we saw the post first by expanding a thread, the row
-      // is marked viaLookup, and it must stop being hidden the moment it arrives
-      // for real. The create side leaves the default (false) — inbox delivery is
-      // the definition of feed provenance.
-      update: { viaLookup: false },
+      // Promote back to feed provenance (#460, #386). Delivery is proof this
+      // belongs in the timeline: if we saw the post first by expanding a thread
+      // the row is marked viaLookup, and if the Explore resolver fetched it as
+      // someone's reply-parent it is marked discoveredVia — either way it must
+      // stop being hidden the moment it arrives for real. Clearing only one of
+      // the two would leave the post stuck on Explore forever. The create side
+      // leaves both defaults — inbox delivery IS feed provenance.
+      update: { viaLookup: false, discoveredVia: null },
     });
 
     // Also record as FediInteraction if replying to one of OUR posts or replies

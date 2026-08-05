@@ -16,7 +16,20 @@ export async function GET(req: NextRequest) {
   if (!(await verifyAdmin(req))) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  const text = await collectDiagnostics();
+  // Deliberately NOT wrapped in a try/catch that returns a partial bundle. The
+  // final redaction pass (#490) is inside collectDiagnostics, and a bundle that
+  // reached this point with that pass having thrown would be one whose log tail
+  // was never checked against the saved credentials. No bundle beats a leaky one.
+  let text: string;
+  try {
+    text = await collectDiagnostics();
+  } catch (err) {
+    console.error("diagnostics: refusing to emit an unredacted bundle:", err);
+    return NextResponse.json(
+      { error: "Couldn't build the bundle safely just now — nothing was produced. Try again." },
+      { status: 500 },
+    );
+  }
   return new NextResponse(text, {
     headers: {
       "Content-Type": "text/plain; charset=utf-8",

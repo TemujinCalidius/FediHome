@@ -1,3 +1,4 @@
+import { fetch as undiciFetch } from "undici";
 import { assertPublicHost } from "./url-guard";
 import { guardedDispatcher } from "./pinned-dispatcher";
 
@@ -150,16 +151,40 @@ export async function guardedFetch(url: string, opts: GuardedFetchOptions): Prom
     }
 
     const init = typeof opts.init === "function" ? await opts.init(current) : (opts.init ?? {});
-    const res = await fetch(current, {
+    // UNDICI'S OWN `fetch`, NOT THE GLOBAL ONE, AND THAT IS LOAD-BEARING (#506).
+    //
+    // `dispatcher` is honoured only by the undici copy that BUILT it. The global
+    // `fetch` is Node's *bundled* undici; `guardedDispatcher()` is an Agent from
+    // the one in node_modules, now 8.x. The handler shapes are version-specific,
+    // so the built-in rejects that Agent outright (`UND_ERR_INVALID_ARG: invalid
+    // onRequestStart method`), taking every outbound request with it. Measured:
+    // reverting just this one call fails 24 of the 40 tests across safe-fetch,
+    // signed-fetch-redirects and pinned-dispatcher.
+    //
+    // Nothing in the type system says so: `dispatcher` needs a cast either way,
+    // and `tsc --noEmit` plus `next build` both pass while federation is broken.
+    // Taking fetch from the same import as the Agent removes the question.
+    const raw = await undiciFetch(current, {
       ...init,
       redirect: "manual", // we follow, so we can re-check and re-sign
       signal: deadline,
       // The check above and the socket below must agree about which address
       // this hostname means (#434). Without the dispatcher they are two separate
-      // DNS lookups, and the attacker owns the zone between them. `dispatcher`
-      // is undici's own extension to RequestInit, hence the cast.
+      // DNS lookups, and the attacker owns the zone between them.
       dispatcher: guardedDispatcher(),
-    } as RequestInit & { dispatcher: unknown });
+    } as Parameters<typeof undiciFetch>[1]);
+    // Undici's Response, presented as the global one. In Node the global
+    // Response IS undici's Response — from the bundled copy rather than this
+    // one — so the two are the same class from two builds, and every member any
+    // caller touches (.ok/.status/.json/.text/.headers/.body) is identical.
+    //
+    // The declared types differ in exactly two ways, both checked rather than
+    // assumed: undici's lacks `.bytes()` (nothing in src/ or scripts/ calls it),
+    // and it types `.json()` as `unknown` rather than `any`. That second one is
+    // genuinely stricter and worth adopting, but it lands on ~20 call sites that
+    // read remote JSON, so it is its own change (#513) rather than a rider on a
+    // security fix.
+    const res = raw as unknown as Response;
 
     if (res.status < 300 || res.status >= 400) return res;
 

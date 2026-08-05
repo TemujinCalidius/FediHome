@@ -58,6 +58,14 @@ export async function GET(req: NextRequest) {
   // nothing the owner asked to see is lost by keeping both out of the feed.
   where.viaLookup = false;
 
+  // Explore content is never feed content (#386) — it is by definition from
+  // people the owner does NOT follow. It has its own route, its own tab and its
+  // own opt-in; `?boosts=1` is not a back door into it. Unconditional for the
+  // same reason as the line above: this route is the ONLY one a native app
+  // reads, so a flag it forgot would mean the app's feed and the web feed
+  // disagreed about what a feed is.
+  where.discoveredVia = null;
+
   // Blocked actors, filtered on the way OUT as well as at ingest (#459).
   // /timeline and /fediverse both did this; this route did not — so the SSR first
   // paint hid a blocked account and every client refetch brought it back. Load

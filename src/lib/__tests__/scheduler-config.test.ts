@@ -33,6 +33,9 @@ describe("getSchedulerConfig", () => {
       storageScan: { enabled: true, intervalSec: 3600 },
       updateCheck: { enabled: true, intervalSec: 86_400 },
       retentionSweep: { enabled: false, intervalSec: 86_400, retentionDays: 90 },
+      // Off in the ENV layer regardless of the owner's setting (#386) — the
+      // effective config below is where `explore.enabled` turns it on.
+      exploreSync: { enabled: false, intervalSec: 3600 },
     });
   });
 

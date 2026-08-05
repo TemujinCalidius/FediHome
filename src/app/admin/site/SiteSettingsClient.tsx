@@ -3,6 +3,9 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import type { RuntimeSiteConfig } from "@/lib/site-settings";
+// Bounds only — a leaf module with no imports, so this stays client-safe
+// (site-settings.ts pulls in Prisma).
+import { MAX_EXPLORE_LOOKBACK_DAYS, MAX_EXPLORE_STORED } from "@/lib/explore-limits";
 // Pure data + math (no prisma / server-only), so it's safe in a client bundle.
 import { THEMES, DEFAULT_ACCENT } from "@/lib/themes";
 
@@ -127,6 +130,57 @@ export default function SiteSettingsClient({
       setIdentBusy(false);
     }
   }
+  // Leaving for another server (#347) — its own route, cookie-only, and never
+  // part of the plaintext site-config save: declaring a move tells every
+  // follower's server to re-point its follow, which is not something a settings
+  // batch should be able to do as a side effect.
+  const [move, setMove] = useState<{
+    movedTo: string | null; movedAt: string | null; handle: string | null;
+    cooldownDaysLeft: number; cooldownDays: number; followers: number;
+  } | null>(null);
+  const [moveTarget, setMoveTarget] = useState("");
+  const [moveBusy, setMoveBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/admin/move")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (!cancelled && d) setMove(d); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  async function postMove(payload: Record<string, unknown>): Promise<void> {
+    setMoveBusy(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/admin/move", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        // The refusal text is the useful part — "the new account doesn't list
+        // this one as an alias yet" is an instruction, not an error.
+        setResult({ ok: false, msg: data?.error || "Couldn't do that." });
+        return;
+      }
+      setMove((c) => (c ? { ...c, ...data } : c));
+      setMoveTarget("");
+      setResult({
+        ok: true,
+        msg: data.movedTo
+          ? `Move sent. Your followers' servers will move them to ${data.handle || data.movedTo}.`
+          : "Move cancelled. Your profile no longer says you've moved.",
+      });
+    } catch {
+      setResult({ ok: false, msg: "Couldn't reach the server — nothing was changed." });
+    } finally {
+      setMoveBusy(false);
+    }
+  }
+
   const [pwCurrent, setPwCurrent] = useState("");
   const [pwNext, setPwNext] = useState("");
   const [pwConfirm, setPwConfirm] = useState("");
@@ -449,6 +503,10 @@ export default function SiteSettingsClient({
       "feed.public": String(cfg.publicFeed),
       "feed.publicTitle": cfg.publicFeedTitle,
       "feed.hideSocialGraph": String(cfg.hideSocialGraph),
+      "explore.enabled": String(cfg.explore.enabled),
+      "explore.replyParents": String(cfg.explore.replyParents),
+      "explore.lookbackDays": String(cfg.explore.lookbackDays),
+      "explore.maxStored": String(cfg.explore.maxStored),
       "nav.journal": String(cfg.nav.showJournal),
       "nav.articles": String(cfg.nav.showArticles),
       "nav.photography": String(cfg.nav.showPhotography),
@@ -509,6 +567,7 @@ export default function SiteSettingsClient({
       [
         "site.name", "site.description", "landing.mode", "landing.headline", "landing.subhead",
         "landing.repoUrl", "feed.public", "feed.publicTitle", "feed.hideSocialGraph",
+        "explore.enabled", "explore.replyParents", "explore.lookbackDays", "explore.maxStored",
         "nav.journal", "nav.articles", "nav.photography", "nav.videos", "nav.audio", "nav.about",
         "footer.webringUrl", "footer.webringLabel", "footer.badgeSrc", "footer.badgeHref",
         "footer.badgeAlt", "footer.fundingUrl", "footer.fundingLabel",
@@ -536,6 +595,7 @@ export default function SiteSettingsClient({
   const setLayout = (patch: Partial<RuntimeSiteConfig["layout"]>) => setCfg((c) => ({ ...c, layout: { ...c.layout, ...patch } }));
   const setSidebar = (patch: Partial<RuntimeSiteConfig["sidebar"]>) => setCfg((c) => ({ ...c, sidebar: { ...c.sidebar, ...patch } }));
   const setSecurity = (patch: Partial<RuntimeSiteConfig["security"]>) => setCfg((c) => ({ ...c, security: { ...c.security, ...patch } }));
+  const setExplore = (patch: Partial<RuntimeSiteConfig["explore"]>) => setCfg((c) => ({ ...c, explore: { ...c.explore, ...patch } }));
   /** Bytes → a figure a person reads, not a computer. */
   const gb = (n: number) => {
     if (n >= 1024 ** 3) return `${(n / 1024 ** 3).toFixed(1)} GB`;
@@ -934,6 +994,68 @@ export default function SiteSettingsClient({
           {check("Hide follower/following lists (report counts only)", cfg.hideSocialGraph, (v) => set({ hideSocialGraph: v }))}
         </>)}
 
+        {section("Explore", <>
+          <p className="text-xs text-gray-600 m-0">
+            A second feed showing posts from people you <em>don&apos;t</em> follow, surfaced
+            because someone you <em>do</em> follow boosted them or replied to them. It appears
+            as an <strong>Explore</strong> tab next to your timeline, and only for you —
+            nothing here is ever shown on your public pages.
+          </p>
+          {check("Turn on the Explore feed", cfg.explore.enabled, (v) => setExplore({ enabled: v }))}
+          {cfg.explore.enabled && (
+            <>
+              {check(
+                "Also fetch the posts your follows replied to",
+                cfg.explore.replyParents,
+                (v) => setExplore({ replyParents: v }),
+              )}
+              <p className="text-xs text-gray-600 m-0">
+                Boosts need nothing fetched — those posts are already on your server, just
+                hidden from your timeline. Replies are different: what arrives is your
+                friend&apos;s reply, not the post they replied to, so FediHome goes and gets
+                it. That&apos;s a small number of requests to other servers each hour, at most
+                ten, and only for posts that are public.
+              </p>
+              <label className="flex flex-col gap-1 text-xs text-gray-400">
+                <span>How far back to look (days)</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={MAX_EXPLORE_LOOKBACK_DAYS}
+                  value={cfg.explore.lookbackDays}
+                  onChange={(e) => setExplore({ lookbackDays: Number(e.target.value) })}
+                  className="bg-surface-800 border border-surface-700 rounded-md px-2 py-1.5 text-sm text-white font-mono"
+                />
+                <span className="text-gray-600">
+                  Only replies received in this window are followed up. A week suits most
+                  people; longer mostly means chasing conversations nobody is reading now.
+                </span>
+              </label>
+              <label className="flex flex-col gap-1 text-xs text-gray-400">
+                <span>Keep at most this many discovered posts</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={MAX_EXPLORE_STORED}
+                  value={cfg.explore.maxStored}
+                  onChange={(e) => setExplore({ maxStored: Number(e.target.value) })}
+                  className="bg-surface-800 border border-surface-700 rounded-md px-2 py-1.5 text-sm text-white font-mono"
+                />
+                <span className="text-gray-600">
+                  The oldest are deleted past this, along with any images cached for them, so
+                  Explore can&apos;t quietly fill your disk. <strong>0</strong> means no limit.
+                  Boosted posts aren&apos;t counted here — you already had those.
+                </span>
+              </label>
+            </>
+          )}
+          <p className="text-xs text-gray-600 m-0">
+            Posts from accounts or domains you&apos;ve blocked never appear, and are never
+            downloaded — the check runs on whoever <em>wrote</em> the post, not on whoever
+            boosted or replied to it.
+          </p>
+        </>)}
+
         {section("Navigation", <div className="grid grid-cols-2 gap-2">
           {check("Journal", cfg.nav.showJournal, (v) => setNav({ showJournal: v }))}
           {check("Articles", cfg.nav.showArticles, (v) => setNav({ showArticles: v }))}
@@ -1121,6 +1243,97 @@ export default function SiteSettingsClient({
               {aliasBusy ? "Saving…" : "Save aliases"}
             </button>
           </div>
+        </>)}
+
+        {section("Moving away from here", <>
+          {move?.movedTo ? (
+            <>
+              <div className="rounded-lg border border-amber-400/40 bg-amber-400/5 p-3 flex flex-col gap-1.5">
+                <p className="text-xs font-semibold text-amber-300 m-0">
+                  This account has moved to {move.handle}
+                </p>
+                <p className="text-xs text-gray-400 m-0">
+                  Your profile now tells every server that you&apos;re at{" "}
+                  <code>{move.movedTo}</code>, and this account has stopped publishing new
+                  posts. <strong>Keep this instance running.</strong> Servers verify the move
+                  by fetching this profile, so followers whose server hasn&apos;t checked in
+                  yet can only follow you across while it&apos;s still answering — the
+                  recommendation is at least a year.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => postMove({ action: "resend" })}
+                  disabled={moveBusy}
+                  className="btn-primary text-xs disabled:opacity-50"
+                >
+                  {moveBusy ? "Sending…" : "Send the move again"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => postMove({ action: "cancel" })}
+                  disabled={moveBusy}
+                  className="text-xs text-gray-400 hover:text-white underline disabled:opacity-40"
+                >
+                  Cancel the move
+                </button>
+              </div>
+              <p className="text-xs text-gray-600 m-0">
+                <strong>Send again</strong> is safe to press as often as you like — servers
+                that already moved your followers ignore a repeat. It&apos;s worth doing if
+                someone tells you their follow didn&apos;t come across.{" "}
+                <strong>Cancelling stops telling people you&apos;ve moved; it does not bring
+                followers back</strong> — anyone whose server already moved them is following
+                the new account now, and nothing here can reach into their server.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-xs text-gray-600 m-0">
+                Leaving for another server and want to take your{" "}
+                <strong>{move?.followers ?? 0} follower{move?.followers === 1 ? "" : "s"}</strong>{" "}
+                with you? Set up the new account first, add{" "}
+                <code>{ident?.siteUrl ? `${ident.siteUrl}/ap/actor` : "this account"}</code> to
+                its aliases, then put its address here.
+              </p>
+              <label className="flex flex-col gap-1 text-xs text-gray-400">
+                <span>The account you&apos;re moving to</span>
+                <input
+                  type="text"
+                  value={moveTarget}
+                  onChange={(e) => setMoveTarget(e.target.value)}
+                  spellCheck={false}
+                  placeholder="https://mastodon.social/users/you"
+                  className="bg-surface-800 border border-surface-700 rounded-md px-2 py-1.5 text-sm text-white font-mono"
+                />
+                <span className="text-gray-600">
+                  The full profile address of the new account. We check it lists this account
+                  as an alias before sending anything — if it doesn&apos;t, every server would
+                  refuse the move and your followers would quietly stay here.
+                </span>
+              </label>
+              <div className="rounded-lg border border-surface-700 p-3 flex flex-col gap-1.5">
+                <p className="text-xs font-semibold text-content m-0">Before you press this</p>
+                <ul className="text-xs text-gray-500 m-0 pl-4 list-disc flex flex-col gap-1">
+                  <li><strong>Only followers move.</strong> Your posts, the people you follow, your blocks and your mutes all stay here.</li>
+                  <li><strong>Keep this instance running afterwards.</strong> Every server verifies the move by fetching this profile. Take it down and the followers who hadn&apos;t moved yet can never be moved, by you or anyone.</li>
+                  <li><strong>This account stops publishing.</strong> Replies and likes still work, so you don&apos;t abandon conversations mid-thread.</li>
+                  <li>Moving somewhere <em>else</em> afterwards means waiting {move?.cooldownDays ?? 30} days.</li>
+                </ul>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => postMove({ target: moveTarget })}
+                  disabled={moveBusy || !moveTarget.trim()}
+                  className="btn-primary text-xs disabled:opacity-50"
+                >
+                  {moveBusy ? "Checking…" : "Move my followers"}
+                </button>
+              </div>
+            </>
+          )}
         </>)}
 
         {section("Storage", <>

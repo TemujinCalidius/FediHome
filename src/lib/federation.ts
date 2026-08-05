@@ -3,6 +3,7 @@ import { prisma } from "./db";
 import { siteConfig } from "@/../site.config";
 import { getRuntimeProfile } from "./site-profile";
 import { getAlsoKnownAs } from "./identity-store";
+import { getMovedTo } from "./account-move";
 import { getIdentity, getSiteUrl } from "./identity";
 import crypto from "crypto";
 import { raiseMaintenanceItem } from "./maintenance";
@@ -147,11 +148,32 @@ export async function getActorProfile() {
   // Account aliases (#326). Only emitted when set, so a default instance's
   // actor document is byte-identical to before.
   const alsoKnownAs = await getAlsoKnownAs();
+  // Where this account went, if it left (#347).
+  const movedTo = await getMovedTo();
 
   return {
+    // The third element is a term definition, not another remote context, and it
+    // is there because two of the properties below are NOT in the AS2 core
+    // context — verified by fetching https://www.w3.org/ns/activitystreams with
+    // `Accept: application/ld+json` and reading it, rather than assuming:
+    //
+    //   alsoKnownAs  ✅ defined      Move ✅ defined      target ✅ defined
+    //   movedTo                      ❌ NOT defined
+    //   manuallyApprovesFollowers    ❌ NOT defined
+    //
+    // A strict JSON-LD consumer drops an undefined term. For `movedTo` that
+    // means the move is invisible to exactly the servers most careful about
+    // reading it correctly. `manuallyApprovesFollowers` has been emitted
+    // undefined since it was written; harmless while the value is `false` (the
+    // default assumption anyway) and silently wrong the day it becomes `true`,
+    // so it's defined here too.
     "@context": [
       "https://www.w3.org/ns/activitystreams",
       "https://w3id.org/security/v1",
+      {
+        movedTo: { "@id": "as:movedTo", "@type": "@id" },
+        manuallyApprovesFollowers: "as:manuallyApprovesFollowers",
+      },
     ],
     id: `${getSiteUrl()}/ap/actor`,
     type: "Person",
@@ -165,6 +187,12 @@ export async function getActorProfile() {
     // will move someone's followers to us. `alsoKnownAs` is already defined by
     // the activitystreams context above, so no extra JSON-LD term is required.
     ...(alsoKnownAs.length > 0 ? { alsoKnownAs } : {}),
+    // "I am over there now" (#347). Only emitted once the owner has moved, so a
+    // normal instance's actor document is unchanged. This is the half a remote
+    // server reads on its own schedule — the `Move` activity tells it to look,
+    // and FEP-7628 asks us to keep answering with this for at least a year
+    // afterwards, which is why nothing here ever expires it.
+    ...(movedTo ? { movedTo } : {}),
     inbox: `${getSiteUrl()}/ap/inbox`,
     outbox: `${getSiteUrl()}/ap/outbox`,
     followers: `${getSiteUrl()}/ap/followers`,

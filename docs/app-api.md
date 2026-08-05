@@ -262,5 +262,31 @@ URL. Micropub tokens carry `media` by default.
 | `fedihome-ios` | `fedihome-ios://callback` (+ loopback) |
 | `fedihome-android` | `fedihome-android://callback` (+ loopback) |
 
-Third-party clients (IndieAuth `client_id` URLs, dynamic registration) are not
-supported yet.
+### Third-party clients
+
+Two kinds, and which one applies is decided by your `client_id`.
+
+**A `client_id` that is an `https://` URL — web clients like Quill and
+Micropublish.** Nothing to register. FediHome fetches your `client_id`, reads
+the `h-app` microformat for a name, and accepts a `redirect_uri` that is either:
+
+- on the **same origin** as the `client_id`, or
+- listed on that page as `<link rel="redirect_uri" href="...">` (the `Link:`
+  header works too).
+
+The client id must have no fragment, no userinfo, and no `.`/`..` path segments.
+`http://` is accepted only for loopback, so a client can be developed locally.
+
+If FediHome can't fetch the address, or the page doesn't list your redirect, the
+sign-in is refused — an unreachable client id proves nothing, so it is never
+treated as permission. The result is cached for a few minutes, and the fetch
+itself is rate-limited per caller.
+
+**A `client_id` with a custom scheme — `obsidian://`, `raycast://`, a local
+helper.** IndieAuth can't verify these: it authenticates a client by fetching its
+id, and a custom scheme has no document to fetch. So the instance owner registers
+it by hand in **Admin → Connected apps** with its client id and redirect URI.
+Their registration IS the check, and the panel says so.
+
+Either way the consent screen tells the owner which kind of app they are
+approving, and for a URL client it shows the address it verified.

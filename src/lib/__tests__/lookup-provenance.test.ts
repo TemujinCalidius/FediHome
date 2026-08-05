@@ -60,8 +60,16 @@ describe("#460 — on-demand ingests are marked as lookups", () => {
   it("inbox delivery promotes a lookup row back into the feed", () => {
     // Delivery is proof the post belongs in the timeline. Without this, a post
     // first seen by expanding a thread stays hidden forever after it arrives.
+    //
+    // BOTH provenance marks have to be cleared, not just this one (#386): a row
+    // the Explore resolver fetched as someone's reply-parent carries
+    // discoveredVia instead, and clearing only viaLookup would leave a delivered
+    // post stuck on Explore. Asserted as two independent matches rather than one
+    // literal so the order of the two keys is free.
     const src = read("src/app/ap/inbox/route.ts");
-    expect(/update:\s*\{\s*viaLookup:\s*false\s*\}/.test(src)).toBe(true);
+    const update = src.slice(src.indexOf("update: { viaLookup"));
+    expect(update.slice(0, 120)).toMatch(/viaLookup:\s*false/);
+    expect(update.slice(0, 120)).toMatch(/discoveredVia:\s*null/);
   });
 });
 

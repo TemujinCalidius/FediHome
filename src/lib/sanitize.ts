@@ -40,3 +40,16 @@ const OPTIONS: sanitize.IOptions = {
 export function sanitizeHtml(html: string): string {
   return sanitize(html, OPTIONS);
 }
+
+/**
+ * Escape plain text for inclusion in HTML.
+ *
+ * An Article's `name` is plain text, and every ingest path wraps it in an `<h2>`
+ * because FediPost has no title column. Lives here rather than beside one of the
+ * callers so the ingests can't drift into having *slightly* different ideas of
+ * what needs escaping — which is what happened when the Explore resolver (#386)
+ * grew its own copy.
+ */
+export function escapeText(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}

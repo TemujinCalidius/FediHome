@@ -47,6 +47,7 @@ const cfg = (over: Record<string, unknown> = {}) => ({
   storageScan: { enabled: false, intervalSec: 3600 },
   updateCheck: { enabled: false, intervalSec: 86_400 },
   retentionSweep: { enabled: false, intervalSec: 86_400, retentionDays: 90 },
+  exploreSync: { enabled: false, intervalSec: 3600 },
   ...over,
 });
 

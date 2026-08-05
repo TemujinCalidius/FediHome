@@ -22,9 +22,30 @@ All environment variables are set in `.env.local` at the project root. The `.env
 |----------|-------------|---------|
 | `PORT` | The port the app binds to (`npm start` / `npm run dev` / pm2). Set this if port 3000 is already in use on the host. | `3000` |
 | `FEDIHOME_PORT` | **Docker Compose only.** The host port published in front of the container (which always listens on `3000`). | `3000` |
+| `TRUSTED_PROXY` | Set to `true` **only** when a reverse proxy sits in front of this instance. The rate limiters then key on the forwarded client IP instead of putting every visitor in one bucket. On a directly-reachable instance leave it unset — the client sets these headers, so trusting them lets anyone mint a fresh bucket per request and walk past every limit. | unset |
+| `TRUSTED_PROXY_HEADER` | Which forwarded header to believe — **one, and only the one you name**. See [Which header should I trust?](#which-header-should-i-trust) below; getting this wrong is the difference between a real limit and no limit. | `x-real-ip` |
 | `ADMIN_SESSION_TTL_DAYS` | How many days an admin login stays valid before re-authentication is required. Sessions are individually revocable from **/admin/sessions** (linked from the timeline header), so a lost device can be signed out without rotating `ADMIN_SECRET`. | `30` |
 
 > **Changing the port?** Also set `SITE_URL` to your real public origin. The listen port and the public URL are independent: `SITE_URL` drives ActivityPub IDs, WebFinger, RSS, and the CSRF origin check, so behind a reverse proxy or tunnel the port you bind locally is usually *not* the port in your public URL. A wrong `SITE_URL` silently breaks federation.
+
+#### Which header should I trust?
+
+A forwarded header is unforgeable only if the proxy directly in front of this instance **overwrites** it. If the proxy passes through or appends, whatever the client sent is still in there — so there is no header that is safe everywhere, and no default that can guess right for you.
+
+| Your setup | Set `TRUSTED_PROXY_HEADER` to | Why |
+|------------|-------------------------------|-----|
+| The nginx config in [deployment.md](deployment.md) | `x-real-ip` (the default) | That config sets it from `$remote_addr`, which is an overwrite. |
+| Cloudflare, straight to this instance | `cf-connecting-ip` | Cloudflare sets it and a client can't override it *through* Cloudflare. |
+| Cloudflare **in front of** nginx | `cf-connecting-ip` | `X-Real-IP` would be Cloudflare's edge address, not your visitor's. |
+| A proxy that *replaces* `X-Forwarded-For` | `x-forwarded-for` | The leftmost hop is then the client. |
+
+**`x-forwarded-for` is the trap.** Cloudflare and the nginx config above both *append* to it (`$proxy_add_x_forwarded_for`), so the leftmost entry is whatever the visitor sent. Name it only if you know your proxy replaces the header outright.
+
+**`cf-connecting-ip` is a trap in the other direction.** Behind Cloudflare it's authoritative; anywhere else it's an ordinary request header anyone can set. Until #515 it was preferred above everything whenever `TRUSTED_PROXY=true`, which meant that on a non-Cloudflare deployment a client could choose its own rate-limit bucket.
+
+If you name something that isn't one of the three, nothing is trusted and every request shares a bucket — safe, but your limits stop distinguishing visitors. That mismatch, and the case where the header you named never arrives, are each logged once, so they show up in your **support bundle**.
+
+This is worth getting right beyond rate limiting: the same value becomes the stored `ipHash` on guest comments, and it budgets the outbound fetches FediHome makes to resolve an IndieAuth `client_id` *before* anyone has signed in.
 
 ### Optional: Site Info
 

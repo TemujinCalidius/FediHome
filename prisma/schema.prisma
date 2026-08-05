@@ -360,6 +360,22 @@ model FediPost {
   /// false, because delivery is proof it belongs in the feed.
   viaLookup   Boolean  @default(false)
 
+  /// Why this row is here at all, when it isn't the owner's own feed (#386).
+  /// NULL = feed content: someone they follow posted it, or they posted it.
+  /// "boost"        — a follow boosted it, so the author may be a stranger.
+  /// "reply-parent" — a follow REPLIED to it, and the reply-parent resolver
+  ///                  fetched the post being replied to. Nobody delivered this
+  ///                  to us and the owner never asked for it, so it is the one
+  ///                  kind of row that must never reach a timeline by default.
+  ///
+  /// Distinct from viaLookup on purpose: that column means "the owner looked at
+  /// something", which is a different provenance with a different answer to
+  /// "should this be on the Explore feed?" (a thread the owner expanded: no).
+  ///
+  /// Cleared when the post is later delivered for real, exactly as viaLookup is
+  /// — delivery is proof it belongs in the feed.
+  discoveredVia String?
+
   // Boost/repost tracking
   boostedBy     String?  // actorUri of the person who boosted this into our feed
   boostedByName String?  // display name of the booster
@@ -392,6 +408,7 @@ model FediPost {
   @@index([conversationId])
   @@index([inReplyTo])
   @@index([source])
+  @@index([discoveredVia])
 }
 
 model FediInteraction {

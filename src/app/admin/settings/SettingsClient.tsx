@@ -5,7 +5,7 @@ import Link from "next/link";
 import type { SchedulerConfig } from "@/lib/scheduler-config";
 
 /**
- * Instance settings (#59, first slice): the scheduler's jobs. Saves write
+ * Background jobs (#59, first slice): the scheduler's jobs. Saves write
  * SiteSetting overrides via /api/admin/settings; the scheduler picks them up
  * within a minute (no restart). "Use env defaults" clears the overrides.
  */
@@ -196,7 +196,7 @@ export default function SettingsClient({
   return (
     <main className="max-w-2xl mx-auto px-4 py-10">
       <div className="flex items-baseline justify-between mb-6">
-        <h1 className="text-xl font-semibold text-white">Instance settings</h1>
+        <h1 className="text-xl font-semibold text-white">Background jobs</h1>
         <Link href="/timeline" className="text-xs text-gray-400 hover:text-white underline">
           ← Timeline
         </Link>

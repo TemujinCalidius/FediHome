@@ -114,6 +114,15 @@ server {
 }
 ```
 
+> **Rate limiting behind this proxy.** Set `TRUSTED_PROXY=true` in `.env.local` so the
+> limiters see your visitors rather than treating them all as one client. Leave
+> `TRUSTED_PROXY_HEADER` unset — it defaults to `x-real-ip`, which is the header this
+> config sets by overwrite (`$remote_addr`). Do **not** point it at `x-forwarded-for`
+> here: `$proxy_add_x_forwarded_for` *appends*, so the first entry is whatever the
+> visitor sent. If you also run Cloudflare in front of nginx, set
+> `TRUSTED_PROXY_HEADER=cf-connecting-ip` — otherwise every visitor keys to a Cloudflare
+> edge address. See [configuration.md](configuration.md#which-header-should-i-trust).
+
 Enable the site and get an SSL certificate:
 
 ```bash
@@ -152,7 +161,7 @@ for updates and security advisories — runs *inside* the app itself and starts
 automatically with it (any deployment: PM2, plain `npm start`, or Docker). No
 cron entry is needed; the old `scripts/scheduled-bluesky-sync.ts` cron is
 obsolete — if you had it in crontab/PM2, remove it. Cadences/toggles are
-configurable in **Admin → Instance settings** and via the `SCHEDULER_*` env vars
+configurable in **Admin → Background jobs** and via the `SCHEDULER_*` env vars
 (see `.env.example`); look for a `scheduler: starting (in-app)` line in the app
 log at boot.
 
@@ -160,7 +169,7 @@ The update check makes outbound requests to the npm registry and the GitHub API
 and reports what it finds in your notifications. It's on daily by default,
 remembers when it last ran (so restarting doesn't re-run it and doesn't skip a
 due one), and can be turned off entirely with
-`SCHEDULER_UPDATE_CHECK_ENABLED=false` or the toggle in Instance settings, which
+`SCHEDULER_UPDATE_CHECK_ENABLED=false` or the toggle in Background jobs, which
 also has a **Check now** button.
 
 Check status:

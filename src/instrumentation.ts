@@ -14,6 +14,26 @@
  */
 export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
+    // The log tail, before anything else can log (#490). Two steps, in this
+    // order and for different reasons:
+    //
+    //  1. resolve the redaction set FIRST, so the very first captured line is
+    //     already scrubbed — the buffer is meant never to hold a plaintext
+    //     credential, not to be cleaned up later;
+    //  2. then tee the console.
+    //
+    // Neither can fail a boot: the refresh reads the database and decrypts, both
+    // of which can be down, and a diagnostic must never be the reason an
+    // instance won't start.
+    try {
+      const { refreshRedactionSet } = await import("@/lib/log-secrets");
+      await refreshRedactionSet();
+    } catch {
+      /* the tail is still captured; the bundle re-resolves before emitting it */
+    }
+    const { installConsoleTee } = await import("@/lib/log-buffer");
+    installConsoleTee();
+
     // Federation identity first, and awaited (#326). getIdentity() is synchronous,
     // so the database overrides have to be in place BEFORE anything can serve a
     // request — a request answered mid-load would sign with the environment's

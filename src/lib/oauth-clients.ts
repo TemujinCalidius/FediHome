@@ -1,5 +1,6 @@
 import { prisma } from "./db";
 import { getClient, isSafeRedirectScheme, type OAuthClient } from "./oauth";
+import { isUrlClientId, resolveUrlClient } from "./indieauth-client";
 
 /**
  * Registered third-party OAuth clients (#366).
@@ -44,11 +45,30 @@ export function resetClientCache(): void {
  * First-party is checked FIRST and without a query, so the common path is
  * unchanged and a registration can never shadow a shipped app id.
  */
-export async function resolveClient(clientId: string | null | undefined): Promise<OAuthClient | null> {
+export async function resolveClient(
+  clientId: string | null | undefined,
+  /**
+   * The caller's rate-limit key, needed only for the IndieAuth branch (#494),
+   * which makes an outbound fetch. Omitted → that branch is skipped entirely,
+   * so nothing that doesn't pass a key can be walked into a fetch.
+   */
+  rateKey?: string,
+): Promise<OAuthClient | null> {
   if (!clientId) return null;
 
   const firstParty = getClient(clientId);
   if (firstParty) return firstParty;
+
+  // A URL client id is checked BEFORE the registration table and before
+  // CLIENT_ID_RE (#494). Two reasons: a URL contains characters that regexp
+  // doesn't allow, so it would be refused before ever being tried; and a URL id
+  // is authenticated by its own document, so there is nothing for a registration
+  // to add. An owner who registers a URL id anyway still wins the tie below,
+  // because this returns null on any fetch failure rather than swallowing it.
+  if (rateKey && isUrlClientId(clientId)) {
+    const viaUrl = await resolveUrlClient(clientId, rateKey);
+    if (viaUrl) return viaUrl;
+  }
 
   if (!CLIENT_ID_RE.test(clientId)) return null;
 
