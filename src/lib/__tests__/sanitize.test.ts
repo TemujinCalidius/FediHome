@@ -74,3 +74,74 @@ describe("sanitizeHtml", () => {
     expect(sanitizeHtml(html)).toBe(html);
   });
 });
+
+/**
+ * #529. `marked` renders a GFM task list as `<input checked disabled
+ * type="checkbox">`. `input` wasn't in `allowedTags`, so the box was deleted and
+ * only the label survived — meaning a checked item and an unchecked one came out
+ * byte-identical. That is a lost STATE, not a lost decoration, which is what
+ * separates it from an ordinary allowlist gap.
+ *
+ * Asserted against marked's REAL output rather than a hand-written string, the
+ * same shape #481 established: a future marked release that changes task-list
+ * rendering then fails here loudly instead of silently regressing.
+ */
+describe("task-list checkboxes survive sanitisation (#529)", () => {
+  it("keeps a checked item distinguishable from an unchecked one", async () => {
+    const { marked } = await import("marked");
+    const html = marked.parse("- [x] done\n- [ ] todo") as string;
+    expect(html).toContain("<input");
+
+    const clean = sanitizeHtml(html);
+    const [doneItem, todoItem] = clean.split("<li>").slice(1);
+    expect(doneItem).toContain("checked");
+    expect(todoItem).not.toContain("checked");
+    // The failure being fixed, stated directly: the two used to be identical.
+    expect(doneItem.replace(" done", "")).not.toBe(todoItem.replace(" todo", ""));
+  });
+
+  it("keeps the list itself intact", async () => {
+    const { marked } = await import("marked");
+    const clean = sanitizeHtml(marked.parse("- [x] done") as string);
+    expect(clean).toContain("<ul>");
+    expect(clean).toContain("done");
+  });
+});
+
+/**
+ * The other half, as #481 established: widening must not become loosening. This
+ * allowlist is not only applied to the owner's own markdown — the SAME options
+ * sanitise HTML arriving from arbitrary remote instances, in the inbox,
+ * conversation threads, Explore and every FediCard.
+ */
+describe("the input widening did not become a general loosening (#529)", () => {
+  it("drops a submittable input entirely", () => {
+    const clean = sanitizeHtml(
+      '<input name="x" value="y" formaction="https://evil.example" type="image" src="https://evil.example/p">',
+    );
+    expect(clean).toBe("");
+  });
+
+  it("drops a text box, which attribute-level allowlisting alone would permit", () => {
+    expect(sanitizeHtml('<input type="text" disabled>')).toBe("");
+  });
+
+  it("drops a checkbox that isn't disabled", () => {
+    // Only the exact shape marked emits is accepted; anything else came from
+    // somewhere that isn't our own renderer.
+    expect(sanitizeHtml('<input type="checkbox">')).toBe("");
+  });
+
+  it("strips name, value and formaction from a checkbox that is otherwise fine", () => {
+    const clean = sanitizeHtml('<input type="checkbox" disabled name="n" value="v" formaction="https://e.example">');
+    expect(clean).toContain("<input");
+    expect(clean).not.toContain("name");
+    expect(clean).not.toContain("value");
+    expect(clean).not.toContain("formaction");
+  });
+
+  it("still strips script and event handlers", () => {
+    expect(sanitizeHtml("<script>alert(1)</script><p>ok</p>")).not.toContain("script");
+    expect(sanitizeHtml('<input type="checkbox" disabled onclick="x()">')).not.toContain("onclick");
+  });
+});
