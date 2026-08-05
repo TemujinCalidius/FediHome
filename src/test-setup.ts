@@ -34,17 +34,20 @@ import { vi } from "vitest";
  * would fall through and make a REAL network call, failing with a DNS error that
  * points nowhere near this file. Identity catches every stub form.
  *
- * IF YOU CHANGE THIS FILE, RE-RUN THE PROOF. A green suite at the pinned undici
- * says nothing about the mismatch, because at 6.x-vs-6.x the handler shapes
- * agree. In a throwaway copy of the repo:
+ * IF YOU CHANGE THIS FILE, RE-RUN THE PROOF — a proof that cannot fail proves
+ * nothing. Run:
  *
- *     npm install undici@8.10.0
  *     npx vitest run src/lib/__tests__/safe-fetch.test.ts \
  *       src/lib/__tests__/signed-fetch-redirects.test.ts \
  *       src/lib/__tests__/pinned-dispatcher.test.ts
  *
- * That must be green. Then revert only the `undiciFetch` swap in `safe-fetch.ts`
- * and confirm the 22 failures return — a proof that cannot fail proves nothing.
+ * That must be green (40/40). Then revert only the `undiciFetch` swap in
+ * `safe-fetch.ts` and confirm the failures return — 24 of 40 at undici 8.10.
+ *
+ * Since #506 the userland copy IS 8.x, so the mismatch is live rather than
+ * hypothetical and the control fails on the checked-out tree. While both copies
+ * were 6.x the handler shapes agreed, which is why this needed a manual bump to
+ * demonstrate at all.
  */
 
 /**
