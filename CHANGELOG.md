@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- **Bluesky posts arrive with their photos again** (#512) — a post you saw people talking about would come through with the words and nothing else. Bluesky has six different ways of attaching things to a post and FediHome only understood one of them, so **a quote post with a photo** — one of the most common kinds there is — imported completely blank, along with multi-photo galleries, videos and link previews. All six are now read: galleries and quoted photos appear, a video shows its still frame, and a shared link gets the proper preview card the fediverse posts already had. Two smaller faults went with it. If saving a copy of a picture failed, the picture was **deleted** rather than loaded from Bluesky — which meant setting your media cache to 0, documented as "media then loads from the original server", did the exact opposite for Bluesky. And every Bluesky post was silently excluded from the repair that puts images back after the cache is trimmed. Posts still in the polling window will pick up what they were missing on the next sync; older ones keep what they have.
+
 ## 1.27.0 (2026-08-05)
 
 ### Added

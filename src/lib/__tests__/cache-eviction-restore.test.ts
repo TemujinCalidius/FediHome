@@ -41,19 +41,41 @@ describe("processAttachments records the original URL (#478)", () => {
 });
 
 describe("every ingest site stores it (#478)", () => {
+  /**
+   * Two sites were missing, and the check itself was why nobody noticed (#512).
+   *
+   * `bluesky-feed.ts` never wrote `mediaRemoteUrls` at all, so every Bluesky row
+   * failed `restoreEvictedMedia`'s parallel-length guard and a cache trim left a
+   * permanently broken image. It wasn't listed here — but adding it alone would
+   * have changed nothing, because the old patterns were `/^\s*mediaTypes,$/`:
+   * **shorthand only**. bluesky-feed writes `mediaTypes,` now but wrote
+   * `mediaTypes: mediaUrls.map(…)` then, and explore.ts writes `mediaTypes: types,`
+   * — neither matches, so both counters read 0 and the assertion passed while
+   * asserting nothing about the very files it was extended to cover.
+   *
+   * Matching both spellings is the fix. A structural test that can't see the
+   * shape it's looking for is worse than no test: it reads as coverage.
+   */
   const SITES = [
     "src/app/ap/inbox/route.ts",
     "src/app/api/conversation/route.ts",
     "src/app/api/admin/_actions/fedi-graph.ts",
+    "src/lib/bluesky-feed.ts",
+    "src/lib/explore.ts",
   ];
+
+  /** `name,` (shorthand) or `name: …` (explicit), which is how these are really written. */
+  const writesOf = (src: string, name: string) =>
+    (src.match(new RegExp(String.raw`^\s*${name}(,|:)`, "gm")) ?? []).length;
 
   for (const file of SITES) {
     it(`${file} writes mediaRemoteUrls wherever it writes mediaTypes`, () => {
       // Pairing on mediaTypes rather than counting: the two are parallel arrays
       // written together, so a write with one and not the other is the bug.
       const src = read(file);
-      const withTypes = (src.match(/^\s*mediaTypes,$/gm) ?? []).length;
-      const withRemotes = (src.match(/^\s*mediaRemoteUrls,$/gm) ?? []).length;
+      const withTypes = writesOf(src, "mediaTypes");
+      const withRemotes = writesOf(src, "mediaRemoteUrls");
+      expect(withTypes, `no mediaTypes write found in ${file} — the pattern has gone stale`).toBeGreaterThan(0);
       expect(withRemotes).toBe(withTypes);
     });
   }

@@ -1,3 +1,12 @@
+import {
+  AppBskyEmbedExternal,
+  type AppBskyFeedDefs,
+  AppBskyEmbedGallery,
+  AppBskyEmbedImages,
+  AppBskyEmbedRecord,
+  AppBskyEmbedRecordWithMedia,
+  AppBskyEmbedVideo,
+} from "@atproto/api";
 import { getBlueskyAgent } from "./bluesky-agent";
 import { isBlueskyBlocked } from "./blocks";
 import { proxyImage } from "./fedi-media";
@@ -29,8 +38,12 @@ const BACKFILLED_KEY = "bsky_feed_backfilled";
 const SAFETY_PAGE_CAP = 20;
 /** First run only: keep the initial import to something sane. */
 const FIRST_RUN_LIMIT = 50;
-/** Bluesky allows four images per post. */
-const MAX_IMAGES = 4;
+/**
+ * Our cap on stored assets per post, not Bluesky's (#512). An `images` embed
+ * holds at most four; a `gallery` holds up to ten. Ten covers both without a
+ * single post being able to pull an unbounded amount into the media cache.
+ */
+const MAX_MEDIA = 10;
 
 export interface BlueskyFeedResult {
   fetched: number;
@@ -77,18 +90,157 @@ export function blueskyContentHtml(text: string): string {
   return sanitizeHtml(`<p>${linked.replace(/\n/g, "<br>")}</p>`);
 }
 
-/** Cache remote images locally, as the fediverse side does, so we aren't hot-linking. */
-async function localiseImages(images: { fullsize?: string; thumb?: string }[]): Promise<string[]> {
-  const out: string[] = [];
-  for (const img of images.slice(0, MAX_IMAGES)) {
-    const remote = img.fullsize || img.thumb;
-    if (!remote) continue;
+/**
+ * The embed union exactly as the SDK declares it on `PostView`.
+ *
+ * Naming the WHOLE union is the point (#512) — it is what lets the `isView`
+ * guards narrow, and it is the opposite of the cast this fix removes, which
+ * asserted a single member of it. The guards can't narrow from `unknown`: the
+ * result is `{ $type: "…" }` with no fields, so every property access fails.
+ */
+type PostEmbed = NonNullable<AppBskyFeedDefs.PostView["embed"]>;
+
+/** A link card, mapped onto the `embed*` columns the fediverse side already uses. */
+interface LinkCard {
+  url: string;
+  title: string | null;
+  description: string | null;
+  thumb: string | null;
+}
+
+/**
+ * Pull the picture URLs, and any link card, out of a post's embed (#512).
+ *
+ * `PostView.embed` is a SIX-MEMBER union and this used to read one member of it:
+ * the code hand-wrote `embed?: { images?: … }` over `item.post`, so
+ * `post.embed?.images` was `undefined` for everything else and the post was
+ * stored with no media at all. Quote-with-a-photo — an extremely common Bluesky
+ * post — went in blank, which is what people were noticing.
+ *
+ * **`tsc` could never have caught that.** The SDK types the union properly; the
+ * cast asserted one variant over the whole of it, so the compiler was told the
+ * answer and agreed. The fix is to name the union and nothing narrower, and let
+ * the SDK's own `isView` guards do the narrowing — they test the `$type`
+ * discriminant the protocol actually sends, so a variant we don't handle falls
+ * out of the bottom of this function rather than silently reading as empty.
+ *
+ * Where each one keeps its pictures, verified against @atproto/api 0.20.37
+ * rather than assumed:
+ *
+ * | view              | pictures live at                          |
+ * |-------------------|-------------------------------------------|
+ * | `images`          | `images[].fullsize`                       |
+ * | `gallery`         | `items[].fullsize` (NOT `.thumbnail`)     |
+ * | `recordWithMedia` | `media.…` — recurse, it's one of the above |
+ * | `record`          | the QUOTED post's own `embeds[]`          |
+ * | `video`           | `thumbnail` — see below                   |
+ * | `external`        | `external.thumb`, plus the card fields    |
+ *
+ * **Video stores the still, not the video.** `playlist` is an HLS `.m3u8` and
+ * `proxyVideo` only accepts a `video/*` content type, so the poster frame is the
+ * only asset here we can actually fetch. It renders as a photo with no play
+ * affordance, which is a real compromise — and better than the post appearing to
+ * have nothing in it.
+ *
+ * **External becomes a link card, not an attachment.** `embedUrl`/`embedTitle`/
+ * `embedDescription`/`embedImage` already exist and the timeline already renders
+ * them for fediverse posts; putting a link thumbnail in `mediaUrls` instead would
+ * show it as a photo the author never posted.
+ */
+function extractEmbed(
+  embed: PostEmbed | undefined,
+  depth = 0,
+): { images: string[]; card: LinkCard | null } {
+  const none = { images: [] as string[], card: null };
+  // A quote of a quote is as far as this goes. Not for cycles — the API returns
+  // a tree — but because the second level's pictures belong to a post two hops
+  // from anything the owner chose to follow.
+  if (!embed || depth > 1) return none;
+
+  if (AppBskyEmbedImages.isView(embed)) {
+    return { images: embed.images.map((i) => i.fullsize || i.thumb).filter(Boolean), card: null };
+  }
+
+  if (AppBskyEmbedGallery.isView(embed)) {
+    // `items` is a union array; anything that isn't a ViewImage is skipped
+    // rather than guessed at.
+    const images = embed.items
+      .filter(AppBskyEmbedGallery.isViewImage)
+      .map((i) => i.fullsize || i.thumbnail)
+      .filter(Boolean);
+    return { images, card: null };
+  }
+
+  if (AppBskyEmbedVideo.isView(embed)) {
+    return { images: embed.thumbnail ? [embed.thumbnail] : [], card: null };
+  }
+
+  if (AppBskyEmbedExternal.isView(embed)) {
+    const e = embed.external;
+    return {
+      images: [],
+      card: {
+        url: e.uri,
+        title: e.title || null,
+        description: e.description || null,
+        thumb: e.thumb || null,
+      },
+    };
+  }
+
+  if (AppBskyEmbedRecordWithMedia.isView(embed)) {
+    // Quote-with-a-photo. The photo is the poster's own, so it is theirs to
+    // show — the quoted post is reached through `.record`, which is deliberately
+    // NOT followed here: that would stack a stranger's pictures on top of the
+    // ones this post actually carries.
+    return extractEmbed(embed.media, depth + 1);
+  }
+
+  if (AppBskyEmbedRecord.isView(embed)) {
+    // A plain quote. The pictures belong to the quoted post, and showing them is
+    // the point — a quote of a photo reads as empty without them.
+    const rec = embed.record;
+    if (!AppBskyEmbedRecord.isViewRecord(rec) || !rec.embeds?.length) return none;
+    const inner = rec.embeds.map((e) => extractEmbed(e, depth + 1));
+    return {
+      images: inner.flatMap((r) => r.images),
+      card: inner.find((r) => r.card)?.card ?? null,
+    };
+  }
+
+  return none;
+}
+
+/**
+ * Cache remote images locally, as the fediverse side does, so we aren't
+ * hot-linking — and keep the original URL for each one.
+ *
+ * **`urls.push(local || remote)`, not `if (local) push(local)` (#512).** The old
+ * form dropped the picture entirely whenever proxying failed, and `proxyImage`
+ * returns null *by design* when the media cache is set to 0. So the setting
+ * documented as "media then loads from the original server" deleted every
+ * Bluesky image instead — the exact inverse. `proxyImage`'s own doc comment
+ * states the contract ("returning null makes every caller fall back to the
+ * remote URL"); `processAttachments` in fedi-media.ts honours it, and this was
+ * the one caller that didn't.
+ *
+ * `remotes` is pushed for EVERY entry including passthroughs, because a parallel
+ * array that is sometimes short is worse than no array at all — `restoreEvictedMedia`
+ * skips any row where the two lengths disagree.
+ */
+async function localiseImages(
+  images: string[],
+): Promise<{ urls: string[]; remotes: string[] }> {
+  const urls: string[] = [];
+  const remotes: string[] = [];
+  for (const remote of images.slice(0, MAX_MEDIA)) {
     // Into uploads/fedi/, which is what the retention sweep and the storage
     // scan's cache trim both know how to reclaim. A different prefix would leak.
     const local = await proxyImage(remote);
-    if (local) out.push(local);
+    urls.push(local || remote);
+    remotes.push(remote);
   }
-  return out;
+  return { urls, remotes };
 }
 
 export async function syncBlueskyFeed(): Promise<BlueskyFeedResult> {
@@ -154,7 +306,10 @@ export async function syncBlueskyFeed(): Promise<BlueskyFeedResult> {
         createdAt?: string;
         reply?: { parent?: { uri?: string }; root?: { uri?: string } };
       };
-      embed?: { images?: { fullsize?: string; thumb?: string }[] };
+      // `unknown` on purpose (#512). This is a six-member union and the previous
+      // shape asserted one member of it, which is why nothing caught the bug.
+      // `extractEmbed` narrows with the SDK's own guards instead.
+      embed?: unknown;
       indexedAt?: string;
       likeCount?: number;
       repostCount?: number;
@@ -190,15 +345,54 @@ export async function syncBlueskyFeed(): Promise<BlueskyFeedResult> {
 
     const record = post.record ?? {};
 
-    // Only download images for rows we don't already hold. Without this every
-    // poll re-proxies every image in the window — a fresh copy on disk every
-    // fifteen minutes for the same posts, quietly eating the cache budget and
-    // re-fetching from Bluesky forever.
+    // The one cast, and it asserts only that this is the embed union — which is
+    // what getTimeline returns. Naming a MEMBER of it here is the bug (#512).
+    const extracted = extractEmbed(post.embed as PostEmbed | undefined);
+
+    // Only download images for rows that don't already HAVE them. Without the
+    // first half, every poll re-proxies every image in the window — a fresh copy
+    // on disk every fifteen minutes for the same posts, quietly eating the cache
+    // budget and re-fetching from Bluesky forever.
+    //
+    // But this used to branch on the row EXISTING (#512). `mediaUrls: []` is
+    // truthy, so a post stored empty — which, before the embed fix above, was
+    // most of them — copied that emptiness forward on every single poll and
+    // could never gain its pictures, even once the bug was fixed. Branching on
+    // whether media is actually present makes anything still inside the poll
+    // window heal itself on the next tick, at no cost for posts that genuinely
+    // have none: `extractEmbed` returns nothing for them, so nothing is fetched.
     const existing = await prisma.fediPost.findUnique({
       where: { bskyUri: uri },
-      select: { mediaUrls: true },
+      select: { mediaUrls: true, mediaRemoteUrls: true, embedUrl: true },
     });
-    const mediaUrls = existing ? existing.mediaUrls : await localiseImages(post.embed?.images ?? []);
+
+    let mediaUrls: string[];
+    let mediaRemoteUrls: string[];
+    if (existing?.mediaUrls.length) {
+      mediaUrls = existing.mediaUrls;
+      // Free repair, no re-download (#512). Rows stored before this fix have an
+      // empty `mediaRemoteUrls`, which makes `restoreEvictedMedia` skip them —
+      // so a cache trim leaves a broken image with no way back. When the live
+      // response still carries the same number of pictures, it IS the list of
+      // originals for those files, in the same order they were written.
+      mediaRemoteUrls =
+        existing.mediaRemoteUrls.length === 0 && extracted.images.length === existing.mediaUrls.length
+          ? extracted.images
+          : existing.mediaRemoteUrls;
+    } else {
+      const localised = await localiseImages(extracted.images);
+      mediaUrls = localised.urls;
+      mediaRemoteUrls = localised.remotes;
+    }
+    // Uniform, and correct rather than accidentally correct: every asset stored
+    // from Bluesky is a still image, including a video embed's poster frame.
+    const mediaTypes = mediaUrls.map(() => "image");
+
+    // The card's thumbnail is a local proxied path like every other embedImage,
+    // falling back to the remote URL on the same contract as the media above.
+    const cardImage = extracted.card?.thumb
+      ? ((await proxyImage(extracted.card.thumb)) ?? extracted.card.thumb)
+      : null;
 
     const data = {
       source: "bluesky",
@@ -209,7 +403,14 @@ export async function syncBlueskyFeed(): Promise<BlueskyFeedResult> {
       content: record.text ?? "",
       contentHtml: blueskyContentHtml(record.text ?? ""),
       mediaUrls,
-      mediaTypes: mediaUrls.map(() => "image"),
+      mediaTypes,
+      // #512: never written before, so `restoreEvictedMedia` skipped every
+      // Bluesky row and a cache trim left a permanently broken image.
+      mediaRemoteUrls,
+      embedUrl: extracted.card?.url ?? null,
+      embedTitle: extracted.card?.title ?? null,
+      embedDescription: extracted.card?.description ?? null,
+      embedImage: cardImage,
       username: author.handle,
       domain: domainOfHandle(author.handle),
       displayName: author.displayName || null,
@@ -233,6 +434,29 @@ export async function syncBlueskyFeed(): Promise<BlueskyFeedResult> {
       boostedByMe: Boolean(post.viewer?.repost),
     };
 
+    // What the update is allowed to touch about media, and nothing more (#512).
+    //
+    // "Set once at first sight" is right for threading and repost columns, but it
+    // is why the media fix would otherwise repair nothing: an existing row with an
+    // empty `mediaUrls` takes the localise branch above, downloads the pictures,
+    // and then the update silently drops them — so the next poll downloads them
+    // again, forever. Filling a gap is allowed; overwriting media we already hold
+    // is not, so each clause requires the stored value to be absent.
+    const mediaRepair = mediaUrls.length && !existing?.mediaUrls.length
+      ? { mediaUrls, mediaTypes, mediaRemoteUrls }
+      : mediaRemoteUrls.length && !existing?.mediaRemoteUrls.length
+        ? { mediaRemoteUrls }
+        : {};
+    const cardRepair =
+      extracted.card && !existing?.embedUrl
+        ? {
+            embedUrl: data.embedUrl,
+            embedTitle: data.embedTitle,
+            embedDescription: data.embedDescription,
+            embedImage: data.embedImage,
+          }
+        : {};
+
     try {
       await prisma.fediPost.upsert({
         where: { bskyUri: uri },
@@ -240,6 +464,8 @@ export async function syncBlueskyFeed(): Promise<BlueskyFeedResult> {
         // Text and profile fields can change upstream; the threading and repost
         // columns are set once at first sight and left alone.
         update: {
+          ...mediaRepair,
+          ...cardRepair,
           content: data.content,
           contentHtml: data.contentHtml,
           likeCount: data.likeCount,
