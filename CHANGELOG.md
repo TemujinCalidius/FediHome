@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Changed
+- Declared the last two ESLint plugins the config imports directly — `@next/eslint-plugin-next` and `eslint-plugin-react-hooks` (#507). They resolved only because another package happened to pull them in, so a routine update could have removed them and broken linting with a confusing missing-module error. No lint rule changes; the output is byte-identical.
+
 ### Fixed
 - **Checklists keep their ticks** (#529) — a markdown to-do list (`- [x] done`) had its checkboxes removed when the page was cleaned for safety, so a finished item looked exactly like an unfinished one. Not a styling quirk — the information was gone. Checkboxes now survive, as read-only ticks, and nothing else about what an outside server can put on your page has been loosened.
 - **`***` and `___` are dividers again in the composer** (#530) — markdown has three ways to write a horizontal line and the composer only recognised one, so the other two were published as literal asterisks or underscores. Worse, two of them in the same article turned everything between into bold italics. All three now work, and match what an article posted from an app already did. **Code blocks are also left alone now** — the composer was reaching inside them and formatting your code: `**bold**` in a code block came out bold, and a line of dashes became a divider in the middle of your snippet. Articles already published keep what they have; this applies to new ones and to anything you edit.
