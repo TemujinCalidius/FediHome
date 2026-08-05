@@ -20,8 +20,9 @@ import { isPrivateIPv4, isPrivateIPv6 } from "./url-guard";
  * **This is a real undici Dispatcher on purpose.** A duck-typed object with a
  * `dispatch` method is SILENTLY IGNORED by fetch — no error, the callback simply
  * never fires, and the guard looks installed while doing nothing. Verified
- * end-to-end on Node 20.20 (what the Dockerfile runs) and Node 22.22 (CI), both
- * against undici 6.28: the hook fires and the request completes.
+ * end-to-end on Node 20.20 (what the Dockerfile runs) and Node 22.22 (CI),
+ * originally against undici 6.28 and re-confirmed at 8.10 (#506): the hook fires
+ * and the request completes.
  *
  * `opts.all` is **true** in practice, which decides the callback shape — the
  * array form. Getting that wrong doesn't fail loudly; it produces a bare

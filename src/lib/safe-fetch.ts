@@ -155,10 +155,11 @@ export async function guardedFetch(url: string, opts: GuardedFetchOptions): Prom
     //
     // `dispatcher` is honoured only by the undici copy that BUILT it. The global
     // `fetch` is Node's *bundled* undici; `guardedDispatcher()` is an Agent from
-    // the one in node_modules. While both are 6.x that happens to work — but the
-    // handler shapes are version-specific, so bumping the userland copy to 8.x
-    // makes the built-in reject it outright (`UND_ERR_INVALID_ARG: invalid
-    // onRequestStart method`), taking every outbound request with it.
+    // the one in node_modules, now 8.x. The handler shapes are version-specific,
+    // so the built-in rejects that Agent outright (`UND_ERR_INVALID_ARG: invalid
+    // onRequestStart method`), taking every outbound request with it. Measured:
+    // reverting just this one call fails 24 of the 40 tests across safe-fetch,
+    // signed-fetch-redirects and pinned-dispatcher.
     //
     // Nothing in the type system says so: `dispatcher` needs a cast either way,
     // and `tsc --noEmit` plus `next build` both pass while federation is broken.
