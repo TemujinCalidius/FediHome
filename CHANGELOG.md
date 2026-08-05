@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.27.0 (2026-08-05)
 
 ### Added
 - **The owner area now has a home page, and a way to find things** (#368) — going to `/admin` used to give you "not found", and the only links to any of the admin pages lived in one row at the top of the timeline. Miss that row and Sessions, App activity and Integrations were effectively invisible. There's now **a proper home at `/admin`**: everything you can change, grouped by what you're trying to do rather than by which page it happens to live on, plus a few numbers about your instance. Every admin page carries the same navigation bar, so you can always get back. And there's a **search box** — type "push", "backup", "blocked" or "cron" and it takes you straight to the right section, including words the screens themselves don't use. **"Instance settings" is now called "Background jobs"**, which is what it contains; nothing moved, so your bookmarks and links still work.
