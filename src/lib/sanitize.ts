@@ -14,6 +14,14 @@ const OPTIONS: sanitize.IOptions = {
     // It reads as a theme choice rather than a bug, which is why it lasted.
     // Void element, no attributes, no scripting surface.
     "hr",
+    // `input` (#529), and ONLY ever as a disabled checkbox — see the filter below.
+    // marked renders a GFM task list as `<input checked disabled type="checkbox">`.
+    // With the tag missing from this list the box was deleted and only the label
+    // survived, so `- [x] done` and `- [ ] todo` sanitised to byte-identical
+    // markup. That is a lost STATE, not a lost decoration, which is what separates
+    // it from an ordinary allowlist gap — and it read as a theme that doesn't
+    // style checkboxes, which is why it lasted.
+    "input",
     "table", "thead", "tbody", "tr", "th", "td",
     "img", "span", "div",
   ],
@@ -26,6 +34,9 @@ const OPTIONS: sanitize.IOptions = {
     pre: ["class"],
     td: ["colspan", "rowspan"],
     th: ["colspan", "rowspan"],
+    // Deliberately not `name`, `value`, `src`, `form` or `formaction`: a checkbox
+    // in a post body is a rendering artefact, not something submittable.
+    input: ["type", "checked", "disabled"],
   },
   allowedSchemes: ["http", "https", "mailto"],
   allowedIframeHostnames: [],
@@ -33,6 +44,21 @@ const OPTIONS: sanitize.IOptions = {
   exclusiveFilter: (frame) => {
     if (frame.attribs.href && DANGEROUS_PROTO.test(frame.attribs.href)) return true;
     if (frame.attribs.src && DANGEROUS_PROTO.test(frame.attribs.src)) return true;
+    // An `input` that isn't exactly a disabled checkbox is dropped whole (#529).
+    //
+    // THE WIDENING MUST NOT BECOME A LOOSENING, and this list is not only used on
+    // the owner's own markdown: the SAME allowlist sanitises HTML arriving from
+    // arbitrary remote instances — the inbox, conversation threads, Explore, every
+    // FediCard. Allowing a bare `input` would let any remote server put a text
+    // box, or a `type="image"` submit control, into the timeline.
+    //
+    // Attribute-level allowlisting alone isn't enough: it would still permit
+    // `<input type="text">`. Requiring the exact shape marked emits is the tight
+    // rule, and it reuses this hook rather than reaching for `transformTags`.
+    if (frame.tag === "input") {
+      if (frame.attribs.type !== "checkbox") return true;
+      if (!("disabled" in frame.attribs)) return true;
+    }
     return false;
   },
 };
