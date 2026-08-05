@@ -180,6 +180,18 @@ export async function collectDiagnostics(): Promise<string> {
   for (const name of ENV_NAMES) {
     out.push(line(name, process.env[name] === undefined ? "not set" : "set"));
   }
+  // Derived, not another name (#531). Whether visitors can be told apart is a
+  // conclusion drawn from two settings and it changes how the admin login
+  // behaves — an owner reporting "I got locked out" needs this stated, not
+  // reconstructed from which variables happen to be set.
+  out.push(
+    line(
+      "rate-limit keying",
+      process.env.TRUSTED_PROXY === "true"
+        ? `per-visitor via ${process.env.TRUSTED_PROXY_HEADER?.trim().toLowerCase() || "x-real-ip (assumed)"}`
+        : "SHARED — every visitor counts as one client",
+    ),
+  );
 
   section(`Recent log (last ${LOG_TAIL_LINES} lines)`);
   const tail = getRecentLines(LOG_TAIL_LINES);
