@@ -24,9 +24,49 @@ import { prisma } from "@/lib/db";
  */
 export const BACKFILL_KEY = "migrations.viaLookupBackfill";
 
+/**
+ * Has the marker outlived the work it records (#516)?
+ *
+ * The marker says "the backfill ran". What actually matters is "the column is
+ * populated", and those are the same fact right up until the column is dropped
+ * and recreated — which is exactly what a rollback past #460 does. `prisma db
+ * push` refuses to drop `viaLookup` on the data-loss guard and the container
+ * crash-loops, so the way out is a manual `ALTER TABLE … DROP COLUMN`. Nothing
+ * removes the SiteSetting row alongside it. Roll forward and the column comes
+ * back `DEFAULT false` on every row while the marker still reads "done", so
+ * every previously-hidden stray matches the public feed query again — the exact
+ * outcome #460 exists to prevent, silently, with no signal that anything
+ * happened.
+ *
+ * The marker already stores the COUNT, so no extra state is needed to tell the
+ * two apart:
+ *
+ *  - recorded 0 → nothing was ever marked, so "nothing is marked now" is the
+ *    expected state and says nothing. A rollback costs such an instance nothing
+ *    either, since there was nothing to lose.
+ *  - recorded N > 0 with nothing marked now → the column came back empty.
+ *
+ * **The #384 protection survives**, which is the thing to be careful about: the
+ * predicate still runs at most once per POPULATED column, not once per boot.
+ * One honest exception, worth stating rather than hiding — if the retention
+ * sweep eventually prunes every marked row, this reads as stale and re-runs
+ * once. That marks strays as hidden, which is the safe direction and the bias
+ * the backfill already has, and it then settles: either the fresh count is
+ * positive and rows exist, or it is 0 and this returns false from now on.
+ */
+async function markerOutlivedItsColumn(recorded: string): Promise<boolean> {
+  const marked = Number(recorded);
+  if (!Number.isFinite(marked) || marked <= 0) return false;
+  const any = await prisma.fediPost.findFirst({
+    where: { viaLookup: true },
+    select: { id: true },
+  });
+  return any === null;
+}
+
 export async function backfillViaLookup(): Promise<number | null> {
   const done = await prisma.siteSetting.findUnique({ where: { key: BACKFILL_KEY } });
-  if (done) return null;
+  if (done && !(await markerOutlivedItsColumn(done.value))) return null;
 
   const following = await prisma.fediFollowing.findMany({ select: { actorUri: true } });
   const followed = following.map((f) => f.actorUri);
