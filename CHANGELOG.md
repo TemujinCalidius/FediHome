@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.27.1 (2026-08-08)
 
 ### Changed
 - Declared the last two ESLint plugins the config imports directly — `@next/eslint-plugin-next` and `eslint-plugin-react-hooks` (#507). They resolved only because another package happened to pull them in, so a routine update could have removed them and broken linting with a confusing missing-module error. No lint rule changes; the output is byte-identical.
