@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { getBlueskyCredentials } from "@/lib/integrations";
 import { prisma } from "@/lib/db";
 import { deliverActivity } from "@/lib/http-signatures";
 import { siteConfig } from "@/../site.config";
@@ -10,6 +9,7 @@ import {
   type ResolvedFediActor,
 } from "@/lib/fedi-resolve";
 import type { AdminBody } from "./types";
+import { getBlueskyAgent } from "@/lib/bluesky-agent";
 
 /**
  * Resolve a Fedi recipient to their actorUri + inbox. Prefer cached records
@@ -176,16 +176,14 @@ export async function bskyDm(body: AdminBody): Promise<NextResponse> {
     );
   }
 
-  const creds = await getBlueskyCredentials();
-  if (!creds) {
+  // The shared agent, so the configured PDS is honoured (#541). This used to
+  // build its own against a hardcoded bsky.social.
+  const agent = await getBlueskyAgent();
+  if (!agent) {
     return NextResponse.json({ error: "Bluesky not configured" }, { status: 500 });
   }
-  const { handle: bskyHandle, password: bskyPassword } = creds;
 
   try {
-    const { BskyAgent } = await import("@atproto/api");
-    const agent = new BskyAgent({ service: "https://bsky.social" });
-    await agent.login({ identifier: creds.did ?? bskyHandle, password: bskyPassword });
     const chatAgent = agent.withProxy("bsky_chat", "did:web:api.bsky.chat");
 
     let convoId = existingConvoId as string | undefined;
@@ -206,7 +204,11 @@ export async function bskyDm(body: AdminBody): Promise<NextResponse> {
       data: {
         source: "bluesky",
         senderUri: agent.session!.did,
-        senderHandle: bskyHandle,
+        // From the SESSION, not the stored credential (#541). The line above
+        // already reads the DID this way, and the handle is the mutable half —
+        // after a domain-handle claim (#448) the saved one goes stale while the
+        // session carries what the PDS actually authenticated us as.
+        senderHandle: agent.session!.handle,
         senderName: siteConfig.authorName,
         content: bskyDmContent,
         bskyConvoId: convoId,

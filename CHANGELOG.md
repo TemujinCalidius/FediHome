@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- **Your own AT Protocol server actually works now** (#541) — since v1.25.0 you've been able to point FediHome at a PDS you run yourself, and it only half worked: your timeline and your likes went to your server, but **posting, replying, follows, DMs and notifications all still went to bsky.social** and failed there, because twelve separate places had the address written into them instead of reading your setting. Your app password was being sent to Bluesky on each of those attempts too, in a sign-in that could never succeed. They all use the one shared connection now, so the address you configure is the address FediHome uses — everywhere. Nothing changes if you're on bsky.social, which is still the default.
+
 ## 1.27.1 (2026-08-08)
 
 ### Changed

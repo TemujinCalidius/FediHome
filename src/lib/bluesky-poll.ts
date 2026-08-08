@@ -1,6 +1,5 @@
-import { BskyAgent } from "@atproto/api";
-import { getBlueskyCredentials } from "@/lib/integrations";
 import { prisma } from "./db";
+import { getBlueskyAgent } from "./bluesky-agent";
 
 // In-memory throttle so a post page doesn't re-poll Bluesky on every render.
 // Keyed by postId; best-effort (resets on server restart), not durable state.
@@ -24,17 +23,19 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
  * repeated renders within the window are skipped.
  */
 export async function pollBlueskyReplies(postId: string, blueskyUri: string): Promise<number> {
-  const creds = await getBlueskyCredentials();
-  if (!creds) return 0;
-  const { handle, password } = creds;
+  // The shared agent, so the configured PDS is honoured (#541). This used to
+  // build its own against a hardcoded bsky.social.
+  // Still wrapped in the timeout: this renders on a public page request, so a
+  // hung login must not hold the response open. The shared agent caches for
+  // thirty minutes, so only the first call in a window actually logs in.
+  const agent = await withTimeout(getBlueskyAgent(), POLL_TIMEOUT_MS, "Bluesky login");
+  if (!agent) return 0;
 
   // Skip if this post was polled within the TTL window.
   const last = lastPolledAt.get(postId);
   if (last !== undefined && Date.now() - last < POLL_TTL_MS) return 0;
   lastPolledAt.set(postId, Date.now());
 
-  const agent = new BskyAgent({ service: "https://bsky.social" });
-  await withTimeout(agent.login({ identifier: creds.did ?? handle, password }), POLL_TIMEOUT_MS, "Bluesky login");
 
   const threadRes = await withTimeout(
     agent.getPostThread({ uri: blueskyUri, depth: 10 }),
