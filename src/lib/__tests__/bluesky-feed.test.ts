@@ -198,12 +198,29 @@ describe("the watermark", () => {
   });
 });
 
-describe("media", () => {
-  it("caches images locally rather than hot-linking Bluesky's CDN", async () => {
+/**
+ * #512. Bluesky posts arrived with their text and no photo.
+ *
+ * Every fixture here carries a real `$type`, because that is what the protocol
+ * sends and what the SDK's `isView` guards test. The two tests that used to live
+ * here passed a bare `{ images: [...] }` with no discriminant — which is exactly
+ * the shape the old hand-written cast believed in, and is why they went on
+ * passing while five of the six embed shapes imported nothing.
+ */
+const IMAGES = (...urls: string[]) => ({
+  $type: "app.bsky.embed.images#view",
+  images: urls.map((fullsize) => ({ fullsize, thumb: `${fullsize}?thumb`, alt: "" })),
+});
+
+describe("media — every embed shape, not just one (#512)", () => {
+  const feedWith = (embed: unknown) =>
     getTimeline.mockResolvedValue({
       success: true,
-      data: { feed: [feedItem({ post: { embed: { images: [{ fullsize: "https://cdn.bsky.app/a.jpg" }] } } })] },
+      data: { feed: [feedItem({ post: { embed } })] },
     });
+
+  it("caches images locally rather than hot-linking Bluesky's CDN", async () => {
+    feedWith(IMAGES("https://cdn.bsky.app/a.jpg"));
     await syncBlueskyFeed();
     expect(proxyImage).toHaveBeenCalledWith("https://cdn.bsky.app/a.jpg");
     // Into uploads/fedi/, which is what the retention sweep and the cache trim
@@ -211,16 +228,212 @@ describe("media", () => {
     expect(created().mediaUrls).toEqual(["/uploads/fedi/2026/07/x.webp"]);
   });
 
-  it("does NOT re-proxy images for a row we already hold", async () => {
-    // Otherwise every poll downloads every image in the window again — a fresh
-    // copy on disk every fifteen minutes, forever.
-    vi.mocked(prisma.fediPost.findUnique).mockResolvedValue({ mediaUrls: ["/uploads/fedi/old.webp"] } as never);
+  it("reads a quote-with-a-photo, which is the common case that went blank", async () => {
+    // recordWithMedia keeps the pictures at `.media.images`, so `.images` on the
+    // embed itself is undefined — the whole of the reported bug in one shape.
+    feedWith({
+      $type: "app.bsky.embed.recordWithMedia#view",
+      record: { $type: "app.bsky.embed.record#view", record: {} },
+      media: IMAGES("https://cdn.bsky.app/quoted.jpg"),
+    });
+    await syncBlueskyFeed();
+    expect(proxyImage).toHaveBeenCalledWith("https://cdn.bsky.app/quoted.jpg");
+    expect(created().mediaUrls).toHaveLength(1);
+  });
+
+  it("reads a gallery, taking fullsize rather than the thumbnail", async () => {
+    feedWith({
+      $type: "app.bsky.embed.gallery#view",
+      items: [
+        { $type: "app.bsky.embed.gallery#viewImage", fullsize: "https://cdn/g1.jpg", thumbnail: "https://cdn/g1-t.jpg", alt: "" },
+        { $type: "app.bsky.embed.gallery#viewImage", fullsize: "https://cdn/g2.jpg", thumbnail: "https://cdn/g2-t.jpg", alt: "" },
+      ],
+    });
+    await syncBlueskyFeed();
+    expect(proxyImage).toHaveBeenCalledWith("https://cdn/g1.jpg");
+    expect(proxyImage).toHaveBeenCalledWith("https://cdn/g2.jpg");
+    expect(proxyImage).not.toHaveBeenCalledWith("https://cdn/g1-t.jpg");
+  });
+
+  it("stores a video's poster frame, since the playlist isn't fetchable", async () => {
+    // `playlist` is HLS and proxyVideo only accepts video/* — the still is the
+    // only asset here we can actually keep. It renders as a photo, deliberately.
+    feedWith({
+      $type: "app.bsky.embed.video#view",
+      cid: "bafy",
+      playlist: "https://video.bsky.app/x/playlist.m3u8",
+      thumbnail: "https://video.bsky.app/x/thumb.jpg",
+    });
+    await syncBlueskyFeed();
+    expect(proxyImage).toHaveBeenCalledWith("https://video.bsky.app/x/thumb.jpg");
+    expect(proxyImage).not.toHaveBeenCalledWith("https://video.bsky.app/x/playlist.m3u8");
+    expect(created().mediaTypes).toEqual(["image"]);
+  });
+
+  it("turns a link card into the embed columns, not into an attachment", async () => {
+    // Putting a link's thumbnail in mediaUrls would show it as a photo the
+    // author never posted. The embed* columns already render as a card.
+    feedWith({
+      $type: "app.bsky.embed.external#view",
+      external: {
+        uri: "https://example.com/article",
+        title: "An article",
+        description: "About things",
+        thumb: "https://cdn/og.jpg",
+      },
+    });
+    await syncBlueskyFeed();
+    const c = created();
+    expect(c.mediaUrls).toEqual([]);
+    expect(c.embedUrl).toBe("https://example.com/article");
+    expect(c.embedTitle).toBe("An article");
+    expect(c.embedDescription).toBe("About things");
+    expect(c.embedImage).toBe("/uploads/fedi/2026/07/x.webp");
+  });
+
+  it("reads a plain quote's pictures from the quoted post", async () => {
+    feedWith({
+      $type: "app.bsky.embed.record#view",
+      record: {
+        $type: "app.bsky.embed.record#viewRecord",
+        uri: "at://did:plc:bob/app.bsky.feed.post/9",
+        cid: "bafy",
+        author: { did: "did:plc:bob", handle: "bob.bsky.social" },
+        value: {},
+        indexedAt: "2026-07-01T09:00:00.000Z",
+        embeds: [IMAGES("https://cdn/quoted-photo.jpg")],
+      },
+    });
+    await syncBlueskyFeed();
+    expect(proxyImage).toHaveBeenCalledWith("https://cdn/quoted-photo.jpg");
+  });
+
+  it("stores nothing, and fetches nothing, for a post with no embed", async () => {
+    await syncBlueskyFeed();
+    expect(proxyImage).not.toHaveBeenCalled();
+    expect(created().mediaUrls).toEqual([]);
+  });
+
+  it("ignores an embed shape it doesn't know, rather than throwing", async () => {
+    feedWith({ $type: "app.bsky.embed.somethingNew#view", stuff: [1, 2, 3] });
+    await syncBlueskyFeed();
+    expect(created().mediaUrls).toEqual([]);
+  });
+});
+
+describe("media — a failed proxy falls back, it does not delete (#512)", () => {
+  it("keeps the remote URL when proxying returns null", async () => {
+    // proxyImage returns null BY DESIGN when the media cache is set to 0, which
+    // the panel documents as "media then loads from the original server". The
+    // old `if (local) push(local)` deleted every Bluesky image instead — the
+    // exact inverse of the promise, and only on this one caller.
+    proxyImage.mockResolvedValue(null);
     getTimeline.mockResolvedValue({
       success: true,
-      data: { feed: [feedItem({ post: { embed: { images: [{ fullsize: "https://cdn.bsky.app/a.jpg" }] } } })] },
+      data: { feed: [feedItem({ post: { embed: IMAGES("https://cdn.bsky.app/a.jpg") } })] },
+    });
+    await syncBlueskyFeed();
+    expect(created().mediaUrls).toEqual(["https://cdn.bsky.app/a.jpg"]);
+  });
+
+  it("keeps the three media arrays the same length whichever way it went", async () => {
+    // restoreEvictedMedia skips any row where they disagree, so a sometimes-short
+    // parallel array is worse than none at all.
+    proxyImage.mockResolvedValueOnce(null).mockResolvedValue("/uploads/fedi/2026/07/x.webp");
+    getTimeline.mockResolvedValue({
+      success: true,
+      data: { feed: [feedItem({ post: { embed: IMAGES("https://cdn/a.jpg", "https://cdn/b.jpg") } })] },
+    });
+    await syncBlueskyFeed();
+    const c = created();
+    expect(c.mediaUrls).toEqual(["https://cdn/a.jpg", "/uploads/fedi/2026/07/x.webp"]);
+    expect(c.mediaRemoteUrls).toEqual(["https://cdn/a.jpg", "https://cdn/b.jpg"]);
+    expect((c.mediaTypes as string[]).length).toBe((c.mediaUrls as string[]).length);
+  });
+
+  it("records the originals so an evicted file can be restored (#478)", async () => {
+    getTimeline.mockResolvedValue({
+      success: true,
+      data: { feed: [feedItem({ post: { embed: IMAGES("https://cdn.bsky.app/a.jpg") } })] },
+    });
+    await syncBlueskyFeed();
+    expect(created().mediaRemoteUrls).toEqual(["https://cdn.bsky.app/a.jpg"]);
+  });
+});
+
+describe("media — a row stored empty can gain its pictures (#512)", () => {
+  const updated = () => vi.mocked(prisma.fediPost.upsert).mock.calls[0][0].update as Record<string, unknown>;
+
+  it("does NOT re-proxy images for a row that already has them", async () => {
+    // Otherwise every poll downloads every image in the window again — a fresh
+    // copy on disk every fifteen minutes, forever.
+    vi.mocked(prisma.fediPost.findUnique).mockResolvedValue({
+      mediaUrls: ["/uploads/fedi/old.webp"],
+      mediaRemoteUrls: ["https://cdn/old.jpg"],
+      embedUrl: null,
+    } as never);
+    getTimeline.mockResolvedValue({
+      success: true,
+      data: { feed: [feedItem({ post: { embed: IMAGES("https://cdn.bsky.app/a.jpg") } })] },
     });
     await syncBlueskyFeed();
     expect(proxyImage).not.toHaveBeenCalled();
+    expect(updated().mediaUrls).toBeUndefined();
+  });
+
+  it("DOES retry a row holding an empty array, and writes the result", async () => {
+    // The old guard branched on the row EXISTING. `[]` is truthy, so a post that
+    // landed blank stayed blank forever — meaning a fix alone repaired nothing.
+    vi.mocked(prisma.fediPost.findUnique).mockResolvedValue({
+      mediaUrls: [],
+      mediaRemoteUrls: [],
+      embedUrl: null,
+    } as never);
+    getTimeline.mockResolvedValue({
+      success: true,
+      data: { feed: [feedItem({ post: { embed: IMAGES("https://cdn.bsky.app/a.jpg") } })] },
+    });
+    await syncBlueskyFeed();
+    expect(proxyImage).toHaveBeenCalledWith("https://cdn.bsky.app/a.jpg");
+    // Written on the UPDATE path too. Without this the download happens on every
+    // single poll and is discarded every single time.
+    expect(updated().mediaUrls).toEqual(["/uploads/fedi/2026/07/x.webp"]);
+    expect(updated().mediaRemoteUrls).toEqual(["https://cdn.bsky.app/a.jpg"]);
+  });
+
+  it("fills in missing originals for an existing row without re-downloading", async () => {
+    // Rows written before #512 have media but no mediaRemoteUrls, so a cache trim
+    // leaves a broken image with no way back. Same count means the live response
+    // IS that list of originals, in the order they were written.
+    vi.mocked(prisma.fediPost.findUnique).mockResolvedValue({
+      mediaUrls: ["/uploads/fedi/old.webp"],
+      mediaRemoteUrls: [],
+      embedUrl: null,
+    } as never);
+    getTimeline.mockResolvedValue({
+      success: true,
+      data: { feed: [feedItem({ post: { embed: IMAGES("https://cdn.bsky.app/a.jpg") } })] },
+    });
+    await syncBlueskyFeed();
+    expect(proxyImage).not.toHaveBeenCalled();
+    expect(updated().mediaRemoteUrls).toEqual(["https://cdn.bsky.app/a.jpg"]);
+    expect(updated().mediaUrls).toBeUndefined();
+  });
+
+  it("leaves the originals alone when the counts disagree", async () => {
+    // Pairing by index across lists of different lengths would attach one photo's
+    // original to a different photo's file.
+    vi.mocked(prisma.fediPost.findUnique).mockResolvedValue({
+      mediaUrls: ["/uploads/fedi/one.webp"],
+      mediaRemoteUrls: [],
+      embedUrl: null,
+    } as never);
+    getTimeline.mockResolvedValue({
+      success: true,
+      data: { feed: [feedItem({ post: { embed: IMAGES("https://cdn/a.jpg", "https://cdn/b.jpg") } })] },
+    });
+    await syncBlueskyFeed();
+    expect(updated().mediaRemoteUrls).toBeUndefined();
   });
 });
 

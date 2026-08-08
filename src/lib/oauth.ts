@@ -227,6 +227,25 @@ export function makeRateLimiter(max: number, windowMs: number, maxBuckets = 1000
       b.count++;
       return b.count <= max;
     },
+
+    /**
+     * Would the next `check` be allowed — without spending anything (#531).
+     *
+     * The login route can't use `check` for its gate. It has to ask "is this
+     * caller blocked?" *before* verifying a password, and count only if the
+     * password turns out to be wrong; counting at the gate would let anyone
+     * lock the owner out with empty POSTs that cost the server nothing.
+     */
+    peek(key: string, now: number): boolean {
+      const b = buckets.get(key);
+      if (!b || now >= b.resetAt) return true;
+      return b.count < max;
+    },
+
+    /** Forget a key entirely — a successful login clears its own failures. */
+    reset(key: string): void {
+      buckets.delete(key);
+    },
   };
 }
 

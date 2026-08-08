@@ -9,6 +9,7 @@ import { imageAttachment } from "@/lib/ap-post";
 import { buildMediaUpdate } from "@/lib/post-media";
 import { enqueueFailedCrosspost } from "@/lib/crosspost-retry";
 import { normalizeCategory } from "@/lib/categories";
+import { renderMarkdown, linkHashtags } from "@/lib/compose-markdown";
 import path from "path";
 import { getSiteUrl } from "@/lib/identity";
 import { resolveUploadPath } from "@/lib/uploads-dir";
@@ -28,12 +29,6 @@ function extractHashtags(text: string): string[] {
   return [...new Set(matches.map((m) => m.slice(1)))];
 }
 
-function linkHashtags(text: string): string {
-  return text.replace(
-    /#([a-zA-Z0-9_]+)/g,
-    '<a href="https://mastodon.social/tags/$1" class="hashtag" rel="tag">#$1</a>'
-  );
-}
 
 function stripMarkdown(text: string): string {
   return text
@@ -55,67 +50,6 @@ function stripMarkdown(text: string): string {
     .trim();
 }
 
-/** Simple markdown to HTML — for article content rendered on site */
-function renderMarkdown(md: string): string {
-  let html = md;
-
-  // Code blocks (before other processing)
-  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, code) => {
-    const cls = lang ? ` class="language-${lang}"` : "";
-    return `<pre><code${cls}>${code.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</code></pre>`;
-  });
-
-  // Inline code
-  html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
-
-  // Headers
-  html = html.replace(/^######\s+(.+)$/gm, "<h6>$1</h6>");
-  html = html.replace(/^#####\s+(.+)$/gm, "<h5>$1</h5>");
-  html = html.replace(/^####\s+(.+)$/gm, "<h4>$1</h4>");
-  html = html.replace(/^###\s+(.+)$/gm, "<h3>$1</h3>");
-  html = html.replace(/^##\s+(.+)$/gm, "<h2>$1</h2>");
-  html = html.replace(/^#\s+(.+)$/gm, "<h1>$1</h1>");
-
-  // Bold and italic
-  html = html.replace(/\*\*\*([^*]+)\*\*\*/g, "<strong><em>$1</em></strong>");
-  html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-  html = html.replace(/\*([^*]+)\*/g, "<em>$1</em>");
-  html = html.replace(/___([^_]+)___/g, "<strong><em>$1</em></strong>");
-  html = html.replace(/__([^_]+)__/g, "<strong>$1</strong>");
-  html = html.replace(/_([^_]+)_/g, "<em>$1</em>");
-
-  // Strikethrough
-  html = html.replace(/~~([^~]+)~~/g, "<del>$1</del>");
-
-  // Links
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
-
-  // Images
-  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" />');
-
-  // Blockquotes
-  html = html.replace(/^>\s+(.+)$/gm, "<blockquote>$1</blockquote>");
-
-  // Horizontal rules
-  html = html.replace(/^---+$/gm, "<hr />");
-
-  // Hashtags
-  html = linkHashtags(html);
-
-  // Paragraphs — wrap remaining text in <p> tags
-  html = html
-    .split(/\n\n+/)
-    .map((block) => {
-      const trimmed = block.trim();
-      if (!trimmed) return "";
-      // Don't wrap blocks that are already HTML block elements
-      if (/^<(h[1-6]|pre|blockquote|ul|ol|table|hr|div)/.test(trimmed)) return trimmed;
-      return `<p>${trimmed.replace(/\n/g, "<br>")}</p>`;
-    })
-    .join("\n");
-
-  return html;
-}
 
 export async function POST(req: NextRequest) {
   // Owner cookie OR a `create`-scoped bearer token, so a native app can use the

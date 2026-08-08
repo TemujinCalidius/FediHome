@@ -1,6 +1,6 @@
 {
   "name": "fedihome",
-  "version": "1.27.0",
+  "version": "1.27.1",
   "description": "Your home on the Fediverse — self-hosted publishing for blog, photos, and federated social.",
   "main": "index.js",
   "scripts": {
@@ -52,6 +52,7 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.6",
+    "@next/eslint-plugin-next": "^16.3.0",
     "@types/nodemailer": "^8.0.1",
     "@types/pg": "^8.20.3",
     "@types/react": "^19.2.18",
@@ -62,16 +63,18 @@
     "@vitest/coverage-v8": "^4.1.10",
     "eslint": "^10.8.0",
     "eslint-config-next": "^16.3.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "tsx": "^4.23.5",
     "vitest": "^4.1.10"
   },
   "overrides": {
     "yaml": "^2.8.3",
-    "js-yaml": "^4.2.0",
+    "js-yaml": "^4.3.1",
     "sharp": "^0.35.3",
     "postcss": "^8.5.25",
     "brace-expansion": "^5.0.9",
     "fast-uri": "^3.1.5",
+    "nanoid": "^3.3.18",
     "find-my-way": "^9.7.0",
     "valibot": "^1.4.2",
     "@opentelemetry/core": "^2.8.0",

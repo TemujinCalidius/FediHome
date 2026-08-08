@@ -53,7 +53,10 @@ vi.mock("@/lib/crosspost", () => ({
 // `rateBuckets` is module-level with a 10-request/60s cap, so without a unique key
 // per request the 11th test in this file would 429 instead of exercising the route.
 let reqCounter = 0;
-vi.mock("@/lib/client-ip", () => ({ rateLimitKey: () => `test-${reqCounter}` }));
+vi.mock("@/lib/client-ip", () => ({
+  rateLimitKey: () => `test-${reqCounter}`,
+  SHARED_BUCKET_KEY: "default",
+}));
 vi.mock("@/lib/db", () => ({
   prisma: {
     post: { create: vi.fn(), findFirst: vi.fn(), findMany: vi.fn(), findUnique: vi.fn() },

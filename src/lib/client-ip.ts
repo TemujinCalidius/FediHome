@@ -81,9 +81,20 @@ function trustedHeader(): TrustedHeader | null {
   return null;
 }
 
+/**
+ * The key everybody shares when no caller can be told from another.
+ *
+ * Exported because "is this a real per-caller key or the fallback?" is a
+ * question callers legitimately need to ask (#531). The admin-login throttle
+ * asks it: a per-IP limit is protection when the key is a caller and a lockout
+ * primitive when it is this string, since one attacker's failures then count as
+ * everybody's — including the only person who is supposed to get in.
+ */
+export const SHARED_BUCKET_KEY = "default";
+
 export function rateLimitKey(req: { headers: { get(name: string): string | null } }): string {
   const header = trustedHeader();
-  if (!header) return "default";
+  if (!header) return SHARED_BUCKET_KEY;
 
   const raw = req.headers.get(header);
   // Leftmost hop for XFF; the others carry a single address. `.split(",")` on a
@@ -108,5 +119,5 @@ export function rateLimitKey(req: { headers: { get(name: string): string | null 
       }
     }
   }
-  return "default";
+  return SHARED_BUCKET_KEY;
 }
