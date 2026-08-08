@@ -69,11 +69,12 @@
   },
   "overrides": {
     "yaml": "^2.8.3",
-    "js-yaml": "^4.2.0",
+    "js-yaml": "^4.3.1",
     "sharp": "^0.35.3",
     "postcss": "^8.5.25",
     "brace-expansion": "^5.0.9",
     "fast-uri": "^3.1.5",
+    "nanoid": "^3.3.18",
     "find-my-way": "^9.7.0",
     "valibot": "^1.4.2",
     "@opentelemetry/core": "^2.8.0",
