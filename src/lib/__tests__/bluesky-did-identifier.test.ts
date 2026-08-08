@@ -13,9 +13,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  * keeps working right up until the cache expires, and then breaks for a reason
  * that looks nothing like "I changed my handle half an hour ago".
  *
- * Fourteen call sites log in; all of them now pass `creds.did ?? handle`, so the
- * fallback keeps env-configured instances behaving exactly as before until a DID
- * is captured.
+ * There used to be fourteen places that logged in, each passing
+ * `creds.did ?? handle` for itself. Since #541 there are two: this shared agent,
+ * and `testBlueskyLogin` for the Test button. The fallback is unchanged, so
+ * env-configured instances behave exactly as before until a DID is captured —
+ * there is simply only one copy of it left to get wrong.
  */
 
 const { getBlueskyCredentials, rememberBlueskyDid, normalizeBlueskyHandle } = vi.hoisted(() => ({

@@ -32,7 +32,7 @@ import {
 const SESSION_TTL_MS = 30 * 60_000;
 
 let cached: { key: string; at: number; agent: BskyAgent } | null = null;
-let inFlight: Promise<BskyAgent> | null = null;
+let inFlight: { key: string; p: Promise<BskyAgent> } | null = null;
 
 /** Are Bluesky credentials configured at all? */
 export async function blueskyConfigured(): Promise<boolean> {
@@ -68,8 +68,17 @@ export async function getBlueskyAgent(): Promise<BskyAgent | null> {
   }
 
   // Collapse concurrent callers onto one login instead of racing several.
-  if (!inFlight) {
-    inFlight = (async () => {
+  //
+  // KEYED, and that is not decoration (#541). This used to be a bare promise
+  // with no record of what it was logging in AS. A caller arriving with
+  // different credentials while a login was in flight skipped its own and was
+  // handed the other one's agent — logged in to the wrong identity, or the wrong
+  // PDS, and working, so the symptom is posts going somewhere unexpected rather
+  // than an error. Narrow, but this change routes twelve more callers onto this
+  // path, and the whole point of those callers moving here is that the service
+  // is now variable.
+  if (!inFlight || inFlight.key !== key) {
+    const p = (async () => {
       const agent = new BskyAgent({ service });
       await agent.login({ identifier, password: creds.password });
       // Capture it lazily, so an instance configured entirely by environment
@@ -78,12 +87,15 @@ export async function getBlueskyAgent(): Promise<BskyAgent | null> {
       cached = { key, at: Date.now(), agent };
       return agent;
     })().finally(() => {
-      inFlight = null;
+      // Only clear if it is still OURS — a later caller with a different key may
+      // have replaced it, and clearing that one would strand its awaiters.
+      if (inFlight?.p === p) inFlight = null;
     });
+    inFlight = { key, p };
   }
 
   try {
-    return await inFlight;
+    return await inFlight.p;
   } catch (err) {
     // Never leave a failed login cached — the next caller should retry.
     cached = null;

@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { getBlueskyCredentials } from "@/lib/integrations";
 import { prisma } from "@/lib/db";
 import { deliverToFollowers } from "@/lib/http-signatures";
 import { siteConfig } from "@/../site.config";
@@ -12,6 +11,7 @@ import {
 import { syncBlueskyNotifications } from "@/lib/bluesky-notifications";
 import type { AdminBody } from "./types";
 import { getSiteUrl } from "@/lib/identity";
+import { getBlueskyAgent } from "@/lib/bluesky-agent";
 
 
 export async function bskyReply(body: AdminBody): Promise<NextResponse> {
@@ -19,15 +19,13 @@ export async function bskyReply(body: AdminBody): Promise<NextResponse> {
   if (!bskyReplyContent || !parentUri) {
     return NextResponse.json({ error: "content and blueskyUri required" }, { status: 400 });
   }
-  const creds = await getBlueskyCredentials();
-  if (!creds) {
+  // The shared agent, so the configured PDS is honoured (#541). This used to
+  // build its own against a hardcoded bsky.social.
+  const agent = await getBlueskyAgent();
+  if (!agent) {
     return NextResponse.json({ error: "Bluesky not configured" }, { status: 500 });
   }
-  const { handle: bskyHandle, password: bskyPassword } = creds;
   try {
-    const { BskyAgent } = await import("@atproto/api");
-    const agent = new BskyAgent({ service: "https://bsky.social" });
-    await agent.login({ identifier: creds.did ?? bskyHandle, password: bskyPassword });
     const uriParts = parentUri.replace("at://", "").split("/");
     const repo = uriParts[0];
     const rkey = uriParts[uriParts.length - 1];

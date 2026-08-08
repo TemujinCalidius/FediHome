@@ -1,17 +1,14 @@
-import { BskyAgent } from "@atproto/api";
-import { getBlueskyCredentials } from "@/lib/integrations";
 import { prisma } from "./db";
+import { getBlueskyAgent } from "./bluesky-agent";
 
 /**
  * Poll Bluesky for DMs. Fetches recent conversations and stores new messages.
  */
 export async function pollBlueskyDMs(): Promise<{ convos: number; messages: number }> {
-  const creds = await getBlueskyCredentials();
-  if (!creds) return { convos: 0, messages: 0 };
-  const { handle, password } = creds;
-
-  const agent = new BskyAgent({ service: "https://bsky.social" });
-  await agent.login({ identifier: creds.did ?? handle, password });
+  // The shared agent, so the configured PDS is honoured (#541). This used to
+  // build its own against a hardcoded bsky.social.
+  const agent = await getBlueskyAgent();
+  if (!agent) return { convos: 0, messages: 0 };
   const myDid = agent.session!.did;
 
   // Chat endpoints live on a separate service; route via the proxy header.

@@ -1,16 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { login, listNotifications } = vi.hoisted(() => ({
-  login: vi.fn(),
+/**
+ * Mocks the SHARED AGENT, not `@atproto/api` (#541).
+ *
+ * This file used to stub `BskyAgent` with a fake class and set
+ * `BLUESKY_HANDLE`/`BLUESKY_APP_PASSWORD` so the real credential lookup
+ * returned something. That kept passing after this module stopped building its
+ * own agent — because the fake class satisfies `bluesky-agent.ts` too — but it
+ * was then exercising the real session cache as a side effect, and, worse, it
+ * would have gone on passing if this module reverted to a hardcoded host. A
+ * mock that can't tell the fix from the bug is not testing the fix.
+ */
+const { getBlueskyAgent, listNotifications } = vi.hoisted(() => ({
+  getBlueskyAgent: vi.fn(),
   listNotifications: vi.fn(),
 }));
 
-vi.mock("@atproto/api", () => ({
-  BskyAgent: class {
-    login = login;
-    listNotifications = listNotifications;
-  },
-}));
+vi.mock("@/lib/bluesky-agent", () => ({ getBlueskyAgent }));
 vi.mock("@/lib/db", () => ({
   prisma: {
     post: { findMany: vi.fn() },
@@ -52,9 +58,7 @@ function alreadyBackfilled() {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  process.env.BLUESKY_HANDLE = "me.bsky.social";
-  process.env.BLUESKY_APP_PASSWORD = "pw";
-  login.mockResolvedValue(undefined);
+  getBlueskyAgent.mockResolvedValue({ listNotifications });
   vi.mocked(prisma.post.findMany).mockResolvedValue([
     { id: "p1", slug: "hello", title: "Hello", blueskyUri: OWN_URI },
   ] as never);
@@ -68,11 +72,14 @@ beforeEach(() => {
 });
 
 describe("syncBlueskyNotifications", () => {
-  it("returns zeros (and never logs in) when credentials are missing", async () => {
-    delete process.env.BLUESKY_HANDLE;
+  it("returns zeros (and never asks Bluesky anything) when credentials are missing", async () => {
+    // `getBlueskyAgent` returns null for exactly one reason — no credentials —
+    // and this sweep treats Bluesky as optional, so it reports a zero result
+    // rather than throwing into the scheduler (#541).
+    getBlueskyAgent.mockResolvedValue(null);
     const r = await syncBlueskyNotifications();
     expect(r).toEqual({ likes: 0, reposts: 0, replies: 0, mentions: 0, quotes: 0, follows: 0, pushed: 0 });
-    expect(login).not.toHaveBeenCalled();
+    expect(listNotifications).not.toHaveBeenCalled();
   });
 
   it("skips a like whose subject isn't one of our posts (owned filter)", async () => {
