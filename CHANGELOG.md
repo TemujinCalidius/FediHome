@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Added
+- **Set your own AT Protocol server from the admin panel** (#504) — v1.25.0 said you could point FediHome at a PDS you run yourself, and the only way to actually do it was an environment variable, which on a hosted platform often means no way at all. There's now a **Server address** field under **Bluesky** in Admin → Integrations. Leave it blank and nothing changes — that's what nearly everyone should do. **Test** signs in to whatever is in the box, so you can check a new address before committing to it, and clearing the box puts you back on `bsky.social`. If you'd set the environment variable, the panel says so and saving here takes over.
+
 ### Fixed
 - **Your own AT Protocol server actually works now** (#541) — since v1.25.0 you've been able to point FediHome at a PDS you run yourself, and it only half worked: your timeline and your likes went to your server, but **posting, replying, follows, DMs and notifications all still went to bsky.social** and failed there, because twelve separate places had the address written into them instead of reading your setting. Your app password was being sent to Bluesky on each of those attempts too, in a sign-in that could never succeed. They all use the one shared connection now, so the address you configure is the address FediHome uses — everywhere. Nothing changes if you're on bsky.social, which is still the default.
 

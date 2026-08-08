@@ -20,7 +20,11 @@ import {
 
 const OLD = { ...process.env };
 const ENV_KEYS = [
-  "ADMIN_SECRET", "BLUESKY_HANDLE", "BLUESKY_APP_PASSWORD", "THREADS_USER_ID", "THREADS_ACCESS_TOKEN",
+  // BLUESKY_SERVICE belongs here (#504): it was missing, so a test that set it
+  // leaked into every later test in the file — neither cleared per-test nor
+  // restored afterwards. Anything getIntegrationStatus reads has to be listed.
+  "ADMIN_SECRET", "BLUESKY_HANDLE", "BLUESKY_APP_PASSWORD", "BLUESKY_SERVICE",
+  "THREADS_USER_ID", "THREADS_ACCESS_TOKEN",
   "DAYONE_EMAIL", "SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS",
 ];
 const rows = (o: Record<string, string>) => Object.entries(o).map(([key, value]) => ({ key, value }));
@@ -162,7 +166,17 @@ describe("integrations — status never leaks secrets", () => {
       rows({ "integration.bluesky.handle": "me.bsky.social", "integration.bluesky.password": enc }) as never,
     );
     const s = await getIntegrationStatus();
-    expect(s.bluesky).toEqual({ configured: true, handle: "me.bsky.social", source: "db" });
+    // Strict toEqual on purpose: this is the "never leaks secrets" test, so a
+    // field appearing here that nobody thought about is exactly what it exists
+    // to catch. `service` is the resolved PDS and is not a secret — it is the
+    // public address of a server — but it has to be added deliberately.
+    expect(s.bluesky).toEqual({
+      configured: true,
+      handle: "me.bsky.social",
+      source: "db",
+      service: "https://bsky.social",
+      serviceSource: null,
+    });
     const json = JSON.stringify(s);
     expect(json).not.toContain("app-pw");
     expect(json).not.toContain(enc);
@@ -171,7 +185,55 @@ describe("integrations — status never leaks secrets", () => {
   it("reports source=env when only the env var is set", async () => {
     process.env.BLUESKY_HANDLE = "env.bsky.social";
     process.env.BLUESKY_APP_PASSWORD = "x";
-    expect((await getIntegrationStatus()).bluesky).toEqual({ configured: true, handle: "env.bsky.social", source: "env" });
+    expect((await getIntegrationStatus()).bluesky).toEqual({
+      configured: true,
+      handle: "env.bsky.social",
+      source: "env",
+      service: "https://bsky.social",
+      serviceSource: null,
+    });
+  });
+
+  /**
+   * #504. The PDS has its OWN provenance, independent of the credentials':
+   * a handle saved in the admin panel can sit beside a BLUESKY_SERVICE set in
+   * the environment. One `source` field cannot honestly describe both, which is
+   * why there are two.
+   */
+  it("reports the PDS separately from where the credentials came from", async () => {
+    const enc = encryptSecret("app-pw")!;
+    vi.mocked(prisma.siteSetting.findMany).mockResolvedValue(
+      rows({
+        "integration.bluesky.handle": "me.bsky.social",
+        "integration.bluesky.password": enc,
+        "integration.bluesky.service": "https://pds.example.com",
+      }) as never,
+    );
+    const s = await getIntegrationStatus();
+    expect(s.bluesky.service).toBe("https://pds.example.com");
+    expect(s.bluesky.serviceSource).toBe("db");
+    expect(s.bluesky.source).toBe("db");
+  });
+
+  it("credentials from the panel can sit beside a PDS from the environment", async () => {
+    const enc = encryptSecret("app-pw")!;
+    process.env.BLUESKY_SERVICE = "https://pds.example.com";
+    vi.mocked(prisma.siteSetting.findMany).mockResolvedValue(
+      rows({ "integration.bluesky.handle": "me.bsky.social", "integration.bluesky.password": enc }) as never,
+    );
+    const s = await getIntegrationStatus();
+    expect(s.bluesky.source).toBe("db");
+    expect(s.bluesky.serviceSource).toBe("env");
+    expect(s.bluesky.service).toBe("https://pds.example.com");
+  });
+
+  it("falls back to the default when a stored PDS no longer validates", async () => {
+    // A row written before the validator tightened, or an env var edited by
+    // hand. Report the address we will really use, not the one that was typed.
+    vi.mocked(prisma.siteSetting.findMany).mockResolvedValue(
+      rows({ "integration.bluesky.service": "http://localhost:3000" }) as never,
+    );
+    expect((await getIntegrationStatus()).bluesky.service).toBe("https://bsky.social");
   });
 });
 
