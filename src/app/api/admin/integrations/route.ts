@@ -5,6 +5,8 @@ import {
   setBlueskyCredentials,
   clearBlueskyCredentials,
   testBlueskyLogin,
+  setBlueskyService,
+  validateBlueskyService,
   rememberBlueskyDid,
   checkDomainHandle,
   getBlueskyCredentials,
@@ -131,7 +133,32 @@ export async function POST(req: NextRequest) {
     if (!handle || !password) {
       return NextResponse.json({ error: "Handle and app password are required." }, { status: 400 });
     }
-    const t = await testBlueskyLogin(handle, password);
+
+    // The PDS, and NOT through `clean()` (#504). `clean` maps an empty string to
+    // null, which is the one value that has to survive here: submitting the
+    // field blank is how an operator goes back to bsky.social, and it must be
+    // distinguishable from not sending the field at all.
+    const rawService = typeof body?.service === "string" ? body.service.trim() : undefined;
+    if (rawService !== undefined && (rawService.length > 400 || /[\r\n]/.test(rawService))) {
+      return NextResponse.json({ error: "That PDS address isn't valid." }, { status: 400 });
+    }
+    // Validate BEFORE the login, so a typo'd host reports itself as a bad
+    // address rather than as a failed sign-in — which is what it would look
+    // like, since we would then try to log in to the wrong place.
+    if (rawService && !validateBlueskyService(rawService)) {
+      return NextResponse.json(
+        {
+          error:
+            "Use a bare https:// address for your PDS, reachable from the internet — for example https://pds.example.com.",
+        },
+        { status: 400 },
+      );
+    }
+
+    // The host under test, not the saved one: the Test button has to exercise
+    // the address about to be saved or it verifies nothing. This third argument
+    // has existed since #449 and had no caller until now.
+    const t = await testBlueskyLogin(handle, password, rawService || undefined);
     if (action === "test") return NextResponse.json(t);
     if (!t.ok) {
       return NextResponse.json(
@@ -141,6 +168,15 @@ export async function POST(req: NextRequest) {
     }
     const r = await setBlueskyCredentials(handle, password);
     if (!r.ok) return NextResponse.json({ error: r.error }, { status: 400 });
+    // After the credentials, not before: every failure above returns early, and
+    // a service row written for an account that then failed to save would point
+    // the NEXT set of credentials at a host the operator never chose for them.
+    // (setBlueskyCredentials itself only drops the DID — it is
+    // clearBlueskyCredentials, on disconnect, that clears the service row.)
+    if (rawService !== undefined) {
+      const sv = await setBlueskyService(rawService);
+      if (!sv.ok) return NextResponse.json({ error: sv.error }, { status: 400 });
+    }
     // Persist the DID the login just proved. It is the identifier every later
     // login uses, so that a handle change — including pointing it at this very
     // domain (#448) — doesn't quietly break crossposting. After
