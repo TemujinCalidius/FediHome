@@ -111,9 +111,15 @@ export interface EmbedData {
  * Returns the local URL path or null on failure.
  */
 export async function proxyImage(remoteUrl: string): Promise<string | null> {
-  // Budget 0 means cache nothing (#364). Refused HERE, at the one entry point,
-  // rather than at each caller: returning null makes every caller fall back to
-  // the remote URL, which is the behaviour they already have for a proxy failure.
+  // Budget 0 means cache nothing (#364). Refused at the ENTRY POINTS rather than
+  // at each caller: returning null makes every caller fall back to the remote
+  // URL, which is the behaviour they already have for a proxy failure.
+  //
+  // This comment used to say "the one entry point", and that is what hid #550
+  // for as long as it did — the reasoning was right, the placement was right,
+  // and there were simply TWO of them. `proxyVideo` had no gate, so a budget of
+  // 0 stopped images and went on writing every federated video to disk, up to
+  // 50MB each. Anyone auditing this by reading here concluded it was handled.
   if (!(await remoteMediaCachingEnabled())) return null;
   const result = await safeFetch(remoteUrl, {
     maxBytes: MAX_IMAGE_BYTES,
@@ -167,6 +173,13 @@ export async function proxyImage(remoteUrl: string): Promise<string | null> {
  * Max 50MB to avoid filling disk.
  */
 export async function proxyVideo(remoteUrl: string): Promise<string | null> {
+  // The second entry point, and the one that was missing this (#550). See the
+  // note in proxyImage. Worth stating why 0 mattered most here: the storage
+  // scan is the ONLY thing that trims the cache since #385, and it can be
+  // switched off — so budget 0 with the scan disabled was the one configuration
+  // with no ceiling at all, reached by an operator setting both to MINIMISE
+  // disk use.
+  if (!(await remoteMediaCachingEnabled())) return null;
   const result = await safeFetch(remoteUrl, {
     maxBytes: MAX_VIDEO_BYTES,
     contentTypePrefix: "video/",

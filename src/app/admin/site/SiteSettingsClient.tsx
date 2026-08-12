@@ -1371,8 +1371,8 @@ export default function SiteSettingsClient({
               Images and video from posts in your feed are copied here so they load fast and
               don&apos;t leak your visitors&apos; IP addresses to other servers. When it goes over
               budget the oldest files are deleted. <strong>0</strong> turns caching off entirely —
-              media then loads from the original server. This shares the disk with your own
-              uploads, which are never touched by this.
+              nothing is copied, and media then loads from the original server. This shares the
+              disk with your own uploads, which are never touched by this.
             </span>
           </label>
           <div className="rounded-lg border border-surface-700 p-3 flex flex-col gap-1.5">
