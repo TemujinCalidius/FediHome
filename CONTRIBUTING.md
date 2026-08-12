@@ -4,7 +4,7 @@ Thanks for your interest in contributing to FediHome! This guide will help you g
 
 ## Prerequisites
 
-- **Node.js 20+** — check with `node -v`
+- **Node.js 22+** — check with `node -v`
 - **PostgreSQL 15+** — running locally or via Docker
 - **Git** — for cloning and version control
 

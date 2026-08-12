@@ -76,3 +76,23 @@ jobs:
         env:
           DATABASE_URL: postgresql://user:pass@localhost:5432/fedihome
           SITE_URL: http://localhost:3000
+
+  # ── Build the artifact people actually install ──────────────────────────────
+  #
+  # The job above builds on the runner: Ubuntu, glibc, Node 22. The Dockerfile
+  # builds on alpine (musl) — a different `@next/swc-linux-x64-*` binary — and
+  # until now NOTHING in CI ever built it. That is how v1.27.0 and v1.27.1 both
+  # shipped as containers that cannot be built at all (#552): every check was
+  # green, because no check touched the thing that was broken.
+  #
+  # Deliberately a plain `docker build .` with no registry, no push and no
+  # credentials. The value is entirely in "does the documented install path
+  # produce an image", and that needs nothing else.
+  docker:
+    name: Docker image builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the image
+        run: docker build --progress=plain -t fedihome:ci .

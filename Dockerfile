@@ -1,4 +1,21 @@
-FROM node:20-alpine AS builder
+# The Node base image, parameterised (#552).
+#
+# It was `node:20-alpine`, undocumented, while CI built on Node 22 — so the
+# artifact people install was never the one that was tested. v1.27.0 and v1.27.1
+# both shipped unbuildable as containers because of it, and every check was
+# green throughout, since nothing in CI ever built this file.
+#
+# The dependency tree requires Node 22 and says so: `undici@8` declares
+# `engines.node >= 22.19.0` and calls `markAsUncloneable`, which does not exist
+# on Node 20. `npm ci` was printing EBADENGINE for it on every container build.
+# Proven by a CI matrix rather than assumed — Node 20 fails on both bundlers and
+# both libcs, Node 22 passes on all four.
+#
+# An ARG rather than a literal so CI can build this same file against other tags
+# without patching it, and so an operator can pin.
+ARG NODE_TAG=22-alpine
+
+FROM node:${NODE_TAG} AS builder
 WORKDIR /app
 # Prisma 7's postinstall runs `prisma generate`, which needs the schema + config,
 # so copy those before `npm ci`. The client is generated into src/generated and
@@ -11,7 +28,8 @@ COPY . .
 RUN npx prisma generate
 RUN npm run build
 
-FROM node:20-alpine AS runner
+ARG NODE_TAG
+FROM node:${NODE_TAG} AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 # Next's standalone server binds to $HOSTNAME, and Docker sets HOSTNAME to the
