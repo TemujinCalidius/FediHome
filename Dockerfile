@@ -26,6 +26,14 @@ COPY prisma.config.ts ./
 RUN npm ci
 COPY . .
 RUN npx prisma generate
+# The one place that wants `output: "standalone"` (#557). Opt-in, because every
+# other install path runs `next start`, which warns about it on every restart and
+# points at a server that would serve no CSS. Set HERE rather than near the top so
+# the cached `npm ci` layer survives — this layer is already busted by `COPY . .`.
+#
+# If this is ever lost, the build does not silently degrade: the standalone COPY
+# below fails outright, and CI builds this file on every PR.
+ENV FEDIHOME_STANDALONE=1
 RUN npm run build
 
 ARG NODE_TAG
