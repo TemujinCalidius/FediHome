@@ -204,3 +204,41 @@ describe("budget 0 caches nothing — images AND video (#550)", () => {
     expect(gates).toBe(entryPoints);
   });
 });
+
+/**
+ * #557. `output: "standalone"` is Docker-only, and the two halves of that have
+ * to stay in step: `next.config.ts` gates on `FEDIHOME_STANDALONE`, and the
+ * Dockerfile is the one place that sets it.
+ *
+ * Losing the ENV line does not fail quietly — the Dockerfile's
+ * `COPY --from=builder /app/.next/standalone` errors when the directory isn't
+ * there, and CI builds the Dockerfile on every PR (#552). This is the cheaper,
+ * earlier signal, and it also pins the parsing: `process.env.X ? …` would make
+ * `FEDIHOME_STANDALONE=false` mean ON, which is what this repo's `=true`/`=false`
+ * house style in .env.example invites someone to write.
+ */
+describe("standalone output is opt-in, and the Dockerfile opts in (#557)", () => {
+  it("next.config gates the output on the flag rather than hardcoding it", () => {
+    const src = read("next.config.ts");
+    expect(src).toContain('output: standaloneRequested() ? "standalone" : undefined');
+    expect(src).not.toMatch(/^\s*output: "standalone",\s*$/m);
+  });
+
+  it("the flag is parsed, not tested for truthiness", () => {
+    // `false` and `0` must mean off. Truthiness would make both mean on.
+    const src = read("next.config.ts");
+    expect(src).toContain('v !== "false" && v !== "0"');
+  });
+
+  it("the Dockerfile sets it before the build, and only in the builder stage", () => {
+    const src = read("Dockerfile");
+    const env = src.indexOf("ENV FEDIHOME_STANDALONE=1");
+    const build = src.indexOf("RUN npm run build");
+    const runner = src.indexOf("AS runner");
+    expect(env).toBeGreaterThan(-1);
+    expect(env).toBeLessThan(build);
+    // In the builder: leaking it to the runner would be harmless but misleading,
+    // since the standalone server bakes its config in and never reads it.
+    expect(env).toBeLessThan(runner);
+  });
+});
