@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
@@ -310,5 +310,86 @@ describe("#511 — every name in the bundle is a variable something actually rea
     // The specific regression, stated on its own so it reads as one.
     expect(names).toContain("TRUSTED_PROXY");
     expect(names).not.toContain("TRUST_PROXY");
+  });
+});
+
+/**
+ * #551, and this one was mine — I added the line in #531 and derived it from
+ * the environment rather than asking the code.
+ *
+ * The bundle reported what the settings IMPLY, not what `rateLimitKey()` does.
+ * On a typo'd header name those are opposites: `client-ip` fails closed to the
+ * shared bucket (deliberately, correctly) while `TRUSTED_PROXY=true` still
+ * reads as configured — so the bundle printed a confident
+ * `per-visitor via x-forwarded-host` for an instance running every visitor
+ * through one bucket. Worse than printing nothing, because it closes off the
+ * investigation in the one field an operator checks when their limits behave
+ * oddly.
+ */
+describe("#551 — the keying line reports effect, not intent", () => {
+  const ENV = ["TRUSTED_PROXY", "TRUSTED_PROXY_HEADER"] as const;
+  const OLD: Record<string, string | undefined> = {};
+  beforeEach(() => {
+    for (const k of ENV) {
+      OLD[k] = process.env[k];
+      delete process.env[k];
+    }
+  });
+  afterEach(() => {
+    for (const k of ENV) {
+      if (OLD[k] === undefined) delete process.env[k];
+      else process.env[k] = OLD[k];
+    }
+  });
+
+  /** The line as the bundle would render it, driven by the real resolver. */
+  async function keyingLine(): Promise<string> {
+    vi.resetModules();
+    const { effectiveTrustedHeader, sharedBucketReason } = await import("@/lib/client-ip");
+    const header = effectiveTrustedHeader();
+    return header
+      ? `per-visitor via ${header}`
+      : `SHARED — every visitor counts as one client (${sharedBucketReason()})`;
+  }
+
+  it("says SHARED when the named header is not one FediHome recognises", async () => {
+    // The reported failure. `x-forwarded-host` is a real header name, just not
+    // one of the three — exactly the plausible typo.
+    process.env.TRUSTED_PROXY = "true";
+    process.env.TRUSTED_PROXY_HEADER = "x-forwarded-host";
+    const l = await keyingLine();
+    expect(l).toContain("SHARED");
+    expect(l).not.toContain("per-visitor");
+  });
+
+  it("names the setting to fix, since 'SHARED' alone doesn't say which", async () => {
+    process.env.TRUSTED_PROXY = "true";
+    process.env.TRUSTED_PROXY_HEADER = "x-forwarded-host";
+    expect(await keyingLine()).toContain("x-forwarded-host");
+  });
+
+  it("distinguishes 'not configured' from 'configured wrongly'", async () => {
+    // The remedies differ: one is "switch it on", the other "fix the name".
+    expect(await keyingLine()).toContain("TRUSTED_PROXY is not set");
+  });
+
+  it("still says per-visitor when the header really is trusted", async () => {
+    process.env.TRUSTED_PROXY = "true";
+    process.env.TRUSTED_PROXY_HEADER = "cf-connecting-ip";
+    expect(await keyingLine()).toBe("per-visitor via cf-connecting-ip");
+  });
+
+  it("reports the assumed default rather than guessing at the name", async () => {
+    process.env.TRUSTED_PROXY = "true";
+    expect(await keyingLine()).toBe("per-visitor via x-real-ip");
+  });
+
+  it("the bundle asks client-ip rather than re-reading the environment", () => {
+    // Structural, because the behavioural tests above can only exercise the
+    // resolver — a future edit could reintroduce the env read beside it and
+    // they would all still pass. There must be no second implementation.
+    const src = read("src/lib/diagnostics.ts");
+    expect(src).toContain("effectiveTrustedHeader()");
+    expect(src).not.toMatch(/TRUSTED_PROXY_HEADER\?\.trim\(\)/);
   });
 });

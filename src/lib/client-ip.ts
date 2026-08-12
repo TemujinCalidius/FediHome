@@ -92,6 +92,37 @@ function trustedHeader(): TrustedHeader | null {
  */
 export const SHARED_BUCKET_KEY = "default";
 
+/**
+ * Which header is actually being trusted, resolved rather than inferred (#551).
+ *
+ * Exported for the support bundle. That bundle used to re-derive this from
+ * `process.env` — "TRUSTED_PROXY is true, so per-visitor via whatever
+ * TRUSTED_PROXY_HEADER says" — which is the intent, not the effect. On a typo
+ * the two are opposites: `trustedHeader()` fails closed and returns null, while
+ * the environment still reads as configured, so the bundle printed a confident
+ * `per-visitor via x-forwarded-host` for an instance running on one shared
+ * bucket. That is worse than printing nothing, because it closes off the
+ * investigation in the one field an operator checks.
+ *
+ * Same function the keying uses, so the two cannot drift apart again.
+ */
+export function effectiveTrustedHeader(): TrustedHeader | null {
+  return trustedHeader();
+}
+
+/**
+ * Why the shared bucket is in force, for an operator reading the support
+ * bundle — the remedies differ and "SHARED" alone doesn't distinguish them.
+ */
+export function sharedBucketReason(): string | null {
+  if (process.env.TRUSTED_PROXY !== "true") return "TRUSTED_PROXY is not set";
+  const raw = process.env.TRUSTED_PROXY_HEADER?.trim().toLowerCase();
+  if (raw && !isTrustedHeader(raw)) {
+    return `TRUSTED_PROXY_HEADER="${raw}" is not one of ${TRUSTED_HEADERS.join(", ")}, so it was ignored`;
+  }
+  return null;
+}
+
 export function rateLimitKey(req: { headers: { get(name: string): string | null } }): string {
   const header = trustedHeader();
   if (!header) return SHARED_BUCKET_KEY;
