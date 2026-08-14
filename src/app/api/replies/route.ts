@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { blockedPostFilter } from "@/lib/blocks";
 import { verifyAdmin } from "@/lib/auth";
 import { htmlToText } from "@/lib/html-text";
 
@@ -30,15 +31,25 @@ export async function GET(req: NextRequest) {
   const page = hasMore ? replies.slice(0, PAGE_SIZE) : replies;
   const nextCursor = hasMore ? page[page.length - 1].publishedAt.toISOString() : null;
 
-  // Attach parent summary for each reply so the list reads naturally without
-  // a second round trip. Parents not cached locally show as null and the UI
-  // falls back to a generic "another post" label.
+  // Attach parent summary for each reply so the list reads naturally without a
+  // second round trip. A parent shows as null when it isn't cached locally, and
+  // now also when its author is blocked (#559) — the UI renders the same
+  // fallback line for both, which is deliberate: a distinct message would tell
+  // the owner a row exists that is being withheld.
   const parentApIds = Array.from(
     new Set(page.map((p) => p.inReplyTo).filter((v): v is string => Boolean(v)))
   );
   const parents = parentApIds.length
     ? await prisma.fediPost.findMany({
-        where: { apId: { in: parentApIds } },
+        // The replies above are OUR OWN (isOutgoing), which is why they need no
+        // filter — but their PARENTS are other people's posts, and one of them
+        // can be someone the owner has blocked (#559). Without this the list
+        // rendered a blocked account's name, avatar and a snippet of their post.
+        //
+        // A filter rather than a post-check because the right outcome here is
+        // simply absence: a parent that isn't cached is already null, and the UI
+        // has rendered that state since this endpoint existed.
+        where: { apId: { in: parentApIds }, ...(await blockedPostFilter()) },
         select: {
           apId: true,
           username: true,
