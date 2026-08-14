@@ -983,7 +983,13 @@ function RepliesTab({
                 </>
               ) : (
                 <p className="text-gray-600 italic">
-                  Replying to a post not cached locally — open the thread to fetch it.
+                  {/* Neutral on purpose (#559). This fallback now covers two
+                      cases — a parent that isn't cached, and one whose author is
+                      blocked — and telling them apart would report back that a
+                      row exists and is being withheld. The old copy also advised
+                      opening the thread, which for a blocked parent is advice
+                      that correctly won't work. */}
+                  Replying to a post that isn&apos;t shown here.
                 </p>
               )}
             </div>

@@ -85,8 +85,17 @@ export async function GET(req: NextRequest) {
   if (parentApIds.length > 0) {
     const followed = (await prisma.fediFollowing.findMany({ select: { actorUri: true } }))
       .map((f) => f.actorUri);
+    // Filtered like every other display read (#559). Being bounded to `followed`
+    // is not a substitute: follow and block are independent, so an account you
+    // followed and later blocked stays in this set, and its display name would
+    // go on being rendered as the "via X" attribution on someone else's post.
     const repliers = await prisma.fediPost.findMany({
-      where: { inReplyTo: { in: parentApIds }, actorUri: { in: followed }, isOutgoing: false },
+      where: {
+        inReplyTo: { in: parentApIds },
+        actorUri: { in: followed },
+        isOutgoing: false,
+        ...(await blockedPostFilter()),
+      },
       select: { inReplyTo: true, displayName: true, username: true, domain: true },
       orderBy: { publishedAt: "desc" },
     });

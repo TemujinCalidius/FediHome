@@ -202,3 +202,100 @@ describe("outbound contact", () => {
     expect(prisma.fediPost.upsert).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * #559. Blocking was enforced at ingest and on the feed, but two reads in this
+ * route returned a blocked author's post to the owner anyway: the start post
+ * (a bare findUnique reaching every response branch) and the cached half of the
+ * ancestor walk.
+ */
+describe("#559 — reads, not just ingest", () => {
+  const row = (over: Record<string, unknown>) => ({
+    id: "x",
+    apId: null,
+    actorUri: "https://demo.example/ap/actor",
+    inReplyTo: null,
+    publishedAt: new Date(),
+    createdAt: new Date(),
+    ...over,
+  });
+
+  it("404s a blocked author's post opened by id — same as one that isn't there", async () => {
+    // Deliberately the SAME status as absent: a different one would turn this
+    // into an oracle for whether a given id exists.
+    vi.mocked(prisma.fediPost.findUnique).mockResolvedValue(
+      row({ id: "p1", apId: "https://spam.example/notes/1", actorUri: MALLORY }) as never,
+    );
+    vi.mocked(prisma.blockedActor.findMany).mockResolvedValue([{ actorUri: MALLORY }] as never);
+    const res = await GET(req("p1"));
+    expect(res.status).toBe(404);
+  });
+
+  it("404s a blocked BLUESKY post, whose actorUri is a DID", async () => {
+    // The reason this uses blockedActorUris rather than isBlockedSender:
+    // uriHostname("did:plc:…") is null, so isBlockedSender's domain half would
+    // silently no-op on exactly these rows.
+    const did = "did:plc:mallory";
+    vi.mocked(prisma.fediPost.findUnique).mockResolvedValue(
+      row({ id: "b1", apId: null, actorUri: did, conversationId: null }) as never,
+    );
+    vi.mocked(prisma.blockedActor.findMany).mockResolvedValue([{ actorUri: did }] as never);
+    expect((await GET(req("b1"))).status).toBe(404);
+  });
+
+  it("hides a blocked ancestor but keeps the grandparent above it", async () => {
+    // The semantics chosen for this: hide THEIR post and nothing else. Walking
+    // must continue past a blocked ancestor, or blocking one person silently
+    // truncates the thread above them.
+    const GRAN = "https://mastodon.example/notes/gran";
+    const BAD = "https://spam.example/notes/bad";
+    global.fetch = vi.fn(async () => new Response("no", { status: 404 })) as unknown as typeof fetch;
+    vi.mocked(prisma.fediPost.findUnique).mockImplementation((async (a: {
+      where: { id?: string; apId?: string };
+    }) => {
+      if (a.where.id) return row({ id: "p1", apId: OURS, actorUri: ADA, inReplyTo: BAD });
+      if (a.where.apId === BAD) return row({ id: "bad", apId: BAD, actorUri: MALLORY, inReplyTo: GRAN });
+      if (a.where.apId === GRAN) return row({ id: "gran", apId: GRAN, actorUri: ADA, inReplyTo: null });
+      return null;
+    }) as never);
+    vi.mocked(prisma.blockedActor.findMany).mockImplementation((async (a: {
+      where?: { actorUri?: { in?: string[] } };
+    }) => {
+      const asked = a?.where?.actorUri?.in ?? [];
+      return asked.includes(MALLORY) ? [{ actorUri: MALLORY }] : [];
+    }) as never);
+
+    const body = await (await GET(req("p1"))).json();
+    const ids = (body.thread as { id: string }[]).map((p) => p.id);
+    expect(ids).toContain("gran");
+    expect(ids).not.toContain("bad");
+  });
+
+  it("keeps other people's replies to the hidden post visible", async () => {
+    // The assertion that separates this from the simpler wrong fix. threadApIds
+    // is derived from the ancestors we KEPT, so dropping the blocked row from
+    // that list would delete replies by people the owner never blocked.
+    const BAD = "https://spam.example/notes/bad";
+    global.fetch = vi.fn(async () => new Response("no", { status: 404 })) as unknown as typeof fetch;
+    vi.mocked(prisma.fediPost.findUnique).mockImplementation((async (a: {
+      where: { id?: string; apId?: string };
+    }) => {
+      if (a.where.id) return row({ id: "p1", apId: OURS, actorUri: ADA, inReplyTo: BAD });
+      if (a.where.apId === BAD) return row({ id: "bad", apId: BAD, actorUri: MALLORY, inReplyTo: null });
+      return null;
+    }) as never);
+    vi.mocked(prisma.blockedActor.findMany).mockImplementation((async (a: {
+      where?: { actorUri?: { in?: string[] } };
+    }) => {
+      const asked = a?.where?.actorUri?.in ?? [];
+      return asked.includes(MALLORY) ? [{ actorUri: MALLORY }] : [];
+    }) as never);
+
+    await GET(req("p1"));
+    // The reply query must still be told about the hidden ancestor's apId.
+    const where = vi.mocked(prisma.fediPost.findMany).mock.calls[0][0]?.where as {
+      inReplyTo?: { in?: string[] };
+    };
+    expect(where?.inReplyTo?.in).toContain(BAD);
+  });
+});
