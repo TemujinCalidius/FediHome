@@ -262,7 +262,11 @@ describe("#559 — reads, not just ingest", () => {
       where?: { actorUri?: { in?: string[] } };
     }) => {
       const asked = a?.where?.actorUri?.in ?? [];
-      return asked.includes(MALLORY) ? [{ actorUri: MALLORY }] : [];
+      // `some(u => u === …)` rather than `.includes(…)`: this is array
+      // membership, but CodeQL's js/incomplete-url-substring-sanitization reads
+      // `.includes` on a URL as substring matching and flags it high. An
+      // explicit equality says what is meant and leaves no alert to dismiss.
+      return asked.some((u) => u === MALLORY) ? [{ actorUri: MALLORY }] : [];
     }) as never);
 
     const body = await (await GET(req("p1"))).json();
@@ -288,7 +292,11 @@ describe("#559 — reads, not just ingest", () => {
       where?: { actorUri?: { in?: string[] } };
     }) => {
       const asked = a?.where?.actorUri?.in ?? [];
-      return asked.includes(MALLORY) ? [{ actorUri: MALLORY }] : [];
+      // `some(u => u === …)` rather than `.includes(…)`: this is array
+      // membership, but CodeQL's js/incomplete-url-substring-sanitization reads
+      // `.includes` on a URL as substring matching and flags it high. An
+      // explicit equality says what is meant and leaves no alert to dismiss.
+      return asked.some((u) => u === MALLORY) ? [{ actorUri: MALLORY }] : [];
     }) as never);
 
     await GET(req("p1"));
