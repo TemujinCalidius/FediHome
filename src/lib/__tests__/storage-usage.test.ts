@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from "vitest";
 import path from "path";
 import os from "os";
 import { mkdtemp, mkdir, writeFile, rm } from "fs/promises";
@@ -29,15 +29,55 @@ import {
 } from "@/lib/storage-usage";
 import { invalidateUploadsDirCache } from "@/lib/uploads-dir";
 
-let tmp: string;
+let tmp: string; //     the CONFIGURED root
+let fakeCwd: string; // stands in for the process's working directory
+let legacy: string; //  <fakeCwd>/public/uploads — the built-in root
+let cwdSpy: ReturnType<typeof vi.spyOn>;
 const OLD = process.env.FEDIHOME_UPLOADS_DIR;
 
+/**
+ * BOTH roots are relocated, and that is the whole point of this preamble.
+ *
+ * Setting FEDIHOME_UPLOADS_DIR only moves the CONFIGURED root.
+ * `measureStorageUsage` walks `uploadsRoots()`, which is `[configured, legacy]`,
+ * and `legacyUploadsDir()` is hardcoded `path.join(process.cwd(), "public",
+ * "uploads")` — the repo's own directory. So these tests were measuring the
+ * developer's real media alongside their fixtures, and asserting exact byte
+ * totals against the sum. On a clean checkout that directory is empty and the
+ * arithmetic happens to work; on a live install it does not, which is how this
+ * was reported: `expected 14096 to be 10000`.
+ *
+ * Relocating `process.cwd()` rather than stubbing `legacyUploadsDir` is
+ * deliberate. `uploadsRoots()` calls that function INTRA-MODULE, so a mocked
+ * export is never consulted — verified, not assumed. And stubbing `uploadsRoots`
+ * itself would make the file hermetic at the cost of the very behaviour below:
+ * it passes with the two-root sum deleted.
+ *
+ * Nothing in @/lib/uploads-dir is mocked, so the real precedence, ordering and
+ * dedup all stay under test.
+ */
 beforeEach(async () => {
   vi.clearAllMocks();
-  invalidateUploadsDirCache();
   findUnique.mockResolvedValue(null);
   tmp = await mkdtemp(path.join(os.tmpdir(), "fedihome-storage-"));
   process.env.FEDIHOME_UPLOADS_DIR = tmp;
+
+  fakeCwd = await mkdtemp(path.join(os.tmpdir(), "fedihome-cwd-"));
+  legacy = path.join(fakeCwd, "public", "uploads");
+  await mkdir(legacy, { recursive: true });
+  cwdSpy = vi.spyOn(process, "cwd").mockReturnValue(fakeCwd);
+
+  // AFTER the spy: the cache holds a resolved path, so clearing it earlier
+  // would just re-resolve against the real cwd.
+  invalidateUploadsDirCache();
+});
+
+afterEach(async () => {
+  // Not restoreAllMocks() — that would take `findUnique` with it.
+  cwdSpy.mockRestore();
+  invalidateUploadsDirCache();
+  await rm(tmp, { recursive: true, force: true });
+  await rm(fakeCwd, { recursive: true, force: true });
 });
 
 afterAll(async () => {
@@ -76,6 +116,13 @@ describe("measureStorageUsage", () => {
     await writeFile(abs, Buffer.alloc(bytes));
   };
 
+  /** Same, but into the BUILT-IN root — where media stays after a move. */
+  const writeLegacy = async (rel: string, bytes: number) => {
+    const abs = path.join(legacy, rel);
+    await mkdir(path.dirname(abs), { recursive: true });
+    await writeFile(abs, Buffer.alloc(bytes));
+  };
+
   it("splits the owner's own media from cached remote media", async () => {
     // The split is the useful part: it answers "is this mine, or the cache?",
     // which decides whether the fix is more disk or a smaller budget.
@@ -87,6 +134,56 @@ describe("measureStorageUsage", () => {
     expect(usage.totalBytes).toBe(10_000);
     expect(usage.fediCacheBytes).toBe(5000);
     expect(usage.ownBytes).toBe(5000);
+  });
+
+  /**
+   * THE BEHAVIOUR #479 SHIPPED, AND NOTHING HAS EVER EXECUTED IT.
+   *
+   * Verified by mutation: changing storage-usage.ts to
+   * `(await uploadsRoots()).slice(0, 1)` — deleting the two-root sum outright —
+   * left the entire 2067-test suite green. The only guards were source-text
+   * greps in uploads-roots.test.ts asserting the string "uploadsRoots()"
+   * appears, which that mutant satisfies.
+   *
+   * It was invisible for the same reason the suite was fragile: the legacy root
+   * was the repo's real public/uploads, empty on any clean checkout, so the
+   * second entry contributed nothing and the sum was never a sum.
+   */
+  it("counts media stranded in the legacy root after a move (#479)", async () => {
+    // The install shape docs/configuration.md recommends: move to a bigger
+    // volume, and the old media stays where it was until it is copied across.
+    await write("2026/01/mine.jpg", 3000);
+    await writeLegacy("fedi/2026/01/theirs.jpg", 5000);
+
+    const usage = await measureStorageUsage();
+    expect(usage.totalBytes).toBe(8000);
+    expect(usage.fediCacheBytes).toBe(5000);
+    expect(usage.ownBytes).toBe(3000);
+  });
+
+  it("is unaffected by media sitting in the legacy root it is not measuring", async () => {
+    // The regression guard for the report itself: on a live install the legacy
+    // root holds the operator's real media, and these assertions used to add it
+    // to the fixtures. Here the configured root IS the legacy root's parent
+    // install, so a file outside both must not count.
+    await write("2026/01/mine.jpg", 1000);
+    const outside = path.join(fakeCwd, "not-uploads");
+    await mkdir(outside, { recursive: true });
+    await writeFile(path.join(outside, "stray.bin"), Buffer.alloc(9999));
+
+    expect((await measureStorageUsage()).totalBytes).toBe(1000);
+  });
+
+  it("does not double-count on a default install, where both roots are one directory", async () => {
+    // uploadsRoots dedupes when the configured path equals the built-in one.
+    // The existing coverage of that is a string comparison; this is the byte
+    // consequence, which is what the docstring there actually promises.
+    process.env.FEDIHOME_UPLOADS_DIR = legacy;
+    invalidateUploadsDirCache();
+    await mkdir(path.join(legacy, "2026", "01"), { recursive: true });
+    await writeFile(path.join(legacy, "2026", "01", "a.jpg"), Buffer.alloc(1000));
+
+    expect((await measureStorageUsage()).totalBytes).toBe(1000);
   });
 
   it("records the result so later reads never walk the tree again", async () => {

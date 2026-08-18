@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterAll } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterAll, afterEach } from "vitest";
 import path from "path";
 import os from "os";
 import { mkdtemp, writeFile, mkdir, rm, chmod } from "fs/promises";
@@ -76,6 +76,24 @@ describe("precedence", () => {
 });
 
 describe("reads fall back to the legacy location — no file is ever moved", () => {
+  /**
+   * CLEANED UP IN afterEach, NOT INLINE, and the difference is not cosmetic.
+   *
+   * This test writes into the REAL `<cwd>/public/uploads`, because that is what
+   * `legacyUploadsDir()` resolves to and the fallback is precisely what is being
+   * tested. The removal used to be the last statement of the test body — so a
+   * failing assertion, or a Ctrl-C, orphaned the file permanently.
+   *
+   * That is not a tidiness problem. `storage-usage.test.ts` measures the same
+   * directory, and a single stray byte there makes it fail forever with exactly
+   * the two failures a demo operator reported. One interrupted run and the
+   * repository is poisoned for every later run on that machine.
+   */
+  const LEGACY_FIXTURE = path.join(legacyUploadsDir(), "1999");
+  afterEach(async () => {
+    await rm(LEGACY_FIXTURE, { recursive: true, force: true });
+  });
+
   it("serves media that predates the move, from the old root", async () => {
     // This is what makes changing the setting safe: the owner relocates at their
     // leisure, or never, and nothing 404s in the meantime.
@@ -86,8 +104,6 @@ describe("reads fall back to the legacy location — no file is ever moved", () 
 
     findUnique.mockResolvedValue({ value: tmp });
     expect(await resolveUploadPath("/uploads/1999/12/old.jpg")).toBe(old);
-
-    await rm(path.join(legacy, "1999"), { recursive: true, force: true });
   });
 
   it("prefers the configured root when the file exists in both", async () => {
