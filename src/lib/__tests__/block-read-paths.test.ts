@@ -76,6 +76,8 @@ const EXEMPT: Record<string, string> = {
   "src/app/api/admin/_actions/fedi-interactions.ts": "selects actorUri only, to address a like/boost the owner initiated",
   "src/app/api/admin/_actions/interactions.ts": "selects source/apId/bskyUri only, to route an interaction",
   "src/app/api/profile/route.ts": "selects actorUri only — identity resolution, no post content",
+  "src/app/api/admin/_actions/bluesky-interactions.ts":
+    "selects username only, to hand the handle to the block check itself (#563)",
 };
 
 describe("read-side block filtering", () => {
@@ -191,6 +193,49 @@ describe("read-side block filtering", () => {
     expect(
       unclassified,
       "these read fediPost but are in neither USER_FACING_READS nor EXEMPT — classify them",
+    ).toEqual([]);
+  });
+});
+
+/**
+ * Every `isBlueskyBlocked` call passes a handle (#563).
+ *
+ * The helper's signature makes the handle OPTIONAL — `{ did: string; handle?:
+ * string | null }` — and that optionality is load-bearing in the wrong
+ * direction: omitting it doesn't fail, it silently skips the `blockedDomain`
+ * query, so a domain block degrades to a DID lookup and nobody finds out.
+ *
+ * There were two call sites. Ingest passed both; the outbound one passed only
+ * the DID, so blocking a domain stopped their posts arriving and did not stop
+ * us liking them — and a like notifies the author. A third call site is exactly
+ * as easy to get wrong, which is why this is structural rather than a comment
+ * on the helper.
+ */
+describe("#563 — no Bluesky block check drops the handle", () => {
+  it("every isBlueskyBlocked call site passes a handle", () => {
+    const offenders: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(join(ROOT, dir))) {
+        const rel = `${dir}/${entry}`;
+        if (statSync(join(ROOT, rel)).isDirectory()) {
+          if (entry === "__tests__" || entry === "generated") continue;
+          walk(rel);
+          continue;
+        }
+        if (!/\.tsx?$/.test(entry) || rel === "src/lib/blocks.ts") continue;
+        const lines = read(rel).split("\n");
+        lines.forEach((line, i) => {
+          if (!/isBlueskyBlocked\(/.test(line) || /^\s*(\*|\/\/)/.test(line)) return;
+          // The argument object can wrap, so look at the call plus a few lines.
+          const window = lines.slice(i, i + 6).join("\n");
+          if (!/handle:/.test(window)) offenders.push(`${rel}:${i + 1}`);
+        });
+      }
+    };
+    walk("src");
+    expect(
+      offenders,
+      "these ask isBlueskyBlocked with a DID only, so a domain block will not apply",
     ).toEqual([]);
   });
 });
