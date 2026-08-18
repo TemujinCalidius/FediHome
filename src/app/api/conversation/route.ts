@@ -30,6 +30,23 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "post not found" }, { status: 404 });
   }
 
+  // The start post gets the same check as everything else in the thread (#559).
+  // It was the one row that reached every response branch unfiltered — the
+  // Bluesky branch below filters the conversation but falls back to `[startPost]`
+  // when there is no conversationId, and the AP branch splices it into `ordered`.
+  //
+  // The SAME 404 as a genuinely absent post, deliberately: a different status
+  // would turn this into an oracle for whether a given id exists, and blocking
+  // here is a preference rather than a security boundary.
+  //
+  // blockedActorUris rather than isBlockedSender because a Bluesky row's
+  // actorUri is a DID — `uriHostname("did:plc:…")` is null, so the domain half
+  // of isBlockedSender silently no-ops on exactly those rows. blockedActorUris
+  // matches the DID exactly and its host leg harmlessly finds nothing.
+  if ((await blockedActorUris([startPost.actorUri])).has(startPost.actorUri)) {
+    return NextResponse.json({ error: "post not found" }, { status: 404 });
+  }
+
   // Bluesky rows have no apId and no AP thread endpoint to walk (#393). The
   // conversation is already stored locally via conversationId, so serve that
   // rather than trying to federate a thread that doesn't exist.
@@ -67,18 +84,45 @@ export async function GET(req: NextRequest) {
     const ancestors: NonNullable<FediPostRow>[] = [];
     let currentApId = startPost.inReplyTo;
     let depth = 0;
+    // apIds of ancestors we walked past but are not showing, because their author
+    // is blocked (#559). Kept SEPARATELY from `ancestors` and folded back into
+    // threadApIds below — see the comment there.
+    const hiddenAncestorApIds: string[] = [];
     while (currentApId && depth < MAX_DEPTH) {
       let parent: FediPostRow = await prisma.fediPost.findUnique({ where: { apId: currentApId } });
       if (!parent) parent = await fetchRemoteNote(currentApId);
       if (!parent) break;
-      ancestors.unshift(parent);
+
+      // CHECKED ON THE RETURNED ROW, NOT FILTERED IN THE QUERY (#559), and the
+      // distinction is the whole point. A filtered query returns nothing for a
+      // blocked ancestor, which is indistinguishable from "not cached" — and the
+      // very next line would then send a signed GET to the blocked actor's own
+      // server. That outbound contact is what #379 exists to prevent.
+      //
+      // Only the CACHED branch can produce a blocked row: fetchRemoteNote checks
+      // before its network call, and again on the author, whose host can differ
+      // from the note's.
+      //
+      // Hide their post and nothing else: keep walking so grandparents above
+      // them still appear, and remember the apId so other people's replies to
+      // the hidden post survive the threadApIds derivation below.
+      if ((await blockedActorUris([parent.actorUri])).has(parent.actorUri)) {
+        if (parent.apId) hiddenAncestorApIds.push(parent.apId);
+      } else {
+        ancestors.unshift(parent);
+      }
       currentApId = parent.inReplyTo;
       depth++;
     }
 
     // Bluesky rows in the same reply chain have no apId; drop them from the
     // ancestor id list rather than passing nulls into an `in` clause.
-    const threadApIds = [...ancestors.map((p) => p.apId), startApId].filter(
+    // Hidden ancestors are included HERE even though they are not rendered (#559).
+    // threadApIds is what the reply queries below match on, so leaving a blocked
+    // ancestor out would silently drop every NON-blocked person's reply to it —
+    // hiding posts by people the owner never blocked, purely because of who they
+    // happened to answer. Their own rows are still excluded, by blockFilter.
+    const threadApIds = [...ancestors.map((p) => p.apId), ...hiddenAncestorApIds, startApId].filter(
       (a): a is string => a !== null,
     );
     // The same filter the Bluesky branch above applies (#459). Without it, this

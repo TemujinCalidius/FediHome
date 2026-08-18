@@ -1,5 +1,5 @@
 import { BskyAgent, RichText } from "@atproto/api";
-import { getBlueskyCredentials, getThreadsCredentials } from "@/lib/integrations";
+import { getThreadsCredentials } from "@/lib/integrations";
 import { readFile } from "fs/promises";
 import path from "path";
 import nodemailer from "nodemailer";
@@ -8,6 +8,7 @@ import { getSiteUrl } from "./identity";
 import { resolveUploadPath } from "./uploads-dir";
 import { getDayOneCredentials } from "./integrations";
 import { guardedFetch } from "./safe-fetch";
+import { getBlueskyAgent } from "./bluesky-agent";
 
 export interface CrosspostImage {
   url: string; // full URL or local path
@@ -31,15 +32,14 @@ export async function crosspostToBluesky(
   images?: CrosspostImage[],
   video?: CrosspostVideo
 ): Promise<{ success: boolean; uri?: string; error?: string }> {
-  const creds = await getBlueskyCredentials();
-  if (!creds) {
+  // The shared agent, so the configured PDS is honoured (#541). This used to
+  // build its own against a hardcoded bsky.social.
+  const agent = await getBlueskyAgent();
+  if (!agent) {
     return { success: false, error: "Bluesky credentials not configured" };
   }
-  const { handle, password } = creds;
 
   try {
-    const agent = new BskyAgent({ service: "https://bsky.social" });
-    await agent.login({ identifier: creds.did ?? handle, password });
 
     const text = truncateForBluesky(content, url);
 
@@ -80,15 +80,14 @@ export async function crosspostReplyToBluesky(
   images?: CrosspostImage[],
   video?: CrosspostVideo,
 ): Promise<{ success: boolean; uri?: string; error?: string }> {
-  const creds = await getBlueskyCredentials();
-  if (!creds) {
+  // The shared agent, so the configured PDS is honoured (#541). This used to
+  // build its own against a hardcoded bsky.social.
+  const agent = await getBlueskyAgent();
+  if (!agent) {
     return { success: false, error: "Bluesky credentials not configured" };
   }
-  const { handle, password } = creds;
 
   try {
-    const agent = new BskyAgent({ service: "https://bsky.social" });
-    await agent.login({ identifier: creds.did ?? handle, password });
 
     const uriParts = parentBlueskyUri.replace("at://", "").split("/");
     const repo = uriParts[0];

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { blockedActorUris } from "@/lib/blocks";
 import { authenticateApiRequest, verifyOrigin } from "@/lib/auth";
 import { assertPublicHost } from "@/lib/url-guard";
 import { signedGet } from "@/lib/http-signatures";
@@ -37,6 +38,20 @@ export async function POST(req: NextRequest) {
 
   const post = await prisma.fediPost.findUnique({ where: { id: postId } });
   if (!post) {
+    return NextResponse.json({ error: "post not found" }, { status: 404 });
+  }
+
+  // This route had no block check of any kind, and the consequence was worse
+  // than a display leak: past the cache TTL below it makes a guardedFetch and
+  // then a signedGet to the post's own origin. For a blocked actor's post that
+  // is OUTBOUND CONTACT WITH A BLOCKED SERVER — the thing #379 exists to
+  // prevent — rather than merely showing the owner something they hid.
+  //
+  // Checked here, above the cache branch, so a stale-but-cached row can't serve
+  // counts for a blocked post either. Same 404 as an absent post, for the same
+  // reason as /api/conversation: no oracle. blockedActorUris because a Bluesky
+  // row's actorUri is a DID, which isBlockedSender's domain half cannot read.
+  if ((await blockedActorUris([post.actorUri])).has(post.actorUri)) {
     return NextResponse.json({ error: "post not found" }, { status: 404 });
   }
 

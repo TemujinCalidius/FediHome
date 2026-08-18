@@ -31,6 +31,12 @@ export default function IntegrationsClient({
 
   const [bskyHandle, setBskyHandle] = useState(initialStatus.bluesky.handle ?? "");
   const [bskyPassword, setBskyPassword] = useState("");
+  // The PDS (#504). Seeded from the resolved value, but only when the operator
+  // actually chose one — showing the default in the box would make "I left it
+  // alone" and "I typed bsky.social" indistinguishable on save.
+  const [bskyService, setBskyService] = useState(
+    initialStatus.bluesky.serviceSource ? initialStatus.bluesky.service : "",
+  );
   // Domain handle (#448). `domainHandle` is the toggle; `domainCheck` is what
   // Bluesky last told us, fetched on demand rather than on every page load.
   const [domainHandle, setDomainHandle] = useState(initialDomainHandle);
@@ -56,7 +62,7 @@ export default function IntegrationsClient({
   }
 
   const payloadFor = (provider: Provider, action: string) => {
-    if (provider === "bluesky") return { action, provider, handle: bskyHandle, password: bskyPassword };
+    if (provider === "bluesky") return { action, provider, handle: bskyHandle, password: bskyPassword, service: bskyService };
     if (provider === "dayone") {
       return { action, provider, dayOneEmail, host: smtpHost, port: Number(smtpPort), user: smtpUser, pass: smtpPass };
     }
@@ -137,7 +143,11 @@ export default function IntegrationsClient({
       else setThreadsToken("");
       if (action === "disconnect") {
         const st = data.status as IntegrationStatus;
-        if (provider === "bluesky") setBskyHandle(st.bluesky.handle ?? "");
+        if (provider === "bluesky") {
+          setBskyHandle(st.bluesky.handle ?? "");
+          // Disconnecting clears the service row too, so the box has to follow.
+          setBskyService(st.bluesky.serviceSource ? st.bluesky.service : "");
+        }
         else if (provider === "dayone") {
           setDayOneEmail(st.dayOne.dayOneEmail ?? "");
           setSmtpHost(st.dayOne.host ?? "");
@@ -206,6 +216,19 @@ export default function IntegrationsClient({
               Create an app password at{" "}
               <a href="https://bsky.app/settings/app-passwords" target="_blank" rel="noopener noreferrer" className="text-accent-400 hover:text-accent-300">bsky.app → App Passwords</a>{" "}
               (not your main password).
+            </p>
+            {field("Server address", bskyService, setBskyService, {
+              placeholder: status.bluesky.service,
+            })}
+            <p className="text-xs text-gray-600 m-0">
+              Leave this blank unless you run your own AT Protocol server. Nearly everyone should —
+              it means <span className="text-gray-400">{status.bluesky.service}</span>, which is
+              where Bluesky accounts live.
+              {status.bluesky.serviceSource === "env" && (
+                <> Currently set by <code>BLUESKY_SERVICE</code> in your environment; saving here takes over.</>
+              )}{" "}
+              <strong>Test</strong> signs in to whatever is in this box, so you can check a new
+              address before saving it.
             </p>
             <div className="flex items-center gap-3 pt-1">
               <button onClick={() => run("bluesky", "save")} disabled={!!busy || !encryptionAvailable} className="btn-primary text-xs disabled:opacity-50">

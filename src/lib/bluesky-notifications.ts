@@ -1,7 +1,6 @@
-import { BskyAgent } from "@atproto/api";
-import { getBlueskyCredentials } from "@/lib/integrations";
 import { prisma } from "./db";
 import { sendPushToOwner } from "./push";
+import { getBlueskyAgent } from "./bluesky-agent";
 
 /**
  * Ingest Bluesky interactions on our posts (likes, reposts, replies, mentions,
@@ -66,12 +65,10 @@ export async function syncBlueskyNotifications(): Promise<{
 }> {
   const counts = { likes: 0, reposts: 0, replies: 0, mentions: 0, quotes: 0, follows: 0, pushed: 0 };
 
-  const creds = await getBlueskyCredentials();
-  if (!creds) return counts;
-  const { handle, password } = creds;
-
-  const agent = new BskyAgent({ service: "https://bsky.social" });
-  await agent.login({ identifier: creds.did ?? handle, password });
+  // The shared agent, so the configured PDS is honoured (#541). This used to
+  // build its own against a hardcoded bsky.social.
+  const agent = await getBlueskyAgent();
+  if (!agent) return counts;
 
   // Map our crossposted posts' at:// URIs → where to link / label them. The
   // subject of a like/repost (and a reply's parent) is one of these.

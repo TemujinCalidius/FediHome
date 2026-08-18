@@ -74,7 +74,7 @@ docker compose up -d
 ```
 
 ## Requirements
-- Node.js 20+ (or Docker)
+- Node.js 22+ (or Docker) — this is what CI builds and what the container image uses
 - PostgreSQL 15+ (the installer can set this up for you)
 - A domain name with DNS access (only needed when you go public)
 

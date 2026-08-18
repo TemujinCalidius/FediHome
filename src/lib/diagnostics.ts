@@ -7,6 +7,7 @@ import { getIntegrationStatus } from "./integrations";
 import { getIdentity } from "./identity";
 import { getRecentLines, consoleTeeInstalled, redactSecrets } from "./log-buffer";
 import { resolveSecrets } from "./log-secrets";
+import { effectiveTrustedHeader, sharedBucketReason } from "./client-ip";
 
 /**
  * The support bundle (#395).
@@ -184,12 +185,21 @@ export async function collectDiagnostics(): Promise<string> {
   // conclusion drawn from two settings and it changes how the admin login
   // behaves — an owner reporting "I got locked out" needs this stated, not
   // reconstructed from which variables happen to be set.
+  //
+  // ASKED, not re-derived (#551). The first version of this read the two
+  // environment variables itself, which reports the INTENT. On a typo'd header
+  // name the intent and the effect are opposites: client-ip fails closed to the
+  // shared bucket while the environment still reads as configured, so this
+  // printed a confident "per-visitor via x-forwarded-host" for an instance that
+  // was doing nothing of the kind. Calling the same function the keying calls is
+  // the only way this stays true, and it names the fix when it can.
+  const header = effectiveTrustedHeader();
   out.push(
     line(
       "rate-limit keying",
-      process.env.TRUSTED_PROXY === "true"
-        ? `per-visitor via ${process.env.TRUSTED_PROXY_HEADER?.trim().toLowerCase() || "x-real-ip (assumed)"}`
-        : "SHARED — every visitor counts as one client",
+      header
+        ? `per-visitor via ${header}`
+        : `SHARED — every visitor counts as one client (${sharedBucketReason()})`,
     ),
   );
 

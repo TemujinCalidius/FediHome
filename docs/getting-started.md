@@ -15,7 +15,7 @@ curl -sSL https://raw.githubusercontent.com/TemujinCalidius/fedihome/main/instal
 ```
 
 The script will:
-1. Verify Node.js 20+, npm, git, and PostgreSQL are installed
+1. Verify Node.js 22+, npm, git, and PostgreSQL are installed
 2. Clone the FediHome repository
 3. Run `npm install`
 4. Copy `.env.example` to `.env.local`

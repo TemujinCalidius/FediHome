@@ -365,7 +365,24 @@ export async function clearDayOneCredentials(): Promise<void> {
 
 /* ---------------------- Status (never returns secrets) ---------------------- */
 export interface IntegrationStatus {
-  bluesky: { configured: boolean; handle: string | null; source: "db" | "env" | null };
+  bluesky: {
+    configured: boolean;
+    handle: string | null;
+    source: "db" | "env" | null;
+    /**
+     * The PDS this instance actually talks to, and where that came from (#504).
+     *
+     * `serviceSource` is separate from `source` on purpose: the two are
+     * genuinely independent. A handle saved in the admin panel can sit beside a
+     * `BLUESKY_SERVICE` set in the environment, so one provenance field cannot
+     * honestly describe both — and the panel has to be able to say "you set this
+     * in your .env, saving here will take over" for each of them separately.
+     *
+     * `null` means neither is set and the default is in use.
+     */
+    service: string;
+    serviceSource: "db" | "env" | null;
+  };
   threads: { configured: boolean; userId: string | null; source: "db" | "env" | null };
   dayOne: {
     configured: boolean;
@@ -379,7 +396,7 @@ export interface IntegrationStatus {
 
 export async function getIntegrationStatus(): Promise<IntegrationStatus> {
   const o = await readRows([
-    KEYS.bskyHandle, KEYS.bskyPassword, KEYS.threadsUserId, KEYS.threadsToken,
+    KEYS.bskyHandle, KEYS.bskyPassword, KEYS.bskyService, KEYS.threadsUserId, KEYS.threadsToken,
     KEYS.smtpHost, KEYS.smtpPort, KEYS.smtpUser, KEYS.smtpPass, KEYS.dayOneEmail,
   ]);
   const bskyDb = !!(o[KEYS.bskyHandle] && o[KEYS.bskyPassword]);
@@ -396,6 +413,14 @@ export async function getIntegrationStatus(): Promise<IntegrationStatus> {
         return h ? normalizeBlueskyHandle(h) : null;
       })(),
       source: bskyDb ? "db" : bskyEnv ? "env" : null,
+      // Validated on the way out as well as in: a row written before the
+      // validator tightened, or an env var edited by hand, should show the
+      // address we will really use rather than the one that was typed.
+      service:
+        (o[KEYS.bskyService] && validateBlueskyService(o[KEYS.bskyService])) ||
+        (process.env.BLUESKY_SERVICE && validateBlueskyService(process.env.BLUESKY_SERVICE)) ||
+        BLUESKY_SERVICE,
+      serviceSource: o[KEYS.bskyService] ? "db" : process.env.BLUESKY_SERVICE ? "env" : null,
     },
     threads: {
       configured: threadsDb || threadsEnv,
@@ -435,6 +460,18 @@ export async function getIntegrationStatus(): Promise<IntegrationStatus> {
  * tunnelled instance frequently cannot fetch its own public hostname, so a
  * self-fetch would paint healthy sites red — and Bluesky's answer is the
  * authoritative one anyway.
+ *
+ * PINNED TO bsky.social ON PURPOSE, even on an instance with its own PDS
+ * configured (#504, decided rather than inherited). #541 moved every
+ * authenticated call onto `blueskyService()`; this one stays put because it asks
+ * a different question. It is unauthenticated and it is about DISCOVERABILITY —
+ * the people looking you up are on Bluesky's network wherever your data lives,
+ * so asking your own PDS would only confirm what you already told it, and would
+ * turn a real check into a tautology.
+ *
+ * The honest cost: an operator who has left Bluesky's network entirely sees a
+ * red cross here that means nothing to them. Documented in
+ * docs/bluesky-integration.md rather than hidden.
  */
 export async function checkDomainHandle(
   domain: string,

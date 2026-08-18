@@ -1,6 +1,5 @@
-import { BskyAgent } from "@atproto/api";
-import { getBlueskyCredentials } from "@/lib/integrations";
 import { prisma } from "./db";
+import { getBlueskyAgent } from "./bluesky-agent";
 
 type ProfileView = {
   did: string;
@@ -16,12 +15,10 @@ type ProfileView = {
  * in this run are deleted, so unfollows propagate.
  */
 export async function syncBlueskyGraph(): Promise<{ followers: number; following: number }> {
-  const creds = await getBlueskyCredentials();
-  if (!creds) return { followers: 0, following: 0 };
-  const { handle, password } = creds;
-
-  const agent = new BskyAgent({ service: "https://bsky.social" });
-  await agent.login({ identifier: creds.did ?? handle, password });
+  // The shared agent, so the configured PDS is honoured (#541). This used to
+  // build its own against a hardcoded bsky.social.
+  const agent = await getBlueskyAgent();
+  if (!agent) return { followers: 0, following: 0 };
   const actor = agent.session!.did;
 
   const seenFollowerDids = new Set<string>();
@@ -93,12 +90,10 @@ export async function syncBlueskyGraph(): Promise<{ followers: number; following
  * can unfollow later (deleteFollow requires the record URI, not the DID).
  */
 export async function followBlueskyAccount(did: string): Promise<void> {
-  const creds = await getBlueskyCredentials();
-  if (!creds) throw new Error("Bluesky credentials not configured");
-  const { handle, password } = creds;
-
-  const agent = new BskyAgent({ service: "https://bsky.social" });
-  await agent.login({ identifier: creds.did ?? handle, password });
+  // The shared agent, so the configured PDS is honoured (#541). This used to
+  // build its own against a hardcoded bsky.social.
+  const agent = await getBlueskyAgent();
+  if (!agent) throw new Error("Bluesky credentials not configured");
 
   const result = await agent.follow(did);
   const profile = await agent.getProfile({ actor: did });
@@ -132,12 +127,10 @@ export async function unfollowBlueskyAccount(followingId: string): Promise<void>
   if (!row) throw new Error("Following row not found");
   if (!row.followUri) throw new Error("Missing followUri — sync Bluesky graph and retry");
 
-  const creds = await getBlueskyCredentials();
-  if (!creds) throw new Error("Bluesky credentials not configured");
-  const { handle, password } = creds;
-
-  const agent = new BskyAgent({ service: "https://bsky.social" });
-  await agent.login({ identifier: creds.did ?? handle, password });
+  // The shared agent, so the configured PDS is honoured (#541). This used to
+  // build its own against a hardcoded bsky.social.
+  const agent = await getBlueskyAgent();
+  if (!agent) throw new Error("Bluesky credentials not configured");
 
   await agent.deleteFollow(row.followUri);
   await prisma.blueskyFollowing.delete({ where: { id: followingId } });
@@ -151,12 +144,10 @@ export async function resolveBlueskyActor(handleOrDid: string): Promise<string> 
   const trimmed = handleOrDid.trim().replace(/^@/, "");
   if (trimmed.startsWith("did:")) return trimmed;
 
-  const creds = await getBlueskyCredentials();
-  if (!creds) throw new Error("Bluesky credentials not configured");
-  const { handle, password } = creds;
-
-  const agent = new BskyAgent({ service: "https://bsky.social" });
-  await agent.login({ identifier: creds.did ?? handle, password });
+  // The shared agent, so the configured PDS is honoured (#541). This used to
+  // build its own against a hardcoded bsky.social.
+  const agent = await getBlueskyAgent();
+  if (!agent) throw new Error("Bluesky credentials not configured");
   const res = await agent.resolveHandle({ handle: trimmed });
   return res.data.did;
 }

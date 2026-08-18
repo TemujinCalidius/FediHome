@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getBlueskyCredentials } from "@/lib/integrations";
 import { prisma } from "@/lib/db";
-import { BskyAgent } from "@atproto/api";
 import { verifyAdmin } from "@/lib/auth";
+import { getBlueskyAgent } from "@/lib/bluesky-agent";
 
 /**
  * Poll Bluesky for replies to crossposted posts.
@@ -16,15 +15,12 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const creds = await getBlueskyCredentials();
-  if (!creds) {
+  // The shared agent, so the configured PDS is honoured (#541). This used to
+  // build its own against a hardcoded bsky.social.
+  const agent = await getBlueskyAgent();
+  if (!agent) {
     return NextResponse.json({ error: "Bluesky not configured" }, { status: 500 });
   }
-  const { handle, password } = creds;
-
-  // Login to Bluesky
-  const agent = new BskyAgent({ service: "https://bsky.social" });
-  await agent.login({ identifier: creds.did ?? handle, password });
 
   // Get posts to poll
   const postId = req.nextUrl.searchParams.get("postId");

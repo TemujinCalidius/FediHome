@@ -40,6 +40,14 @@ stored **AES-256-GCM-encrypted at rest** (the key is derived from your
 `ADMIN_SECRET`, which never touches the database), verified on save, and never
 shown again. No restart needed. Threads is configured the same way.
 
+### Running your own AT Protocol server
+
+`bsky.social` is one Personal Data Server among many, and you can run your own. If you have, your handle, posts and followers still belong to your account — only the server address changes.
+
+Put that address in **Server address** under **Bluesky**, and leave it blank if you don't run one (nearly everyone shouldn't). It must be a bare `https://` origin with no path and no credentials, reachable from the internet — `https://pds.example.com`. **Test** signs in to whatever is in that box, so you can check a new address before you save it.
+
+A note on the domain-handle check below: **"Check with Bluesky" always asks bsky.social, even when you run your own server.** That is deliberate. The question it answers is *"would someone looking me up actually find this account?"*, and the people looking you up are on Bluesky's network wherever your data lives — asking your own server would only confirm what you already told it. The honest caveat: if you have left Bluesky's network entirely, that check will show a red cross that doesn't matter to you.
+
 ### Alternative: environment variables
 
 You can instead set these in `.env.local` (an admin-panel value takes precedence):

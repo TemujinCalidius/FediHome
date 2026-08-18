@@ -152,21 +152,21 @@ if ! command -v node >/dev/null 2>&1; then
   NODE_OK=false
 else
   NODE_VERSION=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
-  if [ "$NODE_VERSION" -lt 20 ]; then
-    warn "Found Node v$(node -v | tr -d v) — FediHome needs Node 20 or newer."
+  if [ "$NODE_VERSION" -lt 22 ]; then
+    warn "Found Node v$(node -v | tr -d v) — FediHome needs Node 22 or newer."
     NODE_OK=false
   fi
 fi
 
 if [ "$NODE_OK" = false ]; then
-  warn "Node.js 20+ is not installed."
-  if ask_yes_no "Install Node.js 20 now?"; then
+  warn "Node.js 22+ is not installed."
+  if ask_yes_no "Install Node.js 22 now?"; then
     case "$OS" in
       mac)    install_pkg node ;;
       debian) install_pkg nodejs ;;
       redhat) install_pkg nodejs ;;
       *)
-        fail "Please install Node.js 20+ from https://nodejs.org and re-run."
+        fail "Please install Node.js 22+ from https://nodejs.org and re-run."
         exit 1
         ;;
     esac
