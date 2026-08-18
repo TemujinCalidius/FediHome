@@ -2,9 +2,13 @@
 
 ## Unreleased
 
+### Changed
+- The guard that checks every read of federated posts for a block filter now covers the whole app rather than just its routes, tolerates a wrapped query, and has a twin for direct messages (#565). Eleven reads in the library layer were previously classified by nothing — all of them safe, but nothing would have noticed a twelfth.
+
 ### Security
 - **Blocking a Bluesky domain now also stops likes and reposts going to it** (#563) — blocking a whole domain stopped that server's posts arriving, but not FediHome liking or reposting them, and both of those notify the author. The check only looked up the account's identifier and never its handle, so it had no domain to compare — blocking `spam.example` didn't cover `alice.spam.example`. Blocking a single account always worked; it was the domain half that was missing, in the one direction that reaches the other person.
 - **Cleared a high advisory in a build-time dependency** (#566) — `deepmerge-ts` (GHSA-ggr8-5vv4-36mx, stack exhaustion on deeply recursive objects) is pinned to a patched version tree-wide via `overrides`. It reaches FediHome only through Prisma's config loader, so the input is your own configuration files at install or migrate time rather than anything a visitor can send — hygiene, not an emergency, and it keeps a self-hosted install's audit clean. Worth noting `npm audit fix --force` proposes downgrading Prisma by a whole major version here; the override is the correct fix.
+- **Blocking someone now hides their direct messages too** (#564) — blocking removed an account from your timeline and your threads, but their messages stayed everywhere: in the app's message list, on the first paint of the timeline, and in the notification bell. Worst of all, they kept counting toward the **badge on your home screen** — so a blocked person's message lit it and kept it lit, on every notification, indefinitely. Their messages are now hidden on every surface, past and future. Nothing is deleted; it just isn't shown. Bluesky messages from a blocked account also stop arriving in the first place, which they didn't before — the fediverse side already refused them at the door.
 
 ## 1.28.0 (2026-08-18)
 

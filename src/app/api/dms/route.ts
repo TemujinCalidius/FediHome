@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { authenticateApiRequest } from "@/lib/auth";
 import { sanitizeHtml } from "@/lib/sanitize";
+import { blockedDmSenderUris } from "@/lib/blocks";
 
 const MAX_MESSAGES = 200;
 
@@ -17,8 +18,20 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
+  // Resolved BEFORE the query, not applied after it (#564). These reads cap at
+  // MAX_MESSAGES, so filtering the returned page would silently shrink it and
+  // drop legitimate messages that fell off the end.
+  //
+  // Must stay identical to the SSR read in timeline/page.tsx: that pair
+  // disagreeing is the #459 failure, where the first paint hid a blocked
+  // account and every client refetch brought it back.
+  const blockedDmUris = await blockedDmSenderUris();
   const [messagesRaw, readRows] = await Promise.all([
-    prisma.directMessage.findMany({ orderBy: { createdAt: "desc" }, take: MAX_MESSAGES }),
+    prisma.directMessage.findMany({
+      where: blockedDmUris.length ? { NOT: { senderUri: { in: blockedDmUris } } } : {},
+      orderBy: { createdAt: "desc" },
+      take: MAX_MESSAGES,
+    }),
     prisma.dmConversationRead.findMany(),
   ]);
 

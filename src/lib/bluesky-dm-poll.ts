@@ -1,4 +1,5 @@
 import { prisma } from "./db";
+import { isBlueskyBlocked } from "./blocks";
 import { getBlueskyAgent } from "./bluesky-agent";
 
 /**
@@ -51,6 +52,18 @@ export async function pollBlueskyDMs(): Promise<{ convos: number; messages: numb
       const senderHandle = sender?.handle || senderDid || "unknown";
       const senderName = sender?.displayName || null;
       const senderAvatar = sender?.avatar || null;
+
+      // THE ONE UNGATED INGEST (#564). The fediverse side refuses a blocked
+      // sender at the top of the inbox route, so nothing is ever stored. Bluesky
+      // DM polling had no block check anywhere in this file, which is why
+      // blocked Bluesky accounts kept arriving at all.
+      //
+      // Both halves, per #563: the DID alone would skip the domain query and a
+      // `spam.example` block would not cover `alice.spam.example`. Incoming
+      // only — our own sent messages are ours regardless of who we later block.
+      if (!isOutgoing && (await isBlueskyBlocked({ did: senderDid || "", handle: senderHandle }))) {
+        continue;
+      }
 
       try {
         await prisma.directMessage.upsert({

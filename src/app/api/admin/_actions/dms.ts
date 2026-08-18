@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { blockedDmSenderUris } from "@/lib/blocks";
 import { deliverActivity } from "@/lib/http-signatures";
 import { siteConfig } from "@/../site.config";
 import { resolveBlueskyActor } from "@/lib/bluesky-graph";
@@ -251,7 +252,13 @@ export async function markDmRead(body: AdminBody): Promise<NextResponse> {
 export async function markAllDmsRead(): Promise<NextResponse> {
   // Bulk-mark every conversation that has at least one stored message.
   const now = new Date();
+  // Filtered too (#564), though nothing here is rendered. Without it this writes
+  // DmConversationRead rows for conversations the owner cannot see, and reports
+  // a `count` that includes them — a number that silently disagrees with the
+  // list it claims to describe.
+  const blockedDmUris = await blockedDmSenderUris();
   const keys = await prisma.directMessage.findMany({
+    where: blockedDmUris.length ? { NOT: { senderUri: { in: blockedDmUris } } } : {},
     select: { conversationKey: true },
     distinct: ["conversationKey"],
   });
