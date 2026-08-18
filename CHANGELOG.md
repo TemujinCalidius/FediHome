@@ -4,6 +4,7 @@
 
 ### Changed
 - The guard that checks every read of federated posts for a block filter now covers the whole app rather than just its routes, tolerates a wrapped query, and has a twin for direct messages (#565). Eleven reads in the library layer were previously classified by nothing — all of them safe, but nothing would have noticed a twelfth.
+- Dependency refresh: `@atproto/api` 0.20.41, `@types/pg` 8.23.1, `fast-xml-parser` 5.11.0, and `@typescript-eslint` 8.61.1 → 8.67.0. Removed `eslint-config-next`, which nothing imported — the lint config uses the underlying plugins directly, and that unused package was the only thing pinning `@typescript-eslint` to an old version. Lint output is byte-identical. (`typescript` remains held at 6.x — see #234.)
 
 ### Security
 - **Blocking a Bluesky domain now also stops likes and reposts going to it** (#563) — blocking a whole domain stopped that server's posts arriving, but not FediHome liking or reposting them, and both of those notify the author. The check only looked up the account's identifier and never its handle, so it had no domain to compare — blocking `spam.example` didn't cover `alice.spam.example`. Blocking a single account always worked; it was the domain half that was missing, in the one direction that reaches the other person.
