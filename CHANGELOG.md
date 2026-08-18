@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.28.0 (2026-08-18)
 
 ### Added
 - **Set your own AT Protocol server from the admin panel** (#504) — v1.25.0 said you could point FediHome at a PDS you run yourself, and the only way to actually do it was an environment variable, which on a hosted platform often means no way at all. There's now a **Server address** field under **Bluesky** in Admin → Integrations. Leave it blank and nothing changes — that's what nearly everyone should do. **Test** signs in to whatever is in the box, so you can check a new address before committing to it, and clearing the box puts you back on `bsky.social`. If you'd set the environment variable, the panel says so and saving here takes over.
