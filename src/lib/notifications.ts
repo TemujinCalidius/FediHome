@@ -1,5 +1,6 @@
 import { prisma } from "./db";
 import { htmlToText } from "./html-text";
+import { blockedDmSenderUris } from "./blocks";
 
 export interface NotificationItem {
   id: string;
@@ -180,7 +181,16 @@ export async function computeNotifications(): Promise<NotificationResult> {
   }
 
   // 4. Unread DMs (no limit)
+  //
+  // FILTERED HERE, ABOVE THE GROUPING (#564), and this is the surface that
+  // mattered most. The loop below groups by conversationKey, so a filter applied
+  // afterwards would leave a phantom conversation — and this feeds more than the
+  // bell: push.ts calls computeNotifications() for the badge count on EVERY
+  // push. A blocked person's message lit the home-screen badge and kept it lit,
+  // for any push, indefinitely.
+  const blockedDmUris = await blockedDmSenderUris();
   const allDMs = await prisma.directMessage.findMany({
+    where: blockedDmUris.length ? { NOT: { senderUri: { in: blockedDmUris } } } : {},
     orderBy: { createdAt: "desc" },
   });
 

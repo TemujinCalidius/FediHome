@@ -76,6 +76,18 @@ const EXEMPT: Record<string, string> = {
   "src/app/api/admin/_actions/fedi-interactions.ts": "selects actorUri only, to address a like/boost the owner initiated",
   "src/app/api/admin/_actions/interactions.ts": "selects source/apId/bskyUri only, to route an interaction",
   "src/app/api/profile/route.ts": "selects actorUri only — identity resolution, no post content",
+  // The library layer, brought in scope by widening the sweep past src/app
+  // (#565). All eleven of these reads are safe — each either takes only our own
+  // content, or selects columns never rendered — but nothing said so, and
+  // nothing would have noticed a twelfth.
+  "src/lib/explore.ts":
+    "selects inReplyTo/apId only, bounded to followed actors; display filters in /api/explore and :251 gates the fetch",
+  "src/lib/notifications.ts": "isOutgoing: true — our own posts, to attribute replies to them",
+  "src/lib/fedi-retention.ts": "isOutgoing/apId bookkeeping for the pruning sweep; nothing rendered",
+  "src/lib/bluesky-feed.ts": "selects media columns to decide whether a row still needs its pictures (#512)",
+  "src/lib/lookup-backfill.ts": "selects id only, to test whether the viaLookup column is populated (#516)",
+  "src/lib/fedi-media.ts": "selects id + media columns to restore evicted files (#478)",
+  "src/lib/export.ts": "isOutgoing: true — the owner exporting their own writing",
   "src/app/api/admin/_actions/bluesky-interactions.ts":
     "selects username only, to hand the handle to the block check itself (#563)",
 };
@@ -181,14 +193,28 @@ describe("read-side block filtering", () => {
       for (const entry of readdirSync(join(ROOT, dir))) {
         const rel = `${dir}/${entry}`;
         if (statSync(join(ROOT, rel)).isDirectory()) {
-          if (entry === "__tests__") continue;
+          // `generated` is the Prisma client — its matches are docstring
+          // examples in code nobody writes.
+          if (entry === "__tests__" || entry === "generated") continue;
           walk(rel);
-        } else if (/\.tsx?$/.test(entry) && /prisma\.fediPost\.(findMany|findUnique|findFirst)/.test(read(rel))) {
+        } else if (
+          /\.tsx?$/.test(entry) &&
+          // Tolerates a line break between delegate and method (#565). Prevention
+          // rather than a live gap — there are no multi-line READS in the tree —
+          // but `prisma.fediPost` + newline + `.deleteMany(...)` is already an
+          // idiom here, so a wrapped findMany is one formatter run away.
+          /prisma\.fediPost\s*\.?\s*\n?\s*\.?(findMany|findUnique|findFirst)/.test(read(rel))
+        ) {
           readers.push(rel);
         }
       }
     };
-    walk("src/app");
+    // ROOTED AT src, NOT src/app (#565). The docstring above promised "a new
+    // route that reads fediPost fails here until it is classified" — true of
+    // routes, false of the library layer, where seven files read fediPost eleven
+    // times and were classified by nothing. All eleven are safe; the guarantee
+    // was not.
+    walk("src");
     const unclassified = readers.filter((r) => !seen.has(r));
     expect(
       unclassified,
@@ -237,5 +263,70 @@ describe("#563 — no Bluesky block check drops the handle", () => {
       offenders,
       "these ask isBlueskyBlocked with a DID only, so a domain block will not apply",
     ).toEqual([]);
+  });
+});
+
+/**
+ * The same discipline for DirectMessage (#564, #565).
+ *
+ * DMs went all the way to #564 with **no block filter on any surface**, and the
+ * reason is visible above: every pattern in this file was hardcoded to
+ * `fediPost`, so a `directMessage` read was never something the guard could
+ * see. Writing the filters without writing this would leave the next one to be
+ * caught the same way — by somebody reading the code a year later.
+ *
+ * Rooted at `src` rather than `src/app`, because two of the surfaces
+ * (`notifications.ts`, `bluesky-dm-poll.ts`) are library files — the exact gap
+ * #565 found in the fediPost sweep.
+ */
+const DM_READS = [
+  "src/app/api/dms/route.ts", //                     the app's DM list
+  "src/app/timeline/page.tsx", //                    SSR first paint — must agree with the above
+  "src/lib/notifications.ts", //                     the bell, AND the push badge count
+  "src/app/api/admin/_actions/dms.ts", //            mark-all-read, writes a row per conversation
+];
+
+const DM_EXEMPT: Record<string, string> = {
+  "src/app/ap/inbox/route.ts": "dedup by apId; the sender is already refused at the top of POST",
+  "src/lib/identity-store.ts": "counts isOutgoing: true — our own sent messages, to lock identity changes",
+  "src/lib/bluesky-dm-poll.ts": "the ingest WRITE, gated with isBlueskyBlocked rather than a read filter",
+  "src/lib/blocks.ts":
+    "the filter itself — reads distinct senders so the exclusion can go in the query rather than over a capped page",
+};
+
+describe("read-side block filtering — direct messages (#564)", () => {
+  it.each(DM_READS)("%s filters DMs on the block list", (rel) => {
+    expect(read(rel)).toContain("blockedDmSenderUris");
+  });
+
+  it("every file reading directMessage is classified", () => {
+    const seen = new Set([...DM_READS, ...Object.keys(DM_EXEMPT)]);
+    const readers: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(join(ROOT, dir))) {
+        const rel = `${dir}/${entry}`;
+        if (statSync(join(ROOT, rel)).isDirectory()) {
+          if (entry === "__tests__" || entry === "generated") continue;
+          walk(rel);
+        } else if (
+          /\.tsx?$/.test(entry) &&
+          /prisma\.directMessage\s*\.?\s*\n?\s*\.?(findMany|findUnique|findFirst|count)/.test(read(rel))
+        ) {
+          readers.push(rel);
+        }
+      }
+    };
+    walk("src");
+    expect(
+      readers.filter((r) => !seen.has(r)),
+      "these read directMessage but are in neither list — classify them",
+    ).toEqual([]);
+  });
+
+  it("every DM exemption carries a written reason", () => {
+    for (const [rel, reason] of Object.entries(DM_EXEMPT)) {
+      expect(reason.length, `${rel} needs a reason`).toBeGreaterThan(10);
+      expect(read(rel).length, `${rel} is listed but does not exist`).toBeGreaterThan(0);
+    }
   });
 });
