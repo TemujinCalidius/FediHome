@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Security
+- **Cleared a high advisory in a build-time dependency** (#566) — `deepmerge-ts` (GHSA-ggr8-5vv4-36mx, stack exhaustion on deeply recursive objects) is pinned to a patched version tree-wide via `overrides`. It reaches FediHome only through Prisma's config loader, so the input is your own configuration files at install or migrate time rather than anything a visitor can send — hygiene, not an emergency, and it keeps a self-hosted install's audit clean. Worth noting `npm audit fix --force` proposes downgrading Prisma by a whole major version here; the override is the correct fix.
+
 ## 1.28.0 (2026-08-18)
 
 ### Added
