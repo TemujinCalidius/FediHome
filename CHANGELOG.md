@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Security
+- **Blocking a Bluesky domain now also stops likes and reposts going to it** (#563) — blocking a whole domain stopped that server's posts arriving, but not FediHome liking or reposting them, and both of those notify the author. The check only looked up the account's identifier and never its handle, so it had no domain to compare — blocking `spam.example` didn't cover `alice.spam.example`. Blocking a single account always worked; it was the domain half that was missing, in the one direction that reaches the other person.
 - **Cleared a high advisory in a build-time dependency** (#566) — `deepmerge-ts` (GHSA-ggr8-5vv4-36mx, stack exhaustion on deeply recursive objects) is pinned to a patched version tree-wide via `overrides`. It reaches FediHome only through Prisma's config loader, so the input is your own configuration files at install or migrate time rather than anything a visitor can send — hygiene, not an emergency, and it keeps a self-hosted install's audit clean. Worth noting `npm audit fix --force` proposes downgrading Prisma by a whole major version here; the override is the correct fix.
 
 ## 1.28.0 (2026-08-18)

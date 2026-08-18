@@ -25,7 +25,7 @@ const { like, unlike, boost, unboost } = vi.hoisted(() => ({
 }));
 vi.mock("@/app/api/admin/_actions/fedi-interactions", () => ({ like, unlike, boost, unboost }));
 vi.mock("@/lib/db", () => ({
-  prisma: { fediPost: { findUnique: vi.fn(), updateMany: vi.fn() } },
+  prisma: { fediPost: { findUnique: vi.fn(), findFirst: vi.fn(), updateMany: vi.fn() } },
 }));
 
 import {
@@ -60,6 +60,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   requireBlueskyAgent.mockResolvedValue(agent);
   isBlueskyBlocked.mockResolvedValue(false);
+  vi.mocked(prisma.fediPost.findFirst).mockResolvedValue({ username: "alice.spam.example" } as never);
   agent.getPosts.mockResolvedValue(viewer());
   vi.mocked(prisma.fediPost.updateMany).mockResolvedValue({ count: 1 } as never);
 });
@@ -189,5 +190,58 @@ describe("routing by the post's network", () => {
 
   it("400s when given neither", async () => {
     expect((await interact("like", {})).status).toBe(400);
+  });
+});
+
+/**
+ * #563. `prepare()` called `isBlueskyBlocked({ did })` with no handle. That
+ * helper derives its domain candidates from the handle —
+ * `actor.handle ? domainChain(…) : []` — so with none it skipped the
+ * blockedDomain query entirely and a DOMAIN block collapsed to a DID lookup.
+ *
+ * Blocking `spam.example` therefore failed to stop a like reaching
+ * `alice.spam.example`, and a like or repost notifies the author. The ingest
+ * side passed both all along (bluesky-feed.ts), so the block held coming in and
+ * not going out — the asymmetry #379 exists to prevent.
+ *
+ * These assert the HANDLE IS PASSED rather than the outcome, because this suite
+ * stubs `isBlueskyBlocked`. The helper's own domain behaviour is covered in
+ * domain-blocks.test.ts; what can go wrong here is the caller dropping an
+ * argument, and that is what is pinned.
+ */
+describe("#563 — outbound Bluesky actions honour a domain block", () => {
+  it.each([
+    ["like", () => blueskyLike(URI)],
+    ["unlike", () => blueskyUnlike(URI)],
+    ["repost", () => blueskyRepost(URI)],
+    ["unrepost", () => blueskyUnrepost(URI)],
+  ])("%s asks with the handle, not just the DID", async (_name, call) => {
+    agent.getPosts.mockResolvedValue(viewer());
+    requireBlueskyAgent.mockResolvedValue(agent);
+    await call();
+    expect(isBlueskyBlocked).toHaveBeenCalledWith({
+      did: "did:plc:ada",
+      handle: "alice.spam.example",
+    });
+  });
+
+  it("passes null rather than undefined when we hold no row for the post", async () => {
+    // A handle we don't have must not become a silently-absent argument — that
+    // is the exact shape of the bug. null is explicit; the helper treats it as
+    // "no domain candidates" and the DID check still runs.
+    vi.mocked(prisma.fediPost.findFirst).mockResolvedValue(null as never);
+    agent.getPosts.mockResolvedValue(viewer());
+    requireBlueskyAgent.mockResolvedValue(agent);
+    await blueskyLike(URI);
+    expect(isBlueskyBlocked).toHaveBeenCalledWith({ did: "did:plc:ada", handle: null });
+  });
+
+  it("still refuses, and never reaches Bluesky, when blocked", async () => {
+    isBlueskyBlocked.mockResolvedValue(true);
+    requireBlueskyAgent.mockResolvedValue(agent);
+    const res = await blueskyLike(URI);
+    expect(res.status).toBe(409);
+    expect(agent.like).not.toHaveBeenCalled();
+    expect(agent.getPosts).not.toHaveBeenCalled();
   });
 });

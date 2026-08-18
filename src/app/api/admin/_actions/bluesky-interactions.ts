@@ -51,7 +51,23 @@ function didOf(uri: string): string {
  * reason every outbound fediverse path is gated (#379).
  */
 async function prepare(bskyUri: string) {
-  if (await isBlueskyBlocked({ did: didOf(bskyUri) })) {
+  // THE HANDLE MATTERS AS MUCH AS THE DID (#563). isBlueskyBlocked derives its
+  // domain candidates from the handle — `actor.handle ? domainChain(…) : []` —
+  // so calling it with a DID alone skips the blockedDomain query entirely and a
+  // DOMAIN block silently collapses to a DID lookup. Blocking `spam.example`
+  // then failed to stop a like going to `alice.spam.example`, and a like or
+  // repost notifies the author.
+  //
+  // The row we already store for this post carries it: `username` holds the
+  // full Bluesky handle. bluesky-feed.ts:339 passes both on the ingest side,
+  // which is why the block held coming in and not going out — the asymmetry
+  // #379 exists to prevent.
+  const did = didOf(bskyUri);
+  const row = await prisma.fediPost.findFirst({
+    where: { bskyUri },
+    select: { username: true },
+  });
+  if (await isBlueskyBlocked({ did, handle: row?.username ?? null })) {
     return { error: NextResponse.json({ error: "recipient is blocked" }, { status: 409 }) };
   }
   const agent = await requireBlueskyAgent();
