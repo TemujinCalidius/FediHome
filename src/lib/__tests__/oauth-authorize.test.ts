@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { NextRequest } from "next/server";
 
 const { verifyAdmin, verifyOrigin } = vi.hoisted(() => ({
@@ -16,7 +16,26 @@ vi.mock("@/lib/db", () => ({
   prisma: { authorizationCode: { create: vi.fn(), deleteMany: vi.fn() } },
 }));
 
+/**
+ * A pass-through spy, so the real resolution still runs and only the RATE KEY it
+ * is handed becomes observable. That key is the pre-auth outbound-fetch budget
+ * for IndieAuth `client_id` resolution (#494) — where a shared or forged key is
+ * an egress-abuse primitive, not merely a way to retry.
+ */
+const { resolveClientSpy } = vi.hoisted(() => ({ resolveClientSpy: vi.fn() }));
+vi.mock("@/lib/oauth-clients", async (orig) => {
+  const actual = await orig<typeof import("@/lib/oauth-clients")>();
+  return {
+    ...actual,
+    resolveClient: (...args: Parameters<typeof actual.resolveClient>) => {
+      resolveClientSpy(...args);
+      return actual.resolveClient(...args);
+    },
+  };
+});
+
 import { GET, POST } from "@/app/api/oauth/authorize/route";
+import { SHARED_BUCKET_KEY } from "@/lib/client-ip";
 import { prisma } from "@/lib/db";
 
 const VALID: Record<string, string> = {
@@ -29,10 +48,16 @@ const VALID: Record<string, string> = {
   response_type: "code",
 };
 
-function getReq(qs: Record<string, string>): NextRequest {
+function getReq(qs: Record<string, string>, headers: Record<string, string> = {}): NextRequest {
   return {
     nextUrl: { searchParams: new URLSearchParams(qs) },
     cookies: { get: () => undefined },
+    // A real NextRequest always has these. Leaving them off worked only because
+    // `rateLimitKey` returns before touching them when no proxy is trusted — so
+    // on every reverse-proxied install, which is the DOCUMENTED deployment, this
+    // whole file threw `Cannot read properties of undefined (reading 'get')`
+    // instead of testing anything. Six tests, invisible on a bare laptop.
+    headers: { get: (name: string) => headers[name.toLowerCase()] ?? null },
   } as unknown as NextRequest;
 }
 
@@ -43,6 +68,13 @@ function postReq(fields: Record<string, string>): NextRequest {
     body: new URLSearchParams(fields).toString(),
   }) as unknown as NextRequest;
 }
+
+afterEach(() => {
+  // test-setup.ts clears these once per FILE; a test that sets them owes the
+  // next test the same clean slate.
+  delete process.env.TRUSTED_PROXY;
+  delete process.env.TRUSTED_PROXY_HEADER;
+});
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -89,6 +121,41 @@ describe("GET /api/oauth/authorize — validation & rendering", () => {
     expect(html).toContain("Create posts"); // the `create` scope label
     expect(html).not.toContain("bogus"); // dropped by sanitizeScope
     expect(html).toContain('value="fedihome-macos://callback"'); // hidden redirect field
+  });
+});
+
+/**
+ * The branch no test had ever entered. `rateLimitKey` short-circuits to the
+ * shared bucket unless TRUSTED_PROXY=true, so on a maintainer's laptop GET never
+ * reached the header read — and the fake request had no headers to read.
+ *
+ * That is not a cosmetic gap. The key threaded into `validate` is spent inside
+ * `resolveClient` on cache misses, and telling one visitor from another is the
+ * entire point of that budget. Un-proxied it is one bucket for the internet;
+ * proxied it is per visitor, and only the second shape is the one deployments
+ * actually run.
+ */
+describe("the pre-auth fetch budget is keyed by the visitor (#494)", () => {
+  it("uses the forwarded address behind a trusted proxy", async () => {
+    process.env.TRUSTED_PROXY = "true";
+    process.env.TRUSTED_PROXY_HEADER = "x-real-ip";
+    await GET(getReq(VALID, { "x-real-ip": "203.0.113.7" }));
+    expect(resolveClientSpy).toHaveBeenCalledWith("fedihome-macos", "203.0.113.7");
+  });
+
+  it("tells two visitors apart, so one cannot spend the other's budget", async () => {
+    process.env.TRUSTED_PROXY = "true";
+    process.env.TRUSTED_PROXY_HEADER = "x-real-ip";
+    await GET(getReq(VALID, { "x-real-ip": "203.0.113.7" }));
+    await GET(getReq(VALID, { "x-real-ip": "198.51.100.4" }));
+    expect(resolveClientSpy.mock.calls.map((c) => c[1])).toEqual(["203.0.113.7", "198.51.100.4"]);
+  });
+
+  it("collapses to one shared bucket when no proxy is trusted", async () => {
+    // Stricter, not laxer: without a trusted edge the header is spoofable, so
+    // honouring it would let one caller mint unlimited budgets.
+    await GET(getReq(VALID, { "x-real-ip": "203.0.113.7" }));
+    expect(resolveClientSpy).toHaveBeenCalledWith("fedihome-macos", SHARED_BUCKET_KEY);
   });
 });
 

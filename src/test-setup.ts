@@ -1,6 +1,71 @@
 import { vi } from "vitest";
 
 /**
+ * THE SUITE MUST NOT READ THE MACHINE'S ENVIRONMENT.
+ *
+ * Reported from the demo instance, about the storage tests: "the storage test
+ * only passes on a machine with no uploads." That one was a filesystem
+ * dependency (#574). This is the same failure in its other form — a test that
+ * silently reads whatever the operator happens to have exported.
+ *
+ * Eleven tests across four files failed under a plausible live-install
+ * environment, and every one of them is a variable an operator is DOCUMENTED to
+ * set:
+ *
+ *   TRUSTED_PROXY=true        → 6 in oauth-authorize, 1 in client-ip
+ *   SITE_URL=<anything>       → 1 in setup-route
+ *   FEDIHOME_UPDATE_TEXT=…    → 3 in install-shape
+ *
+ * Every one of those tests asserts the behaviour for the variable being ABSENT,
+ * and none of them says so. On a maintainer's laptop that is invisible; on the
+ * box that actually runs FediHome it is a suite that cannot be trusted — which
+ * is exactly where someone reaches for it.
+ *
+ * Clearing them HERE rather than in each file is deliberate. `setupFiles` runs
+ * once per test file and before that file's imports, so a module that reads
+ * `process.env` at import time sees the cleared value too — which per-file hooks
+ * cannot promise. It also covers tests written later, and the per-file version
+ * of this has already been forgotten four times.
+ *
+ * A test that wants a variable SET still sets it; that is unaffected, and is how
+ * every one of these files already works. What changes is that "unset" now means
+ * unset everywhere instead of meaning "unset on the maintainer's machine".
+ *
+ * Deleting is safe and does not leak: process.env is per test-file here (each
+ * file runs in its own worker environment), so this neither sees nor disturbs
+ * the shell the suite was launched from.
+ *
+ * NOT CLEARED, on purpose:
+ *   NODE_ENV, PORT — Node's and Vitest's own, not FediHome's to take.
+ *   DATABASE_URL   — Prisma reads it at client construction; tests mock the
+ *                    client rather than assert this is absent.
+ */
+for (const name of [
+  "SITE_URL",
+  "FEDI_HANDLE",
+  "FEDI_DOMAIN",
+  "ADMIN_SECRET",
+  "ADMIN_PASSWORD",
+  "SETUP_TOKEN",
+  "FEDIHOME_UPLOADS_DIR",
+  "FEDIHOME_FEDI_CACHE_MB",
+  "FEDIHOME_UPDATE_URL",
+  "FEDIHOME_UPDATE_TEXT",
+  "FEDIHOME_STANDALONE",
+  "BLUESKY_HANDLE",
+  "BLUESKY_APP_PASSWORD",
+  "BLUESKY_SERVICE",
+  "THREADS_USER_ID",
+  "THREADS_ACCESS_TOKEN",
+  "TRUSTED_PROXY",
+  "TRUSTED_PROXY_HEADER",
+  "APP_TOKEN_TTL_DAYS",
+  "ADMIN_SESSION_TTL_DAYS",
+]) {
+  delete process.env[name];
+}
+
+/**
  * Let a test stub `globalThis.fetch` and still intercept `guardedFetch` (#506).
  *
  * `safe-fetch.ts` calls **undici's** `fetch`, not the global one, and it has to:
