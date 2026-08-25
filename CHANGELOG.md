@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.28.1 (2026-08-25)
 
 ### Changed
 - The guard that checks every read of federated posts for a block filter now covers the whole app rather than just its routes, tolerates a wrapped query, and has a twin for direct messages (#565). Eleven reads in the library layer were previously classified by nothing — all of them safe, but nothing would have noticed a twelfth.
