@@ -1,4 +1,5 @@
 import { prisma } from "./db";
+import { blockedBlueskyAccount } from "./blocks";
 import { getBlueskyAgent } from "./bluesky-agent";
 
 type ProfileView = {
@@ -89,7 +90,19 @@ export async function syncBlueskyGraph(): Promise<{ followers: number; following
  * Follow a Bluesky account by DID. Persists the resulting follow record so we
  * can unfollow later (deleteFollow requires the record URI, not the DID).
  */
-export async function followBlueskyAccount(did: string): Promise<void> {
+export async function followBlueskyAccount(
+  did: string,
+  handle?: string | null,
+): Promise<{ ok: true } | { ok: false; reason: "blocked" }> {
+  // REFUSED BEFORE ANY CONTACT (#577). A follow notifies the other account, so
+  // it falls under the same guarantee as a like or a reply — and this sits in
+  // the library rather than in the route so a second caller cannot skip it,
+  // exactly as `deliverActivity` does for every outbound fediverse path (#379).
+  //
+  // Returned rather than thrown: "you blocked them" is a decision, not a
+  // failure, and the route turns it into a 409 instead of a 500.
+  if (await blockedBlueskyAccount(did, handle)) return { ok: false, reason: "blocked" };
+
   // The shared agent, so the configured PDS is honoured (#541). This used to
   // build its own against a hardcoded bsky.social.
   const agent = await getBlueskyAgent();
@@ -116,6 +129,8 @@ export async function followBlueskyAccount(did: string): Promise<void> {
       fetchedAt: new Date(),
     },
   });
+
+  return { ok: true };
 }
 
 /**

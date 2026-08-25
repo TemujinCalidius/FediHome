@@ -13,6 +13,10 @@ vi.mock("@/lib/db", () => ({
     maintenanceItem: { findMany: vi.fn() },
     blueskyInteraction: { findMany: vi.fn() },
     blueskyReply: { findMany: vi.fn() },
+    // The DM read resolves its block set through the real helper (#564),
+    // so these tables have to exist for it to query.
+    blockedActor: { findMany: vi.fn() },
+    blockedDomain: { findMany: vi.fn() },
   },
 }));
 vi.mock("@/lib/html-text", () => ({ htmlToText: (s: string) => s }));
@@ -29,6 +33,8 @@ const EMPTY_LISTS = [
   prisma.fediInteraction.findMany,
   prisma.fediFollower.findMany,
   prisma.directMessage.findMany,
+  prisma.blockedActor.findMany,
+  prisma.blockedDomain.findMany,
   prisma.maintenanceItem.findMany,
   prisma.blueskyInteraction.findMany,
   prisma.blueskyReply.findMany,
@@ -180,5 +186,63 @@ describe("computeNotifications — maintenance items (#412)", () => {
     const res = await computeNotifications();
     expect(res.items).toHaveLength(1);
     expect(res.count).toBe(0);
+  });
+});
+
+/**
+ * #564. DMs applied no block filter on any read surface, and this one is the
+ * worst of them — not because it shows the most, but because it PERSISTS.
+ *
+ * `computeNotifications` feeds the bell and, via push.ts, the badge count on
+ * every push. So one message from a blocked account lit the home-screen badge
+ * and kept it lit, for any push, indefinitely. A list you can look away from;
+ * a badge follows you around.
+ *
+ * It is also the only DM read that groups server-side, which is why the filter
+ * has to go in the query rather than over the result — a conversation dropped
+ * after grouping leaves a phantom in the count.
+ */
+describe("#564 — a blocked sender's DM never reaches the bell or the badge", () => {
+  const dm = (over: Record<string, unknown> = {}) => ({
+    id: "d1",
+    conversationKey: "fedi:https://spam.example/users/mallory",
+    senderUri: "https://spam.example/users/mallory",
+    senderHandle: "@mallory@spam.example",
+    senderName: "Mallory",
+    senderAvatar: null,
+    source: "fedi",
+    isOutgoing: false,
+    createdAt: new Date(),
+    ...over,
+  });
+
+  it("filters in the query, not after the grouping", async () => {
+    // Asserted on the `where` because grouping happens below the fetch: a
+    // filter applied afterwards would still count the conversation.
+    // The helper asks for the distinct senders first and the messages second,
+    // both through this mock — so it has to return a sender, or there is
+    // nothing for the block lookup to find and the test passes vacuously.
+    vi.mocked(prisma.directMessage.findMany).mockResolvedValue([dm()] as never);
+    vi.mocked(prisma.blockedActor.findMany).mockResolvedValue([
+      { actorUri: "https://spam.example/users/mallory" },
+    ] as never);
+    vi.mocked(prisma.blockedDomain.findMany).mockResolvedValue([] as never);
+    await computeNotifications();
+
+    // First call resolves the distinct senders; the second is the filtered read.
+    const calls = vi.mocked(prisma.directMessage.findMany).mock.calls;
+    expect(calls.length).toBeGreaterThan(1);
+    const where = calls[calls.length - 1][0]?.where as { NOT?: { senderUri?: { in?: string[] } } };
+    expect(where?.NOT?.senderUri?.in).toContain("https://spam.example/users/mallory");
+  });
+
+  it("still surfaces a DM from someone who isn't blocked", async () => {
+    vi.mocked(prisma.blockedActor.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.blockedDomain.findMany).mockResolvedValue([] as never);
+    vi.mocked(prisma.directMessage.findMany).mockResolvedValue([
+      dm({ senderUri: "https://mastodon.example/users/ada", senderHandle: "@ada@mastodon.example" }),
+    ] as never);
+    const r = await computeNotifications();
+    expect(r.items.some((i) => i.type === "dm")).toBe(true);
   });
 });

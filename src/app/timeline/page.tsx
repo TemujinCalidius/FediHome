@@ -11,7 +11,7 @@ import { isTinylyticsConfigured, getSiteStats, getLeaderboard, getRecentHits, ge
 import { siteConfig } from "@/../site.config";
 import TimelineClient from "./TimelineClient";
 import TimelineLogin from "./TimelineLogin";
-import { blockedPostFilter } from "@/lib/blocks";
+import { blockedPostFilter, blockedDmSenderUris } from "@/lib/blocks";
 
 export const metadata = {
   title: "Timeline",
@@ -140,7 +140,13 @@ export default async function TimelinePage() {
   const totalFollowingCount = following.length + bskyFollowing.length;
 
   // Fetch direct messages grouped by conversation
+  // The same filter /api/dms applies, and it has to be the same one (#564):
+  // the SSR paint and every client refetch disagreeing about a blocked account
+  // is the #459 failure exactly. Resolved before the query so `take` stays
+  // honest — a post-fetch filter would return 199 of a 200-message page.
+  const blockedDmUris = await blockedDmSenderUris();
   const directMessagesRaw = await prisma.directMessage.findMany({
+    where: blockedDmUris.length ? { NOT: { senderUri: { in: blockedDmUris } } } : {},
     orderBy: { createdAt: "desc" },
     take: 200,
   });

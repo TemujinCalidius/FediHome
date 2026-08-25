@@ -1,4 +1,5 @@
 import { prisma } from "./db";
+import { isBlueskyBlocked } from "./blocks";
 import { getBlueskyAgent } from "./bluesky-agent";
 
 /**
@@ -51,6 +52,28 @@ export async function pollBlueskyDMs(): Promise<{ convos: number; messages: numb
       const senderHandle = sender?.handle || senderDid || "unknown";
       const senderName = sender?.displayName || null;
       const senderAvatar = sender?.avatar || null;
+
+      // THE ONE UNGATED INGEST (#564). The fediverse side refuses a blocked
+      // sender at the top of the inbox route, so nothing is ever stored. Bluesky
+      // DM polling had no block check anywhere in this file, which is why
+      // blocked Bluesky accounts kept arriving at all.
+      //
+      // Both halves, per #563: the DID alone would skip the domain query and a
+      // `spam.example` block would not cover `alice.spam.example`. Incoming
+      // only — our own sent messages are ours regardless of who we later block.
+      //
+      // `sender?.handle`, NOT `senderHandle` (#577). That variable falls back to
+      // the DID and then to the string "unknown", and `domainChain` just splits
+      // on dots — so a DID went into the domain query as if it were a hostname:
+      // `did:web:sub.evil.example` yields `evil.example` (a match on the DID
+      // METHOD, not on identity) while `did:plc:…` yields itself and matches
+      // nothing. `convo.members` is documented as partial for group convos, so
+      // the sender really can be absent. Passing null ABSTAINS from the domain
+      // half instead of answering it arbitrarily; the DID lookup is unaffected,
+      // so an account block still holds either way.
+      if (!isOutgoing && (await isBlueskyBlocked({ did: senderDid || "", handle: sender?.handle ?? null }))) {
+        continue;
+      }
 
       try {
         await prisma.directMessage.upsert({

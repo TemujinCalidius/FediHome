@@ -334,3 +334,185 @@ export async function isBlueskyBlocked(actor: { did: string; handle?: string | n
   }
 }
 
+/**
+ * The handle we already hold on file for a Bluesky DID.
+ *
+ * The domain half of `isBlueskyBlocked` is derived from the HANDLE — a DID
+ * carries no domain — so every outbound caller needs one, and none of them
+ * reliably has one to hand. Rather than fetching a profile (which is contact
+ * with the very account we may be about to refuse), look in the rows we already
+ * store: the graph tables from a Bluesky sync, then any DM they have sent us.
+ *
+ * Returns `null` when we simply don't know them, and `null` ABSTAINS — the DID
+ * lookup still runs, so an account block always holds; only the domain half is
+ * unavailable. That is the honest answer, and it is why nothing here invents a
+ * handle out of the DID: `domainChain("did:web:sub.evil.example")` yields
+ * `evil.example` and `domainChain("did:plc:abc")` yields the DID itself, so
+ * feeding a DID in matches on the DID *method* rather than on identity (#577).
+ *
+ * Swallows its own errors to `null` rather than throwing. A real outage takes
+ * `isBlueskyBlocked` down too, and that fails CLOSED — so the refusal still
+ * happens; this only decides how much we know while deciding it.
+ */
+async function knownBlueskyHandle(did: string): Promise<string | null> {
+  if (!did) return null;
+  try {
+    const [following, follower, dm] = await Promise.all([
+      prisma.blueskyFollowing.findUnique({ where: { did }, select: { handle: true } }),
+      prisma.blueskyFollower.findUnique({ where: { did }, select: { handle: true } }),
+      prisma.directMessage.findFirst({
+        where: { source: "bluesky", senderUri: did, isOutgoing: false },
+        select: { senderHandle: true },
+        orderBy: { createdAt: "desc" },
+      }),
+    ]);
+    const dmHandle = dm?.senderHandle?.includes(".") ? dm.senderHandle : null;
+    return following?.handle ?? follower?.handle ?? dmHandle ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Refuse outbound contact with a blocked Bluesky account (#577).
+ *
+ * THE ONE ENTRY POINT for every outbound Bluesky path, and the reason it exists
+ * rather than each surface calling `isBlueskyBlocked` itself: the fediverse has
+ * a chokepoint — `deliverActivity` gates every recipient before signing, so a
+ * block covers follows, DMs, likes and replies in one place and a NEW outbound
+ * path is covered the day it is written. Bluesky has no equivalent: posts, likes,
+ * follows and chat messages all leave through different atproto methods. So the
+ * chokepoint has to be built, and this is it.
+ *
+ * #563 gated likes and reposts. It did not count DMs, replies, follows or
+ * crossposted replies as call sites, and all four went out unchecked (#577).
+ *
+ * Pass `handle` when the caller genuinely has one — the address an operator
+ * typed, say. Otherwise it is resolved from local rows.
+ */
+export async function blockedBlueskyAccount(
+  did: string,
+  handle?: string | null,
+): Promise<boolean> {
+  const known = handle?.includes(".") ? handle : await knownBlueskyHandle(did);
+  return isBlueskyBlocked({ did, handle: known });
+}
+
+/** The author's DID is the authority segment of an `at://` URI. */
+function didOfPost(bskyUri: string): string {
+  return bskyUri.replace("at://", "").split("/")[0];
+}
+
+/**
+ * Refuse outbound contact with the author of a Bluesky post (#577).
+ *
+ * Liking, reposting and REPLYING all notify the author, so all three fall under
+ * the same guarantee. The `FediPost` row we already store for the post carries
+ * the author's handle in `username`, which is where the domain half comes from
+ * without asking Bluesky anything.
+ */
+export async function blockedBlueskyPostAuthor(bskyUri: string): Promise<boolean> {
+  const did = didOfPost(bskyUri);
+  let handle: string | null = null;
+  try {
+    const row = await prisma.fediPost.findFirst({
+      where: { bskyUri },
+      select: { username: true },
+    });
+    handle = row?.username ?? null;
+  } catch {
+    /* fall back to the graph tables below */
+  }
+  return blockedBlueskyAccount(did, handle);
+}
+
+
+/**
+ * Which of these DM senders are blocked? (#564)
+ *
+ * DMs need their own helper, and the reason is structural rather than
+ * incidental. `blockedPostFilter` works because `FediPost` carries a `domain`
+ * COLUMN, so the domain half is expressible in SQL. `DirectMessage` has no such
+ * column: the domain lives inside `senderHandle`, in two different formats —
+ * `@user@domain` for the fediverse and `handle.bsky.social` for Bluesky.
+ *
+ * THE POLYMORPHIC KEY IS THE TRAP. `senderUri` holds an actorUri for fedi and a
+ * DID for Bluesky. Passing the whole set to `blockedActorUris` looks right and
+ * silently half-works: `hostCandidates("did:plc:…")` is `[]`, because
+ * `uriHostname` finds no host in a DID, so the domain query is skipped for
+ * every Bluesky row. A `bsky.social` domain block would not cover
+ * `alice.bsky.social`. That is exactly the failure #563 had, from the other
+ * direction — the Bluesky half of blocking being quietly dropped.
+ *
+ * So the domain candidates branch on `source`, while the actor lookup does not:
+ * fediverse actorUris and Bluesky DIDs both live in `BlockedActor.actorUri`.
+ *
+ * Fails **CLOSED**, like `blockedActorUris` and `isBlueskyBlocked`. The two
+ * helpers here that fail open do so for availability — an empty feed is a worse
+ * outage than one unfiltered post. That reasoning doesn't transfer: a DM list
+ * that briefly shows nothing is a far smaller harm than a blocked person's
+ * message reaching the owner, and the database is already down in that case.
+ *
+ * Returns the blocked `senderUri` values, so callers can express the exclusion
+ * as `NOT { senderUri: { in: [...] } }` IN THE QUERY. That matters — both DM
+ * reads cap at `take: 200`, and filtering after the fetch would silently shrink
+ * the page and drop legitimate messages that fell off the end.
+ */
+export async function blockedDmSenders(
+  rows: { senderUri: string; senderHandle: string; source: string }[],
+): Promise<Set<string>> {
+  const unique = new Map<string, { senderHandle: string; source: string }>();
+  for (const r of rows) {
+    if (r.senderUri) unique.set(r.senderUri, { senderHandle: r.senderHandle, source: r.source });
+  }
+  if (unique.size === 0) return new Set();
+
+  const uris = [...unique.keys()];
+  const domainsFor = (uri: string, meta: { senderHandle: string; source: string }) =>
+    meta.source === "bluesky"
+      ? domainChain((meta.senderHandle || "").toLowerCase()).filter((d) => d.includes("."))
+      : hostCandidates(uri);
+
+  const candidates = [
+    ...new Set([...unique.entries()].flatMap(([uri, meta]) => domainsFor(uri, meta))),
+  ];
+
+  try {
+    const [actors, domains] = await Promise.all([
+      prisma.blockedActor.findMany({ where: { actorUri: { in: uris } }, select: { actorUri: true } }),
+      candidates.length
+        ? prisma.blockedDomain.findMany({ where: { domain: { in: candidates } }, select: { domain: true } })
+        : Promise.resolve([]),
+    ]);
+    const byUri = new Set(actors.map((a) => a.actorUri));
+    const byDomain = new Set(domains.map((d) => d.domain));
+
+    return new Set(
+      uris.filter(
+        (u) => byUri.has(u) || domainsFor(u, unique.get(u)!).some((d) => byDomain.has(d)),
+      ),
+    );
+  } catch {
+    return new Set(uris);
+  }
+}
+
+/**
+ * The distinct senders currently stored, so a read can resolve the blocked set
+ * before it queries — see the `take: 200` note on `blockedDmSenders`.
+ */
+export async function blockedDmSenderUris(): Promise<string[]> {
+  try {
+    const senders = await prisma.directMessage.findMany({
+      where: { isOutgoing: false },
+      select: { senderUri: true, senderHandle: true, source: true },
+      distinct: ["senderUri"],
+    });
+    return [...(await blockedDmSenders(senders))];
+  } catch {
+    // Fail closed is not available here — we cannot name senders we failed to
+    // read. The callers' queries therefore stay unfiltered on a DB error, which
+    // is the same posture their own `findMany` already has: it would throw too.
+    return [];
+  }
+}
