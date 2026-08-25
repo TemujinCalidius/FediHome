@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- Removed four dependencies nothing imported (`@fedify/next`, `fast-xml-parser`, `next-mdx-remote`, `remark-gfm`) and one `overrides` entry for a package that is no longer in the tree at all (#578). That is **136 fewer packages** installed — 730 down to 594 — which is that much less to audit, download and keep patched. `@fedify/next` is the one worth naming: it was how the PostCSS advisory tracked in #12 reached this project in the first place, and carrying a package nothing imports means carrying its advisories for nothing. Verified by deleting `node_modules` and the lockfile and installing from scratch. No behaviour changes.
+
 ## 1.28.1 (2026-08-25)
 
 ### Changed
