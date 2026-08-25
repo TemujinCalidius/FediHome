@@ -153,6 +153,7 @@ describe("budget 0 caches nothing — images AND video (#550)", () => {
     }));
     vi.doMock("@/lib/uploads-dir", () => ({
       uploadsRoots: async () => ["/srv/up"],
+      uploadsFediDirs: async () => ["/srv/up/fedi"],
       uploadsDir: async () => "/srv/up",
       legacyUploadsDir: () => "/srv/up",
       ensureUploadDir: async () => "/srv/up/fedi/2026/08",
@@ -240,5 +241,73 @@ describe("standalone output is opt-in, and the Dockerfile opts in (#557)", () =>
     // In the builder: leaking it to the runner would be harmless but misleading,
     // since the standalone server bakes its config in and never reads it.
     expect(env).toBeLessThan(runner);
+  });
+});
+
+
+/**
+ * The trim sweep walks the DEDUPED cache list (#575).
+ *
+ * `uploadsRoots()` collapses a symlinked or nested root, but the trim used to
+ * derive its own directories from that list with `path.join(r, "fedi")` — so it
+ * inherited whatever the list said and, before #575, that meant listing the same
+ * files twice for an aliased root. `totalSize` then read as double the real
+ * cache and the sweep evicted against a budget that had not been exceeded.
+ *
+ * `trimFediStorage`'s body had NO test at all before this — `scheduler.test.ts`
+ * mocks the whole function out — which is why the root handling was free to
+ * drift from the measurement's.
+ */
+describe("trimFediStorage reads uploadsFediDirs, not uploadsRoots (#575)", () => {
+  const load = async (fediDirs: string[]) => {
+    vi.resetModules();
+    const readdir = vi.fn().mockResolvedValue([]);
+    vi.doMock("node:fs/promises", () => ({
+      writeFile: vi.fn(),
+      mkdir: vi.fn(),
+      readdir,
+      stat: vi.fn(),
+      unlink: vi.fn(),
+      access: vi.fn(),
+    }));
+    vi.doMock("@/lib/uploads-dir", () => ({
+      // Two roots, ONE cache directory — the aliased shape. If the trim still
+      // derived its own paths from the roots it would walk two.
+      uploadsRoots: async () => ["/srv/up", "/srv/legacy"],
+      uploadsFediDirs: async () => fediDirs,
+      uploadsDir: async () => "/srv/up",
+      legacyUploadsDir: () => "/srv/legacy",
+      ensureUploadDir: vi.fn(),
+      resolveUploadPath: vi.fn(),
+      uploadPathFor: vi.fn(),
+      fediCacheBudgetBytes: async () => 2048 * 1024 * 1024,
+      remoteMediaCachingEnabled: async () => true,
+      MAX_FEDI_CACHE_MB: 51200,
+      DEFAULT_FEDI_CACHE_MB: 2048,
+    }));
+    vi.doMock("@/lib/safe-fetch", () => ({
+      guardedFetch: vi.fn(),
+      GuardedFetchError: class extends Error {},
+    }));
+    vi.doMock("@/lib/db", () => ({
+      prisma: { fediPost: { findMany: vi.fn().mockResolvedValue([]), update: vi.fn() } },
+    }));
+    const media = await import("@/lib/fedi-media");
+    return { media, readdir };
+  };
+
+  it("walks one directory when the two roots are the same directory", async () => {
+    const { media, readdir } = await load(["/srv/up/fedi"]);
+    await media.trimFediStorage();
+    const walked = readdir.mock.calls.map((c) => c[0]);
+    expect(walked).toEqual(["/srv/up/fedi"]);
+  });
+
+  it("still walks both when the roots are genuinely distinct", async () => {
+    // The fix must not undo #479 — a real second root still gets reclaimed.
+    const { media, readdir } = await load(["/srv/up/fedi", "/srv/legacy/fedi"]);
+    await media.trimFediStorage();
+    const walked = readdir.mock.calls.map((c) => c[0]);
+    expect(walked).toEqual(["/srv/up/fedi", "/srv/legacy/fedi"]);
   });
 });

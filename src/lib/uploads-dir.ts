@@ -1,6 +1,6 @@
 import path from "path";
 import fsSync from "fs";
-import { access, constants, mkdir, stat, unlink, writeFile } from "fs/promises";
+import { access, constants, mkdir, realpath, stat, unlink, writeFile } from "fs/promises";
 import { isContainerised } from "./install-shape";
 
 /**
@@ -124,10 +124,144 @@ export async function resolveUploadPath(relative: string): Promise<string | null
  * Deduplicated, because the legacy root IS the configured root on a default
  * install — walking it twice would double every byte reported.
  */
-export async function uploadsRoots(): Promise<string[]> {
+/**
+ * Resolve symlinks. Falls back to the literal path when it doesn't exist yet —
+ * a root that has never been written to is not an error, it is a fresh install.
+ */
+async function realpathOr(p: string): Promise<string> {
+  try {
+    return await realpath(p);
+  } catch {
+    return p;
+  }
+}
+
+/** Is `inner` the same directory as `outer`, or somewhere beneath it? */
+function contains(outer: string, inner: string): boolean {
+  const rel = path.relative(outer, inner);
+  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+}
+
+/** Warn once per process; the sweeps that call this run on a schedule. */
+let overlapWarned = false;
+function warnOverlap(message: string): void {
+  if (overlapWarned) return;
+  overlapWarned = true;
+  // Goes to the log tail in the support bundle (#490), which is where an
+  // operator wondering why their storage figures look wrong will actually look.
+  // Warned here rather than at save time on purpose: FEDIHOME_UPLOADS_DIR never
+  // passes through `checkUploadsDir`, so a save-time check would miss the case
+  // an operator is most likely to create.
+  console.warn(`[uploads-dir] ${message}`);
+}
+
+interface ResolvedRoot {
+  /** The path as configured — what callers walk and what messages should say. */
+  dir: string;
+  /** Symlinks resolved, for deciding whether two names are one directory. */
+  real: string;
+}
+
+/**
+ * The configured root and the legacy one, with ALIASES COLLAPSED (#575).
+ *
+ * String equality was the whole test here, and it does not decide "same
+ * directory". Symlink `public/uploads` at a bigger disk and also point
+ * `FEDIHOME_UPLOADS_DIR` at that disk — a documented way to move media, and
+ * exactly what someone short of space does — and the two names differ while the
+ * directory is one. Every walk then visited every file twice.
+ */
+async function resolvedRoots(): Promise<ResolvedRoot[]> {
   const current = await uploadsDir();
   const legacy = legacyUploadsDir();
-  return current === legacy ? [current] : [current, legacy];
+  if (current === legacy) return [{ dir: current, real: current }];
+
+  const [rc, rl] = await Promise.all([realpathOr(current), realpathOr(legacy)]);
+  if (rc === rl) {
+    warnOverlap(
+      `"${current}" and the built-in "${legacy}" are the same directory. ` +
+        `Counting it once.`,
+    );
+    return [{ dir: current, real: rc }];
+  }
+  return [
+    { dir: current, real: rc },
+    { dir: legacy, real: rl },
+  ];
+}
+
+/**
+ * Every root that may hold media, newest first (#479), and no two overlapping.
+ *
+ * `resolveUploadPath` has always read from both the configured root and the
+ * legacy one, because changing the setting deliberately moves no files —
+ * anything already on disk keeps serving from where it is. But the trim sweep
+ * and the storage measurement each walked only the CURRENT root, so after an
+ * operator moved the directory the old cache was still served and never
+ * reclaimed or counted.
+ *
+ * That is the worst category to strand: it is other people's media, in a folder
+ * the operator does not browse, and the figure the panel showed them was
+ * smaller than what was actually on disk. An operator who moved the directory
+ * BECAUSE they were running out of space kept the problem, invisibly, in the
+ * place they had just moved away from.
+ *
+ * DEDUPLICATED PROPERLY SINCE #575. This used to compare the two paths as
+ * strings, and the docstring already said what the stake was — "walking it twice
+ * would double every byte reported". A symlinked root gives two names for one
+ * directory, and a NESTED root is worse than double: walking the outer already
+ * covers the inner, so returning both counts everything underneath twice. Only
+ * the outer is returned, and `uploadsFediDirs()` keeps the cache accounting
+ * honest across both.
+ */
+export async function uploadsRoots(): Promise<string[]> {
+  const roots = await resolvedRoots();
+  if (roots.length < 2) return roots.map((r) => r.dir);
+
+  const [current, legacy] = roots;
+  if (contains(current.real, legacy.real)) {
+    warnOverlap(
+      `the built-in "${legacy.dir}" is inside the configured "${current.dir}". ` +
+        `Counting the outer one only, so nothing is counted twice.`,
+    );
+    return [current.dir];
+  }
+  if (contains(legacy.real, current.real)) {
+    warnOverlap(
+      `the configured "${current.dir}" is inside the built-in "${legacy.dir}". ` +
+        `Counting the outer one only, so nothing is counted twice.`,
+    );
+    return [legacy.dir];
+  }
+  return [current.dir, legacy.dir];
+}
+
+/**
+ * The remote-media cache directory under every distinct root (#575).
+ *
+ * Separate from `uploadsRoots()` because the two answer different questions, and
+ * conflating them is what makes the nested case wrong. `uploadsRoots()` returns
+ * what to WALK for a total, so it must not return a root inside another. Cached
+ * media is accounted per root, and `<inner>/fedi` is not inside `<outer>/fedi` —
+ * so dropping the inner root from this list would silently reclassify somebody
+ * else's cached media as the owner's own.
+ *
+ * Used by both `measureStorageUsage` and `trimFediStorage`, which is the second
+ * half of the fix: the trim sweep sums the files it finds, so an aliased root
+ * made the cache look twice its real size and evicted against a budget that had
+ * not actually been exceeded.
+ */
+export async function uploadsFediDirs(): Promise<string[]> {
+  const roots = await resolvedRoots();
+  const dirs = roots.map((r) => path.join(r.real, "fedi"));
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (let i = 0; i < roots.length; i++) {
+    if (seen.has(dirs[i])) continue;
+    seen.add(dirs[i]);
+    out.push(path.join(roots[i].dir, "fedi"));
+  }
+  return out;
 }
 
 /** An absolute path under the configured root, or `null` if it would escape. */

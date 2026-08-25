@@ -1,7 +1,7 @@
 import path from "path";
 import { statfs } from "fs/promises";
 import { readdir, stat } from "fs/promises";
-import { uploadsDir, uploadsRoots } from "./uploads-dir";
+import { uploadsDir, uploadsRoots, uploadsFediDirs } from "./uploads-dir";
 
 /**
  * How full the uploads volume is (#385).
@@ -107,8 +107,14 @@ export async function measureStorageUsage(): Promise<StorageUsage> {
   // move — and the cache it was missing is precisely the part the operator has
   // least reason to keep and least chance of noticing.
   const roots = await uploadsRoots();
+  // TWO DIFFERENT LISTS, deliberately (#575). `uploadsRoots()` is what to walk
+  // for a total, so it never returns a root nested inside another — walking the
+  // outer already covers the inner. Cached media is accounted PER ROOT, and
+  // `<inner>/fedi` is not inside `<outer>/fedi`, so using the walk list here
+  // would silently reclassify a nested root's cached media as the owner's own.
+  const fediDirs = await uploadsFediDirs();
   const sizes = await Promise.all(roots.map((r) => dirSize(r)));
-  const fediSizes = await Promise.all(roots.map((r) => dirSize(path.join(r, "fedi"))));
+  const fediSizes = await Promise.all(fediDirs.map((d) => dirSize(d)));
   const total = sizes.reduce((a, b) => a + b, 0);
   const fedi = fediSizes.reduce((a, b) => a + b, 0);
   const usage: StorageUsage = {
