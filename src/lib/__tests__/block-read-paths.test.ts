@@ -88,8 +88,13 @@ const EXEMPT: Record<string, string> = {
   "src/lib/lookup-backfill.ts": "selects id only, to test whether the viaLookup column is populated (#516)",
   "src/lib/fedi-media.ts": "selects id + media columns to restore evicted files (#478)",
   "src/lib/export.ts": "isOutgoing: true — the owner exporting their own writing",
-  "src/app/api/admin/_actions/bluesky-interactions.ts":
-    "selects username only, to hand the handle to the block check itself (#563)",
+  // MOVED, not added (#577). This reason used to sit on
+  // bluesky-interactions.ts, which did the lookup inline for likes and reposts.
+  // Replies, DMs, follows and crossposted replies needed exactly the same one,
+  // so it now lives in blocks.ts and the interactions file no longer reads at
+  // all — only `updateMany`, which this sweep correctly ignores.
+  "src/lib/blocks.ts":
+    "selects username only, to hand the handle to the block check itself (#563, #577)",
 };
 
 describe("read-side block filtering", () => {
@@ -263,6 +268,95 @@ describe("#563 — no Bluesky block check drops the handle", () => {
       offenders,
       "these ask isBlueskyBlocked with a DID only, so a domain block will not apply",
     ).toEqual([]);
+  });
+});
+
+/**
+ * Every outbound Bluesky write is gated by a block check (#577).
+ *
+ * THIS IS THE INVERSE OF THE GUARD ABOVE, and it exists because that one cannot
+ * fail the way it needs to. `#563 — no Bluesky block check drops the handle`
+ * walks lines that already match `isBlueskyBlocked\(`. A surface that SHOULD
+ * call it and doesn't contributes no line, so `offenders` stays `[]` and the
+ * suite is green. It asserts that the checks we have are well-formed; it cannot
+ * assert that the checks we need exist.
+ *
+ * That is exactly how #577 happened. #563 fixed likes and reposts and its own
+ * docstring says "There were two call sites" — while DMs, replies, follows and
+ * crossposted replies were all going out with no check at all, and every test
+ * passed.
+ *
+ * THE ASYMMETRY THIS DEFENDS. The fediverse has a chokepoint: `deliverActivity`
+ * refuses a blocked recipient before signing, so one gate covers follows, DMs,
+ * likes and replies, and a NEW outbound path inherits it for free. Bluesky has
+ * none — every kind of write leaves through a different atproto method — so the
+ * gate has to be repeated, and repetition is what rots. Hence a structural
+ * assertion rather than a comment on the helper.
+ *
+ * Same idiom as `bluesky-agent-call-sites.test.ts`: sweep, then an exemption map
+ * that has to state a reason.
+ */
+
+/** A write that leaves this instance and lands on somebody else's screen. */
+const OUTBOUND_BLUESKY_WRITE =
+  /\.post\(|\.like\(|\.repost\(|\.follow\(|sendMessage\(|getConvoForMembers\(/;
+
+/** Any of the three ways a file can be asking "may we contact them?". */
+const HAS_BLOCK_CHECK =
+  /blockedBlueskyPostAuthor\(|blockedBlueskyAccount\(|isBlueskyBlocked\(/;
+
+/**
+ * Files that write outbound but have no recipient to block.
+ *
+ * Empty today: every file that reaches the Bluesky network on purpose now has a
+ * gate. Kept because the next one might genuinely not need one — and stating
+ * why is the point. An entry here is a claim that the write notifies nobody.
+ */
+const NO_RECIPIENT: Record<string, string> = {};
+
+describe("#577 — every outbound Bluesky write is gated", () => {
+  it("no file writes to Bluesky without a block check", () => {
+    const offenders: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(join(ROOT, dir))) {
+        const rel = `${dir}/${entry}`;
+        if (statSync(join(ROOT, rel)).isDirectory()) {
+          if (entry === "__tests__" || entry === "generated") continue;
+          walk(rel);
+          continue;
+        }
+        if (!/\.tsx?$/.test(entry)) continue;
+        const src = read(rel);
+        // Only files that actually hold a Bluesky agent — otherwise `.post(`
+        // matches unrelated code and the guard becomes noise nobody trusts.
+        if (!/getBlueskyAgent|requireBlueskyAgent|BskyAgent|chatAgent/.test(src)) continue;
+        if (!OUTBOUND_BLUESKY_WRITE.test(src)) continue;
+        if (rel in NO_RECIPIENT) continue;
+        if (!HAS_BLOCK_CHECK.test(src)) offenders.push(rel);
+      }
+    };
+    walk("src");
+    expect(
+      offenders,
+      "these send something to a Bluesky account without asking whether it is blocked — " +
+        "gate them, or add a NO_RECIPIENT entry saying who the write reaches",
+    ).toEqual([]);
+  });
+
+  it("the gate is reachable from every surface we know sends", () => {
+    // The sweep above is regex-shaped, so it would also be satisfied by a block
+    // check sitting in dead code. These four are the paths #577 found unguarded;
+    // naming them means a refactor that drops one is a failure rather than a
+    // silently smaller sweep.
+    for (const rel of [
+      "src/app/api/admin/_actions/dms.ts", //                  bskyDm  -> sendMessage
+      "src/app/api/admin/_actions/bluesky.ts", //              bskyReply -> agent.post
+      "src/app/api/admin/_actions/bluesky-interactions.ts", // like / repost (#563)
+      "src/lib/bluesky-graph.ts", //                           followBlueskyAccount
+      "src/lib/crosspost.ts", //                               crosspostReplyToBluesky
+    ]) {
+      expect(HAS_BLOCK_CHECK.test(read(rel)), `${rel} lost its block check`).toBe(true);
+    }
   });
 });
 

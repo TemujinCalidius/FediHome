@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { blockedDmSenderUris } from "@/lib/blocks";
+import { blockedDmSenderUris, blockedBlueskyAccount } from "@/lib/blocks";
 import { deliverActivity } from "@/lib/http-signatures";
 import { siteConfig } from "@/../site.config";
 import { resolveBlueskyActor } from "@/lib/bluesky-graph";
@@ -116,6 +116,49 @@ async function sendFediDm(
   };
 }
 
+/**
+ * Everyone in a Bluesky conversation, for the outbound block gate (#577).
+ *
+ * Asks the chat service first, because `convo.members` is the only source that
+ * names EVERY participant — the DirectMessage rows we store name only people
+ * who have written to us, so a group chat where the blocked member has been
+ * quiet would pass a check built on them alone.
+ *
+ * Falls back to those stored rows when the call fails, and returns `null` when
+ * neither can answer. `null` means "unknown", and the caller refuses on it: a
+ * DM is not urgent enough to send to someone we cannot identify.
+ */
+async function convoMembers(
+  chatAgent: { api: { chat: { bsky: { convo: { getConvo: (p: { convoId: string }) => Promise<{ data: { convo: { members?: { did: string; handle?: string }[] } } }> } } } } },
+  convoId: string,
+): Promise<{ did: string; handle: string | null }[] | null> {
+  try {
+    const res = await chatAgent.api.chat.bsky.convo.getConvo({ convoId });
+    const members = res.data.convo.members ?? [];
+    if (members.length > 0) {
+      return members.map((m) => ({ did: m.did, handle: m.handle ?? null }));
+    }
+  } catch (err) {
+    console.error("Couldn't read Bluesky convo members for the block check:", err);
+  }
+  try {
+    const rows = await prisma.directMessage.findMany({
+      where: { bskyConvoId: convoId, isOutgoing: false },
+      select: { senderUri: true, senderHandle: true },
+      distinct: ["senderUri"],
+    });
+    if (rows.length === 0) return null;
+    return rows.map((r) => ({
+      did: r.senderUri,
+      // Only a real handle carries a domain; ingest stores a DID here when the
+      // convo member list didn't name the sender.
+      handle: r.senderHandle?.includes(".") ? r.senderHandle : null,
+    }));
+  } catch {
+    return null;
+  }
+}
+
 export async function fediDm(body: AdminBody): Promise<NextResponse> {
   // dm_reply: continue an existing fedi conversation (recipientUri known).
   // dm_new_fedi: start a new conversation; takes either recipientUri (from
@@ -177,6 +220,15 @@ export async function bskyDm(body: AdminBody): Promise<NextResponse> {
     );
   }
 
+  // THE DOMAIN HALF, BEFORE WE RESOLVE ANYTHING (#577). Resolving a handle can
+  // touch the other side's own domain — `alice.spam.example` is resolved via
+  // spam.example — so a domain block has to be answered before that, not after.
+  // A blank DID is fine here: the actor lookup simply misses and the domain
+  // query does the work.
+  if (recipientHandle && (await blockedBlueskyAccount("", recipientHandle))) {
+    return NextResponse.json({ error: "recipient is blocked" }, { status: 409 });
+  }
+
   // The shared agent, so the configured PDS is honoured (#541). This used to
   // build its own against a hardcoded bsky.social.
   const agent = await getBlueskyAgent();
@@ -190,10 +242,37 @@ export async function bskyDm(body: AdminBody): Promise<NextResponse> {
     let convoId = existingConvoId as string | undefined;
     if (!convoId) {
       const did = recipientDid || (await resolveBlueskyActor(recipientHandle));
+      // BEFORE getConvoForMembers, which is itself contact — it creates the
+      // conversation on their side. #379's guarantee is zero contact, not a
+      // request we decline to follow up.
+      if (await blockedBlueskyAccount(did, recipientHandle ?? null)) {
+        return NextResponse.json({ error: "recipient is blocked" }, { status: 409 });
+      }
       const convoRes = await chatAgent.api.chat.bsky.convo.getConvoForMembers({
         members: [did],
       });
       convoId = convoRes.data.convo.id;
+    } else {
+      // A REPLY KNOWS ONLY A CONVO ID, so the members have to be recovered.
+      // `getConvo` is asked first and the stored messages are the fallback:
+      // a convo can hold more than two people, and a stored row only ever names
+      // the last person who wrote to us — checking that alone would let a reply
+      // reach a blocked third member of a group chat. Both routes stay local to
+      // our own chat service; neither touches the blocked account.
+      const members = await convoMembers(chatAgent, convoId);
+      if (members === null) {
+        return NextResponse.json(
+          { error: "Couldn't verify who this conversation is with — try again" },
+          { status: 502 },
+        );
+      }
+      const myDid = agent.session?.did;
+      for (const m of members) {
+        if (m.did === myDid) continue;
+        if (await blockedBlueskyAccount(m.did, m.handle)) {
+          return NextResponse.json({ error: "recipient is blocked" }, { status: 409 });
+        }
+      }
     }
 
     const sendRes = await chatAgent.api.chat.bsky.convo.sendMessage({

@@ -9,6 +9,7 @@ import { resolveUploadPath } from "./uploads-dir";
 import { getDayOneCredentials } from "./integrations";
 import { guardedFetch } from "./safe-fetch";
 import { getBlueskyAgent } from "./bluesky-agent";
+import { blockedBlueskyPostAuthor } from "./blocks";
 
 export interface CrosspostImage {
   url: string; // full URL or local path
@@ -80,6 +81,18 @@ export async function crosspostReplyToBluesky(
   images?: CrosspostImage[],
   video?: CrosspostVideo,
 ): Promise<{ success: boolean; uri?: string; error?: string }> {
+  // THE GATE SITS HERE, NOT AT THE CALLERS (#577). Three paths reach this
+  // function — /api/compose, the admin replies action, and `crosspost-retry.ts`
+  // — and the third is why it matters: a reply queued before a block would
+  // otherwise be delivered by the retry sweep AFTER the block was made. A reply
+  // notifies the author, so this is the same guarantee #563 gave likes.
+  //
+  // A blocked retry still burns its attempts until the queue gives up, which is
+  // harmless: this returns before any network call, so nothing is ever sent.
+  if (await blockedBlueskyPostAuthor(parentBlueskyUri)) {
+    return { success: false, error: "recipient is blocked" };
+  }
+
   // The shared agent, so the configured PDS is honoured (#541). This used to
   // build its own against a hardcoded bsky.social.
   const agent = await getBlueskyAgent();

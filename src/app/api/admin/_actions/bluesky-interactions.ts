@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireBlueskyAgent } from "@/lib/bluesky-agent";
-import { isBlueskyBlocked } from "@/lib/blocks";
+import { blockedBlueskyPostAuthor } from "@/lib/blocks";
 
 /**
  * Like and repost on Bluesky, for posts imported into the timeline (#393).
@@ -38,11 +38,6 @@ async function viewerState(
   return { cid: p.cid, likeUri: p.viewer?.like ?? null, repostUri: p.viewer?.repost ?? null };
 }
 
-/** The author's DID is the authority segment of an `at://` URI. */
-function didOf(uri: string): string {
-  return uri.replace("at://", "").split("/")[0];
-}
-
 /**
  * Shared preamble: refuse blocked accounts, then resolve what we need to act.
  *
@@ -52,22 +47,16 @@ function didOf(uri: string): string {
  */
 async function prepare(bskyUri: string) {
   // THE HANDLE MATTERS AS MUCH AS THE DID (#563). isBlueskyBlocked derives its
-  // domain candidates from the handle — `actor.handle ? domainChain(…) : []` —
-  // so calling it with a DID alone skips the blockedDomain query entirely and a
-  // DOMAIN block silently collapses to a DID lookup. Blocking `spam.example`
-  // then failed to stop a like going to `alice.spam.example`, and a like or
-  // repost notifies the author.
+  // domain candidates from the handle, so a DID alone skips the blockedDomain
+  // query and a DOMAIN block silently collapses to a DID lookup — blocking
+  // `spam.example` then failed to stop a like going to `alice.spam.example`,
+  // and a like or repost notifies the author.
   //
-  // The row we already store for this post carries it: `username` holds the
-  // full Bluesky handle. bluesky-feed.ts:339 passes both on the ingest side,
-  // which is why the block held coming in and not going out — the asymmetry
-  // #379 exists to prevent.
-  const did = didOf(bskyUri);
-  const row = await prisma.fediPost.findFirst({
-    where: { bskyUri },
-    select: { username: true },
-  });
-  if (await isBlueskyBlocked({ did, handle: row?.username ?? null })) {
+  // That lookup now lives in `blockedBlueskyPostAuthor` (#577), because liking,
+  // reposting and REPLYING are the same guarantee and were three separate
+  // copies of it — two of which did not exist. Same behaviour as before: the
+  // `FediPost` row we store for this post carries the handle in `username`.
+  if (await blockedBlueskyPostAuthor(bskyUri)) {
     return { error: NextResponse.json({ error: "recipient is blocked" }, { status: 409 }) };
   }
   const agent = await requireBlueskyAgent();

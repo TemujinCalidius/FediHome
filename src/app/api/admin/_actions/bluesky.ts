@@ -12,6 +12,7 @@ import { syncBlueskyNotifications } from "@/lib/bluesky-notifications";
 import type { AdminBody } from "./types";
 import { getSiteUrl } from "@/lib/identity";
 import { getBlueskyAgent } from "@/lib/bluesky-agent";
+import { blockedBlueskyPostAuthor } from "@/lib/blocks";
 
 
 export async function bskyReply(body: AdminBody): Promise<NextResponse> {
@@ -21,6 +22,12 @@ export async function bskyReply(body: AdminBody): Promise<NextResponse> {
   }
   // The shared agent, so the configured PDS is honoured (#541). This used to
   // build its own against a hardcoded bsky.social.
+  // BEFORE the agent, and before `getPost` (#577). A reply notifies the author,
+  // so it is the same guarantee #563 gave likes and reposts — and #379's promise
+  // is ZERO network contact, not a request we abandon after making it.
+  if (await blockedBlueskyPostAuthor(parentUri)) {
+    return NextResponse.json({ error: "recipient is blocked" }, { status: 409 });
+  }
   const agent = await getBlueskyAgent();
   if (!agent) {
     return NextResponse.json({ error: "Bluesky not configured" }, { status: 500 });
@@ -130,7 +137,13 @@ export async function bskyFollow(body: AdminBody): Promise<NextResponse> {
     if (!targetDid) {
       return NextResponse.json({ error: "did or handleOrDid required" }, { status: 400 });
     }
-    await followBlueskyAccount(targetDid);
+    // The gate lives in `followBlueskyAccount` itself (#577), so a future caller
+    // cannot skip it — the handle is threaded through because the address the
+    // operator typed is the one case where we know it without asking Bluesky.
+    const followed = await followBlueskyAccount(targetDid, handleOrDid ?? null);
+    if (!followed.ok) {
+      return NextResponse.json({ error: "account is blocked" }, { status: 409 });
+    }
     return NextResponse.json({ success: true });
   } catch (err) {
     console.error("Bluesky follow failed:", err);
