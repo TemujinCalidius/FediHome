@@ -121,6 +121,11 @@ describe("#564 — every DM read surface applies it", () => {
     // did not. Both halves per #563, so a domain block applies.
     const src = read("src/lib/bluesky-dm-poll.ts");
     expect(src).toContain("isBlueskyBlocked");
-    expect(src).toMatch(/handle: senderHandle/);
+    // `sender?.handle`, NOT the `senderHandle` variable this used to require
+    // (#577). That variable falls back to the DID and then to "unknown", and
+    // domainChain splits on dots regardless — so a DID was being matched as
+    // though it were a hostname. Passing null abstains instead.
+    expect(src).toMatch(/handle: sender\?\.handle \?\? null/);
+    expect(src).not.toMatch(/handle: senderHandle/);
   });
 });

@@ -334,6 +334,98 @@ export async function isBlueskyBlocked(actor: { did: string; handle?: string | n
   }
 }
 
+/**
+ * The handle we already hold on file for a Bluesky DID.
+ *
+ * The domain half of `isBlueskyBlocked` is derived from the HANDLE — a DID
+ * carries no domain — so every outbound caller needs one, and none of them
+ * reliably has one to hand. Rather than fetching a profile (which is contact
+ * with the very account we may be about to refuse), look in the rows we already
+ * store: the graph tables from a Bluesky sync, then any DM they have sent us.
+ *
+ * Returns `null` when we simply don't know them, and `null` ABSTAINS — the DID
+ * lookup still runs, so an account block always holds; only the domain half is
+ * unavailable. That is the honest answer, and it is why nothing here invents a
+ * handle out of the DID: `domainChain("did:web:sub.evil.example")` yields
+ * `evil.example` and `domainChain("did:plc:abc")` yields the DID itself, so
+ * feeding a DID in matches on the DID *method* rather than on identity (#577).
+ *
+ * Swallows its own errors to `null` rather than throwing. A real outage takes
+ * `isBlueskyBlocked` down too, and that fails CLOSED — so the refusal still
+ * happens; this only decides how much we know while deciding it.
+ */
+async function knownBlueskyHandle(did: string): Promise<string | null> {
+  if (!did) return null;
+  try {
+    const [following, follower, dm] = await Promise.all([
+      prisma.blueskyFollowing.findUnique({ where: { did }, select: { handle: true } }),
+      prisma.blueskyFollower.findUnique({ where: { did }, select: { handle: true } }),
+      prisma.directMessage.findFirst({
+        where: { source: "bluesky", senderUri: did, isOutgoing: false },
+        select: { senderHandle: true },
+        orderBy: { createdAt: "desc" },
+      }),
+    ]);
+    const dmHandle = dm?.senderHandle?.includes(".") ? dm.senderHandle : null;
+    return following?.handle ?? follower?.handle ?? dmHandle ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Refuse outbound contact with a blocked Bluesky account (#577).
+ *
+ * THE ONE ENTRY POINT for every outbound Bluesky path, and the reason it exists
+ * rather than each surface calling `isBlueskyBlocked` itself: the fediverse has
+ * a chokepoint — `deliverActivity` gates every recipient before signing, so a
+ * block covers follows, DMs, likes and replies in one place and a NEW outbound
+ * path is covered the day it is written. Bluesky has no equivalent: posts, likes,
+ * follows and chat messages all leave through different atproto methods. So the
+ * chokepoint has to be built, and this is it.
+ *
+ * #563 gated likes and reposts. It did not count DMs, replies, follows or
+ * crossposted replies as call sites, and all four went out unchecked (#577).
+ *
+ * Pass `handle` when the caller genuinely has one — the address an operator
+ * typed, say. Otherwise it is resolved from local rows.
+ */
+export async function blockedBlueskyAccount(
+  did: string,
+  handle?: string | null,
+): Promise<boolean> {
+  const known = handle?.includes(".") ? handle : await knownBlueskyHandle(did);
+  return isBlueskyBlocked({ did, handle: known });
+}
+
+/** The author's DID is the authority segment of an `at://` URI. */
+function didOfPost(bskyUri: string): string {
+  return bskyUri.replace("at://", "").split("/")[0];
+}
+
+/**
+ * Refuse outbound contact with the author of a Bluesky post (#577).
+ *
+ * Liking, reposting and REPLYING all notify the author, so all three fall under
+ * the same guarantee. The `FediPost` row we already store for the post carries
+ * the author's handle in `username`, which is where the domain half comes from
+ * without asking Bluesky anything.
+ */
+export async function blockedBlueskyPostAuthor(bskyUri: string): Promise<boolean> {
+  const did = didOfPost(bskyUri);
+  let handle: string | null = null;
+  try {
+    const row = await prisma.fediPost.findFirst({
+      where: { bskyUri },
+      select: { username: true },
+    });
+    handle = row?.username ?? null;
+  } catch {
+    /* fall back to the graph tables below */
+  }
+  return blockedBlueskyAccount(did, handle);
+}
+
 
 /**
  * Which of these DM senders are blocked? (#564)
