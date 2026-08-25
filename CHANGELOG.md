@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Changed
+- **Storage figures are correct when your uploads folder is a symlink** (#575) — pointing FediHome at a bigger disk and *also* symlinking the built-in folder at that same disk is a sensible thing to do, and it made the admin panel count every file twice. Someone doing that is, almost by definition, someone short of space reading that panel to decide what to delete. Worse, the hourly cleanup used the same doubled figure, so it thought the cached-media folder was twice its real size and deleted things to get under a limit that had never been passed. Both now recognise two names for one folder. A folder placed *inside* the other is handled too, and cached media still gets counted separately from your own either way.
 - Removed four dependencies nothing imported (`@fedify/next`, `fast-xml-parser`, `next-mdx-remote`, `remark-gfm`) and one `overrides` entry for a package that is no longer in the tree at all (#578). That is **136 fewer packages** installed — 730 down to 594 — which is that much less to audit, download and keep patched. `@fedify/next` is the one worth naming: it was how the PostCSS advisory tracked in #12 reached this project in the first place, and carrying a package nothing imports means carrying its advisories for nothing. Verified by deleting `node_modules` and the lockfile and installing from scratch. No behaviour changes.
 
 ## 1.28.1 (2026-08-25)
