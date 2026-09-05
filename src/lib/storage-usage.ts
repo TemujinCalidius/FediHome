@@ -56,10 +56,18 @@ export function lastStorageUsage(): StorageUsage | null {
   return globalStorage.__fedihomeStorageUsage ?? null;
 }
 
-/** Free and total bytes on the volume holding uploads. One syscall. */
-export async function volumeSpace(): Promise<{ availableBytes: number; totalBytes: number } | null> {
+/**
+ * Free and total bytes on the volume holding uploads. One syscall.
+ *
+ * Defaults to the CONFIGURED root, which is what the admin panel wants: "how
+ * much room is left where new uploads go". `worstStorageStatus()` below is the
+ * one that asks about every root — see the note there for why they differ.
+ */
+export async function volumeSpace(
+  dir?: string,
+): Promise<{ availableBytes: number; totalBytes: number } | null> {
   try {
-    const s = await statfs(await uploadsDir());
+    const s = await statfs(dir ?? (await uploadsDir()));
     // bavail, not bfree: bfree includes blocks reserved for root, which an
     // unprivileged app can't actually use.
     return { availableBytes: s.bavail * s.bsize, totalBytes: s.blocks * s.bsize };
@@ -81,6 +89,46 @@ export function classifySpace(space: { availableBytes: number; totalBytes: numbe
   if (ratio <= CRITICAL_RATIO || space.availableBytes <= CRITICAL_FLOOR_BYTES) return "critical";
   if (ratio <= LOW_RATIO || space.availableBytes <= LOW_FLOOR_BYTES) return "low";
   return "ok";
+}
+
+/** Worst first — a health check reports the volume in the most trouble. */
+const STATUS_RANK: Record<StorageStatus, number> = { critical: 3, low: 2, unknown: 1, ok: 0 };
+
+/**
+ * The worst free-space status across EVERY uploads root (#586).
+ *
+ * `/api/health` used to classify a single `statfs` of the configured root, while
+ * measurement and trimming have walked every root since #479. After an operator
+ * moves the uploads directory those describe different filesystems: the old root
+ * still holds every byte written before the move, is frequently a separate
+ * volume with a fixed size, and can fill to 100% while health reports "ok"
+ * throughout — because it is measuring somewhere else entirely. Anything
+ * alerting on `/api/health` inherits that, with no symptom until writes fail.
+ *
+ * A STATUS, AND DELIBERATELY NOT A PATH. The issue asked which root the status
+ * describes; this endpoint is public and unauthenticated, and the note at the
+ * top of the health route is explicit that how big your disk is and how full it
+ * is are nobody else's business. Naming the directory would be an information
+ * leak, and the answer belongs in the support bundle and the admin panel, which
+ * are gated. Reporting the worst fixes the failure without disclosing anything.
+ *
+ * `uploadsRoots()` is already deduplicated by realpath and containment (#575),
+ * so an aliased or nested root is not statfs'd twice.
+ */
+export async function worstStorageStatus(): Promise<StorageStatus> {
+  let roots: string[];
+  try {
+    roots = await uploadsRoots();
+  } catch {
+    return "unknown";
+  }
+  const statuses = await Promise.all(
+    roots.map(async (r) => classifySpace(await volumeSpace(r))),
+  );
+  // An empty list would collapse to "ok", which is the one answer a health check
+  // must never invent.
+  if (statuses.length === 0) return "unknown";
+  return statuses.reduce((worst, s) => (STATUS_RANK[s] > STATUS_RANK[worst] ? s : worst), "ok");
 }
 
 /** Recursive size sum. Mirrors fedi-media's walk; both stat every file. */

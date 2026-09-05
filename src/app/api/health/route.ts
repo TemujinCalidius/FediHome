@@ -6,7 +6,7 @@ import { log } from "@/lib/log";
 import pkg from "@/../package.json";
 import { shortSha } from "@/lib/build-info";
 import { schedulerLastTickAgoMs, schedulerStarted, SCHEDULER_TICK_MS } from "@/lib/scheduler";
-import { classifySpace, volumeSpace } from "@/lib/storage-usage";
+import { worstStorageStatus } from "@/lib/storage-usage";
 
 // Never cache — a health probe must reflect live state.
 export const dynamic = "force-dynamic";
@@ -54,9 +54,16 @@ export async function GET() {
   const schedulerStale =
     schedulerStarted() && tickAgoMs !== null && tickAgoMs > SCHEDULER_TICK_MS * 20;
 
-  // One statfs syscall — cheap enough for a probe polled every 30s. The usage
-  // walk is far too expensive for that and runs in the scheduler instead.
-  const storage = classifySpace(await volumeSpace());
+  // One statfs syscall PER UPLOADS ROOT — still cheap enough for a probe polled
+  // every 30s, and there are at most two. The usage walk is far too expensive
+  // for that and runs in the scheduler instead.
+  //
+  // Every root, not just the configured one (#586). After a move, the old root
+  // still holds everything written before it and is often a separate volume —
+  // it can fill completely while a single-root check reports "ok", because it is
+  // measuring a different filesystem. Still a STATUS and still no path: this
+  // endpoint is public, per the note above.
+  const storage = await worstStorageStatus();
 
   const healthy = db === "ok" && !schedulerStale;
 
