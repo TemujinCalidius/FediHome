@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Fixed
+- **The health check now watches every folder your media lives in** (#586) — if you've moved your uploads directory, the old location still holds everything saved before the move, and it's often a separate disk. `/api/health` was only ever looking at the new one, so the old disk could fill completely while the health check said everything was fine — and anything you have alerting on it would have said the same. It now reports whichever is in the most trouble. It still reports only a status, never a path or a size: that endpoint is public, and those details stay in the admin panel and the support bundle.
 - **PeerTube channels get their profile pictures back** (#591) — the Fediverse spec lets an account advertise several sizes of avatar, and PeerTube does. FediHome only understood the single-picture form, so for those accounts the avatar came out empty — no error, nothing in the log, just a blank picture stored permanently. FediHome ships ten PeerTube servers in its default configuration, so this affected a lot of video accounts. Every place that reads a profile now understands both forms, including the repair scripts — which mattered, because the avatar-repair tool would otherwise have written the blanks straight back. Accounts advertising an address FediHome can't make sense of are now skipped rather than half-understood.
 
 ### Security
