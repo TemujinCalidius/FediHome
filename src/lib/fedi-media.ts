@@ -199,8 +199,11 @@ export async function proxyImage(remoteUrl: string): Promise<string | null> {
   // container outright rather than trusting the header — none of the five types
   // above can be one, so nothing legitimate is refused here.
   if (isIsoBaseMediaContainer(buffer)) {
+    // Static first argument; remote-controlled values as data. See the note on
+    // the other warn below.
     console.warn(
-      `[fedi-media] refused ${remoteUrl}: declared ${contentType} but the bytes are an ISO base-media container (HEIF/AVIF)`,
+      "[fedi-media] refused a remote image: the bytes are an ISO base-media container (HEIF/AVIF)",
+      { url: remoteUrl, declared: contentType },
     );
     return null;
   }
@@ -215,7 +218,14 @@ export async function proxyImage(remoteUrl: string): Promise<string | null> {
       // Keep the original if sharp fails — but SAY so. This was silent, which
       // made a refused decode and a corrupt image indistinguishable in the logs
       // (#596). Goes to the support bundle's log tail (#490).
-      console.warn(`[fedi-media] sharp could not re-encode ${remoteUrl}:`, err);
+      // The URL is remote-controlled, so it goes in as an ARGUMENT, never
+      // interpolated into the first parameter — console.* treats that one as a
+      // format string, and a `%s` in somebody else's URL should not be able to
+      // rearrange our log line (CodeQL js/tainted-format-string).
+      console.warn("[fedi-media] sharp could not re-encode a remote image:", {
+        url: remoteUrl,
+        err,
+      });
     }
   }
 
