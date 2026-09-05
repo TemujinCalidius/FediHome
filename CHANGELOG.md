@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.28.2 (2026-09-05)
 
 ### Changed
 - **Storage figures are correct when your uploads folder is a symlink** (#575) — pointing FediHome at a bigger disk and *also* symlinking the built-in folder at that same disk is a sensible thing to do, and it made the admin panel count every file twice. Someone doing that is, almost by definition, someone short of space reading that panel to decide what to delete. Worse, the hourly cleanup used the same doubled figure, so it thought the cached-media folder was twice its real size and deleted things to get under a limit that had never been passed. Both now recognise two names for one folder. A folder placed *inside* the other is handled too, and cached media still gets counted separately from your own either way.
