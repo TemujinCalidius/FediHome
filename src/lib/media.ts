@@ -15,6 +15,20 @@ const MAX_DIMENSION = 2400; // px (longest edge)
 const MAX_FILE_SIZE = 2 * 1024 * 1024; // optimise anything bigger
 const WEBP_QUALITY = 85;
 
+/**
+ * What the OWNER may upload. Deliberately wider than the federated-ingest
+ * allowlist in `fedi-media.ts`, and the difference is not an oversight (#596).
+ *
+ * `image/heic` is here because that is what an iPhone produces, and this path is
+ * authenticated — `/api/media` requires the owner's cookie or a `media`-scoped
+ * app token, and the setup wizard runs before there is anyone else to be. The
+ * bytes come from the person who owns the instance.
+ *
+ * `proxyImage` refuses HEIC precisely because its bytes come from whichever
+ * federated peer was ingested from, with nobody authenticated. Same decoder,
+ * completely different trust. If you are tempted to make these two lists agree,
+ * that is the reason not to.
+ */
 export const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic"];
 
 export async function saveUploadedImage(

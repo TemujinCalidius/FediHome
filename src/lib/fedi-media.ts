@@ -30,6 +30,51 @@ const SHARP_MAX_PIXELS = 100_000_000;
  * (safe-fetch.ts); this function owns the byte cap and content-type rules, which
  * are specific to media and apply to the final response only.
  */
+/** `image/jpeg; charset=x` -> `image/jpeg`. Parameters are not part of the type. */
+function contentTypeEssence(contentType: string): string {
+  return contentType.split(";")[0].trim().toLowerCase();
+}
+
+/**
+ * The image types we are willing to decode and can actually store (#596).
+ *
+ * An ALLOWLIST, and the four entries are not arbitrary: they are exactly what
+ * `extMap` below can name. Anything outside this set was already being written
+ * to disk under a wrong extension, because `ext` falls back to `"jpg"` — so
+ * refusing them loses nothing that worked.
+ *
+ * `image/jpg` is here because it is a common non-standard spelling that reaches
+ * us today through the url-extension fallback. Dropping it would be a
+ * regression, and it names the same decoder as `image/jpeg`.
+ */
+const PROXY_IMAGE_TYPES = [
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+] as const;
+
+/**
+ * Is this an ISO base-media container — HEIF, AVIF, HEIC and relatives?
+ *
+ * Checks the CONTAINER, not the brand. Enumerating brands (`avif`, `avis`,
+ * `heic`, `heix`, `hevc`, `mif1`, `msf1`, …) is a blocklist, and the registry
+ * grows; "is this the container family our image decoder must never see" does
+ * not change.
+ *
+ * Safe against the five types we allow, because none of them can carry `ftyp`
+ * at offset 4: JPEG opens `FF D8`, PNG `89 50 4E 47`, GIF `GIF8`, and WebP is
+ * RIFF — `RIFF` at 0 and `WEBP` at 8, with a little-endian length in between.
+ *
+ * This exists because the declared content-type is chosen by the same remote
+ * that chose the bytes. The allowlist above is the honest peer's path; this is
+ * the dishonest one's.
+ */
+function isIsoBaseMediaContainer(buffer: Buffer): boolean {
+  return buffer.length >= 12 && buffer.toString("ascii", 4, 8) === "ftyp";
+}
+
 async function safeFetch(
   url: string,
   opts: {
@@ -37,6 +82,14 @@ async function safeFetch(
     accept?: string;
     contentTypePrefix?: string;
     rejectContentTypeContains?: string;
+    /**
+     * Exact content types to accept, compared against the ESSENCE (lowercased,
+     * parameters stripped). An allowlist rather than a prefix plus exclusions,
+     * because "image/* except svg" is a blocklist wearing a prefix's clothes:
+     * it admits every format nobody has thought to exclude yet, and that is how
+     * AVIF reached the HEIF decoder (#596).
+     */
+    allowedContentTypes?: readonly string[];
   }
 ): Promise<{ buffer: Buffer; contentType: string; finalUrl: string } | null> {
   // The hop-following and per-hop host check now live in safe-fetch.ts, which was
@@ -60,6 +113,9 @@ async function safeFetch(
   if (!res.ok) return null;
 
   const contentType = res.headers.get("content-type") || "";
+  if (opts.allowedContentTypes && !opts.allowedContentTypes.includes(contentTypeEssence(contentType))) {
+    return null;
+  }
   if (opts.contentTypePrefix && !contentType.startsWith(opts.contentTypePrefix)) {
     return null;
   }
@@ -123,13 +179,31 @@ export async function proxyImage(remoteUrl: string): Promise<string | null> {
   if (!(await remoteMediaCachingEnabled())) return null;
   const result = await safeFetch(remoteUrl, {
     maxBytes: MAX_IMAGE_BYTES,
+    // Still advertised as image/*, because the Accept header is a request, not
+    // a guarantee; the allowlist is what actually decides.
     accept: "image/*",
-    contentTypePrefix: "image/",
-    rejectContentTypeContains: "svg",
+    // AN ALLOWLIST, NOT A PREFIX (#596). This used to be `image/` with SVG
+    // excluded, which admits every format nobody thought to exclude — and that
+    // is how AVIF and HEIC reached libheif, on a path where a federated peer
+    // picks the bytes and nobody has authenticated. #587 was a libheif flaw
+    // reached exactly this way; the decoder is patched now, and the shape of
+    // the gate is what would have let the next one through too.
+    allowedContentTypes: PROXY_IMAGE_TYPES,
   });
   if (!result) return null;
   let buffer = result.buffer;
-  const contentType = result.contentType;
+  const contentType = contentTypeEssence(result.contentType);
+
+  // The declared type is chosen by the same remote that chose the bytes, so the
+  // allowlist alone is only the honest peer's half. Reject the ISO base-media
+  // container outright rather than trusting the header — none of the five types
+  // above can be one, so nothing legitimate is refused here.
+  if (isIsoBaseMediaContainer(buffer)) {
+    console.warn(
+      `[fedi-media] refused ${remoteUrl}: declared ${contentType} but the bytes are an ISO base-media container (HEIF/AVIF)`,
+    );
+    return null;
+  }
 
   // Strip EXIF metadata; cap pixel count to defang decompression bombs.
   if (!contentType.includes("gif")) {
@@ -137,13 +211,19 @@ export async function proxyImage(remoteUrl: string): Promise<string | null> {
       buffer = (await sharp(buffer, { limitInputPixels: SHARP_MAX_PIXELS })
         .rotate()
         .toBuffer()) as Buffer;
-    } catch {
-      /* keep original if sharp fails */
+    } catch (err) {
+      // Keep the original if sharp fails — but SAY so. This was silent, which
+      // made a refused decode and a corrupt image indistinguishable in the logs
+      // (#596). Goes to the support bundle's log tail (#490).
+      console.warn(`[fedi-media] sharp could not re-encode ${remoteUrl}:`, err);
     }
   }
 
   const extMap: Record<string, string> = {
     "image/jpeg": "jpg",
+    // Non-standard, but real, and now explicitly allowed above — so name it here
+    // rather than letting it fall through to guessing from the URL (#596).
+    "image/jpg": "jpg",
     "image/png": "png",
     "image/webp": "webp",
     "image/gif": "gif",
