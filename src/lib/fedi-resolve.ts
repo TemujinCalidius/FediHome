@@ -1,5 +1,6 @@
 import { prisma } from "./db";
 import { guardedFetch } from "./safe-fetch";
+import { actorImageUrl, actorInboxUrl } from "./actor-shapes";
 
 const FETCH_TIMEOUT_MS = 10_000;
 
@@ -78,7 +79,14 @@ export async function resolveFediActorByUri(
     });
     if (!res.ok) return null;
     const actor = await res.json();
-    if (!actor.inbox) return null;
+    // A REAL TYPE CHECK, not truthiness (#591). `inbox` is declared `string` on
+    // ResolvedFediActor, and an array or a number sailed through here to arrive
+    // in the delivery layer typed as one — where `String()` turns
+    // ["https://a/inbox","https://b/inbox"] into a URL that parses, with host a.
+    // Refusing is the honest answer: a two-element inbox is a document we do not
+    // understand, and picking one is guessing whose server gets their mail.
+    const inbox = actorInboxUrl(actor.inbox);
+    if (!inbox) return null;
 
     const sharedInbox =
       actor.endpoints?.sharedInbox ||
@@ -87,12 +95,12 @@ export async function resolveFediActorByUri(
 
     return {
       actorUri,
-      inbox: actor.inbox,
+      inbox,
       sharedInbox,
       username: actor.preferredUsername || "unknown",
       domain: new URL(actorUri).hostname,
       displayName: actor.name || null,
-      avatarUrl: actor.icon?.url || null,
+      avatarUrl: actorImageUrl(actor.icon),
     };
   } catch {
     return null;

@@ -11,6 +11,7 @@ import { guardedFetch } from "../src/lib/safe-fetch";
 import { assertPublicHost } from "../src/lib/url-guard";
 import { PrismaPg } from "@prisma/adapter-pg";
 import * as crypto from "node:crypto";
+import { actorImageUrl } from "../src/lib/actor-shapes";
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
@@ -169,7 +170,7 @@ async function backfillAccount(f, cutoffDate) {
               username: f.username,
               domain: f.domain,
               displayName: f.displayName || actor.name || null,
-              avatarUrl: f.avatarUrl || actor.icon?.url || null,
+              avatarUrl: f.avatarUrl || actorImageUrl(actor.icon),
               publishedAt: published || new Date(),
             },
             update: {},

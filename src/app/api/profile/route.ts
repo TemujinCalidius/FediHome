@@ -5,6 +5,7 @@ import { resolveFediActorByHandle } from "@/lib/fedi-resolve";
 import { assertPublicHost } from "@/lib/url-guard";
 import { sanitizeHtml } from "@/lib/sanitize";
 import { guardedFetch } from "@/lib/safe-fetch";
+import { actorImageUrl } from "@/lib/actor-shapes";
 
 /**
  * Remote actor profile (#176) + handle discovery (#177).
@@ -72,8 +73,6 @@ async function fetchActorProfile(knownUri: string) {
   }
   const username = (actor.preferredUsername as string) || "unknown";
   const domain = new URL(knownUri).hostname;
-  const icon = actor.icon as { url?: string } | undefined;
-  const image = actor.image as { url?: string } | undefined;
   const [followers, following, posts] = await Promise.all([
     collectionTotal(actor.followers),
     collectionTotal(actor.following),
@@ -83,8 +82,8 @@ async function fetchActorProfile(knownUri: string) {
     actorUri: knownUri,
     handle: `@${username}@${domain}`,
     displayName: (actor.name as string) || null,
-    avatarUrl: icon?.url || null,
-    headerUrl: image?.url || null,
+    avatarUrl: actorImageUrl(actor.icon),
+    headerUrl: actorImageUrl(actor.image),
     summary: typeof actor.summary === "string" ? sanitizeHtml(actor.summary) : null,
     url: (actor.url as string) || knownUri,
     counts: { followers, following, posts },

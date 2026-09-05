@@ -8,6 +8,7 @@ import { sanitizeHtml } from "@/lib/sanitize";
 import type { AdminBody } from "./types";
 import { getSiteUrl, getIdentity } from "@/lib/identity";
 import { guardedFetch } from "@/lib/safe-fetch";
+import { actorImageUrl } from "@/lib/actor-shapes";
 
 const REMOTE_FETCH_TIMEOUT_MS = 8000;
 
@@ -196,12 +197,12 @@ export async function follow(body: AdminBody): Promise<NextResponse> {
         username: actor.preferredUsername || username,
         domain,
         displayName: actor.name || null,
-        avatarUrl: actor.icon?.url || null,
+        avatarUrl: actorImageUrl(actor.icon),
         accepted: false,
       },
       update: {
         displayName: actor.name || null,
-        avatarUrl: actor.icon?.url || null,
+        avatarUrl: actorImageUrl(actor.icon),
       },
     });
 
@@ -254,7 +255,7 @@ export async function follow(body: AdminBody): Promise<NextResponse> {
                 username: actor.preferredUsername || username,
                 domain,
                 displayName: actor.name || null,
-                avatarUrl: actor.icon?.url || null,
+                avatarUrl: actorImageUrl(actor.icon),
                 publishedAt: note.published ? new Date(note.published) : new Date(),
               },
               update: {},

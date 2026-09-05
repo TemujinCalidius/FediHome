@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### Fixed
+- **PeerTube channels get their profile pictures back** (#591) — the Fediverse spec lets an account advertise several sizes of avatar, and PeerTube does. FediHome only understood the single-picture form, so for those accounts the avatar came out empty — no error, nothing in the log, just a blank picture stored permanently. FediHome ships ten PeerTube servers in its default configuration, so this affected a lot of video accounts. Every place that reads a profile now understands both forms, including the repair scripts — which mattered, because the avatar-repair tool would otherwise have written the blanks straight back. Accounts advertising an address FediHome can't make sense of are now skipped rather than half-understood.
+
 ### Security
 - **Pictures from other servers are now checked before they're opened** (#596) — FediHome caches images from the servers it federates with, and it used to accept anything labelled as an image except SVG, handing it straight to the image processor. That is how a crafted AVIF or HEIC file could reach the decoder flaw fixed in v1.28.2. It now accepts only the four formats it can actually store, and checks the file's own bytes as well as the label, since a remote server chooses both. Nothing legitimate is affected — anything outside those four was already being saved under the wrong file extension. Your **own** uploads are unchanged and still accept iPhone HEIC photos; that path is signed in, this one is not.
 

@@ -9,6 +9,7 @@ import { guardedFetch } from "../src/lib/safe-fetch";
 import { assertPublicHost } from "../src/lib/url-guard";
 import { PrismaPg } from "@prisma/adapter-pg";
 import * as crypto from "node:crypto";
+import { actorImageUrl, actorInboxUrl } from "../src/lib/actor-shapes";
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
@@ -16,6 +17,18 @@ const prisma = new PrismaClient({
 const SITE_URL = process.env.SITE_URL || "http://localhost:3000";
 
 let _keys = null;
+
+/**
+ * The actor's inbox, or a clear failure (#591). This script SIGNS AND POSTS to
+ * whatever comes back, so an array or a number must stop here rather than be
+ * coerced into a URL further down.
+ */
+function requireInbox(value: unknown, actorUri: string): string {
+  const inbox = actorInboxUrl(value);
+  if (!inbox) throw new Error(`Actor ${actorUri} has no usable inbox URL`);
+  return inbox;
+}
+
 async function getKeys() {
   if (!_keys) _keys = await prisma.actorKeys.findUnique({ where: { id: "main" } });
   return _keys;
@@ -98,10 +111,10 @@ async function discoverActorSigned(username, domain) {
   const actor = await actorRes.json();
   return {
     actorUri: actorLink.href,
-    inbox: actor.inbox,
+    inbox: requireInbox(actor.inbox, actorLink.href),
     username: actor.preferredUsername || username,
     displayName: actor.name || null,
-    avatarUrl: actor.icon?.url || null,
+    avatarUrl: actorImageUrl(actor.icon),
     outbox: actor.outbox || null,
   };
 }

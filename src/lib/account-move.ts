@@ -2,6 +2,7 @@ import { prisma } from "./db";
 import { getIdentity, getSiteUrl } from "./identity";
 import { assertPublicHost } from "./url-guard";
 import { signedGet, deliverToFollowers } from "./http-signatures";
+import { actorImageUrl, actorInboxUrl } from "./actor-shapes";
 
 /**
  * Leaving FediHome: `movedTo` plus an outbound `Move` (#347).
@@ -99,11 +100,12 @@ export async function fetchActorForMove(actorUri: string): Promise<MoveActorDoc 
     const actor = await res.json();
     const aka = actor.alsoKnownAs;
     return {
-      inbox: typeof actor.inbox === "string" ? actor.inbox : null,
+      // The check this whole helper was generalised FROM (#591).
+      inbox: actorInboxUrl(actor.inbox),
       username: actor.preferredUsername || "unknown",
       domain: new URL(actorUri).hostname,
       displayName: actor.name || null,
-      avatarUrl: actor.icon?.url || null,
+      avatarUrl: actorImageUrl(actor.icon),
       alsoKnownAs: (Array.isArray(aka) ? aka : aka ? [aka] : []).filter(
         (v: unknown): v is string => typeof v === "string",
       ),
