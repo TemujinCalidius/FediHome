@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.28.2 (2026-09-05)
+
+### Changed
+- **Storage figures are correct when your uploads folder is a symlink** (#575) — pointing FediHome at a bigger disk and *also* symlinking the built-in folder at that same disk is a sensible thing to do, and it made the admin panel count every file twice. Someone doing that is, almost by definition, someone short of space reading that panel to decide what to delete. Worse, the hourly cleanup used the same doubled figure, so it thought the cached-media folder was twice its real size and deleted things to get under a limit that had never been passed. Both now recognise two names for one folder. A folder placed *inside* the other is handled too, and cached media still gets counted separately from your own either way.
+- Removed four dependencies nothing imported (`@fedify/next`, `fast-xml-parser`, `next-mdx-remote`, `remark-gfm`) and one `overrides` entry for a package that is no longer in the tree at all (#578). That is **136 fewer packages** installed — 730 down to 594 — which is that much less to audit, download and keep patched. `@fedify/next` is the one worth naming: it was how the PostCSS advisory tracked in #12 reached this project in the first place, and carrying a package nothing imports means carrying its advisories for nothing. Verified by deleting `node_modules` and the lockfile and installing from scratch. No behaviour changes.
+- Dependency refresh: `@atproto/api` 0.20.42, `undici` 8.10.2, `postcss` 8.5.28, `nodemailer` 9.1.1, `tsx` 4.23.13, `eslint` 10.10.0, `@eslint/eslintrc` 3.3.7, `@next/eslint-plugin-next` 16.3.4, `@types/node` 26.4.1, `@types/react-dom` 19.2.7. (`nodemailer` 10 is held — no matching types package exists yet, so it would be type-checked against v8 definitions. `vitest` 5 and `typescript` 7 remain held; see #234.)
+
+### Security
+- **Patched a critical image-decoding flaw reachable from any federated server** (#587) — a bug in the image library FediHome uses to process pictures could be triggered by a specially crafted AVIF or HEIC image, and your site downloads and processes images chosen by whichever servers it federates with. **Upgrading Next.js alone does not fix this** — 16.3.3 disabled the affected decoder and 16.3.4 re-enabled it, so the fix is the image library itself, which now carries the patched decoder. Both are updated together here. If you maintain your own fork, take the `sharp` bump; the Next version on its own is not protection.
+- **Cleared two advisories in a database driver we never load** (#590) — Prisma ships a MySQL driver alongside the PostgreSQL one, and the version in the tree had a credential-leak and a denial-of-service advisory against it. FediHome only ever uses PostgreSQL, so neither was reachable, but a self-hosted install's `npm audit` should be clean. It is again — 2 findings down to 0. Worth noting `npm audit fix --force` proposes downgrading Prisma by a whole major version here; a version pin is the correct fix.
+
 ## 1.28.1 (2026-08-25)
 
 ### Changed

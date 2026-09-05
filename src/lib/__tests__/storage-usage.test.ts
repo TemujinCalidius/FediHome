@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from "vitest";
 import path from "path";
 import os from "os";
-import { mkdtemp, mkdir, writeFile, rm } from "fs/promises";
+import { mkdtemp, mkdir, writeFile, rm, symlink } from "fs/promises";
 
 /**
  * Uploads storage measurement (#385).
@@ -122,6 +122,25 @@ describe("measureStorageUsage", () => {
     await mkdir(path.dirname(abs), { recursive: true });
     await writeFile(abs, Buffer.alloc(bytes));
   };
+
+  it("does not double a symlinked root's media (#575)", async () => {
+    // `public/uploads` symlinked at the configured root: two names, one
+    // directory. This is a DOCUMENTED way to move media to a bigger disk, and
+    // the dedup used to compare the two paths as strings — so both were walked
+    // and every byte counted twice, in the one panel someone short of space
+    // reads to decide what to delete.
+    await rm(legacy, { recursive: true, force: true });
+    await symlink(tmp, legacy, "dir");
+    invalidateUploadsDirCache();
+
+    await write("2026/01/mine.jpg", 3000);
+    await write("fedi/2026/01/theirs.jpg", 5000);
+
+    const usage = await measureStorageUsage();
+    expect(usage.totalBytes).toBe(8000); // not 16000
+    expect(usage.fediCacheBytes).toBe(5000); // not 10000
+    expect(usage.ownBytes).toBe(3000);
+  });
 
   it("splits the owner's own media from cached remote media", async () => {
     // The split is the useful part: it answers "is this mine, or the cache?",

@@ -9,7 +9,7 @@ import {
   resolveUploadPath,
   fediCacheBudgetBytes,
   remoteMediaCachingEnabled,
-  uploadsRoots,
+  uploadsFediDirs,
 } from "./uploads-dir";
 
 export { isPrivateUrl, assertPublicHost };
@@ -242,10 +242,12 @@ export async function trimFediStorage(): Promise<{ deleted: number; freedBytes: 
   // Every root, not just the current one (#479). Trimming the legacy root is
   // safe for exactly the reason serving from it is: it only ever holds proxied
   // remote media under fedi/, never the operator's own uploads.
-  const roots = await uploadsRoots();
-  const files = (
-    await Promise.all(roots.map((r) => getAllFiles(path.join(r, "fedi"))))
-  ).flat();
+  // `uploadsFediDirs()`, not `uploadsRoots()` (#575). Same list as the storage
+  // panel measures, so the two can't disagree — and it collapses a symlinked
+  // root, which used to list every cached file twice. That doubled `totalSize`
+  // below, so the sweep evicted against a budget it had not actually exceeded.
+  const fediDirs = await uploadsFediDirs();
+  const files = (await Promise.all(fediDirs.map((d) => getAllFiles(d)))).flat();
 
   // Operator-set since #364; 2GB was hardcoded before that, and remains the
   // default so an upgrade changes nothing. A budget of 0 means "cache nothing",
