@@ -14,6 +14,7 @@ import { VIA_BOOST } from "@/lib/explore";
 // The alsoKnownAs check is the security property in BOTH directions (#347),
 // so the inbound half and the outbound half share one implementation.
 import { fetchActorForMove, sameActor } from "@/lib/account-move";
+import { actorImageUrl, actorInboxUrl } from "@/lib/actor-shapes";
 
 const ACTOR_FETCH_TIMEOUT_MS = 8000;
 const DEBUG = process.env.FEDIHOME_DEBUG === "true";
@@ -168,13 +169,21 @@ async function fetchActorInfo(actorUri: string) {
     });
     if (!res.ok) return null;
     const actor = await res.json();
+    // NARROWED, NOT REFUSED, and the difference matters (#591). Five of this
+    // function's six callers want only a name and a picture — attributing a
+    // boosted post to its original author, say — and refusing the whole actor
+    // over a missing inbox would silently drop those from the timeline. Only
+    // `handleFollow` stores an inbox to deliver to, so it is the one that
+    // refuses. `String()` on an array inbox produces a URL that parses, so
+    // "narrowed" has to mean a real type check, not truthiness.
+    const inbox = actorInboxUrl(actor.inbox);
     const domain = new URL(actorUri).hostname;
     return {
       username: actor.preferredUsername || "unknown",
       domain,
       displayName: actor.name || null,
-      avatarUrl: actor.icon?.url || null,
-      inbox: actor.inbox,
+      avatarUrl: actorImageUrl(actor.icon),
+      inbox,
     };
   } catch {
     return null;
@@ -184,6 +193,10 @@ async function fetchActorInfo(actorUri: string) {
 async function handleFollow(actorUri: string, activity: Record<string, unknown>) {
   const info = await fetchActorInfo(actorUri);
   if (!info) return;
+  // THE caller that needs a deliverable inbox (#591). Accepting a follow we can
+  // never answer would leave a follower row that every delivery sweep retries
+  // forever, so refuse the Follow instead.
+  if (!info.inbox) return;
 
   // Only a genuinely new follow should buzz the phone (Follow can be redelivered).
   const alreadyFollowing = await prisma.fediFollower.findUnique({ where: { actorUri } });

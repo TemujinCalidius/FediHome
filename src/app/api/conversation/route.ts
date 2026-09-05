@@ -7,6 +7,7 @@ import { sanitizeHtml } from "@/lib/sanitize";
 import { assertPublicHost } from "@/lib/url-guard";
 import { blockedActorUris, blockedPostFilter, isBlockedSender } from "@/lib/blocks";
 import { guardedFetch } from "@/lib/safe-fetch";
+import { actorImageUrl } from "@/lib/actor-shapes";
 
 const MAX_DEPTH = 20;
 const MAX_CONTEXT = 200; // cap on remote thread posts ingested per view
@@ -363,7 +364,7 @@ async function fetchRemoteNote(apId: string) {
         username: actor.preferredUsername || "unknown",
         domain,
         displayName: actor.name || null,
-        avatarUrl: actor.icon?.url || null,
+        avatarUrl: actorImageUrl(actor.icon),
         publishedAt: note.published ? new Date(note.published) : new Date(),
         // Ancestor walk — same on-demand fetch as the Mastodon path (#460).
         viaLookup: true,
