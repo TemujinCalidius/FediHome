@@ -46,7 +46,7 @@
     "sharp": "^0.35.4",
     "tailwindcss": "^4.3.3",
     "typescript": "^6.0.3",
-    "undici": "^8.10.2",
+    "undici": "^8.12.3",
     "web-push": "^3.6.7"
   },
   "devDependencies": {
